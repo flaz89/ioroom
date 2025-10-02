@@ -7,6 +7,6 @@
 #root, html {
   width: 100vw;
   height: 100vh;
-  background-color: rgb(40, 40, 40);
   overflow: hidden;
+  background-color: black;
 }

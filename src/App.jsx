@@ -11,7 +11,7 @@ const xrStore = createXRStore();
 
 export default function App() {
 
-    // function to allow player to enlarge to full screen visualization on flat screen
+    // function to allow player to enlarge to full screen visualization on computer
     const toggleFullScreen = () => {
     const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement
     
