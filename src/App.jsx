@@ -9,7 +9,7 @@ export default function App() {
   return (
     <>
       <div className="ui-container">
-        <button>Enter VR</button>
+        <button onClick={() => {xrStore.enterVR()}}>Enter VR</button>
       </div>
 
       <div className="scene-container">
