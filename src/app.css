@@ -23,3 +23,9 @@
                         linear-gradient(-35deg,#091332 0% , #080e2a 100%);
     animation: bgShift 18s ease-in-out infinite alternate;
 }
+
+/* ------------------- MOBILE ---------------------- */
+
+@media (max-width: 767px) {
+    .scene-container { padding: 10px; }
+}
