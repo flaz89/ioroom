@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, Grid } from '@react-three/drei';
 import { Canvas } from "@react-three/fiber";
 import { XR } from "@react-three/xr";
 import './scene.css'
@@ -33,6 +33,19 @@ export default function Scene({xrStore}) {
                 />
 
                 <XR store={xrStore}>
+                    <Grid 
+                        args={[20, 20]} 
+                        cellSize={.5}
+                        cellThickness={.5}
+                        cellColor="#555555"
+                        sectionSize={2}
+                        sectionThickness={1}
+                        sectionColor="#888888"
+                        fadeDistance={25}
+                        fadeStrength={1}
+                        followCamera={false}
+                        infiniteGrid={false}
+                    />
                     <Light />
                     <Level />
                 </XR>
