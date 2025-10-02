@@ -1,6 +1,6 @@
 import { OrbitControls } from '@react-three/drei';
 import { Canvas } from "@react-three/fiber";
-import { XR, useXR } from "@react-three/xr";
+import { XR } from "@react-three/xr";
 import './scene.css'
 import Light from '../light/Light';
 import Level from '../level/Level';
