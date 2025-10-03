@@ -1,0 +1,23 @@
+.expBtn {
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 50%;
+    background: linear-gradient(35deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,0.05) 60%);
+    padding:.5em;
+    box-shadow:
+    0 10px 30px rgba(2,6,23,0.6),
+    0 2px 6px rgba(10,20,60,0.35);
+    color: rgba(255, 255, 255, 0.4);;
+}
+
+.expBtn:hover {
+    background: linear-gradient(35deg, rgba(255, 255, 255, 0.4) 0%, rgba(255,255,255,0.15) 60%);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 10px #443a80;
+    /* 0 2px 6px rgba(10,20,60,0.35); */
+}
+
+.expBtn svg {
+    display: flex;
+    fill: currentColor;
+}

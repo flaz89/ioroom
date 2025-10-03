@@ -4,16 +4,17 @@ import { useXR } from "@react-three/xr";
 export default function Level() {
 
     const { mode } = useXR();
-    const isImmersed = mode === "immersive-vr" || mode === "immersive-ar"
+    const isVR = mode === "immersive-vr"
+    const isAR = mode === "immersive-ar"
     
 
     return(
         <>
             {/* background color only present in VR */}
-            {isImmersed && <color args={["rgb(42, 66, 165)"]} attach="background"/>}
+            {isVR && <color args={["rgb(42, 66, 165)"]} attach="background"/>}
 
             {/* OBJECT TEST */}
-            {!isImmersed ? 
+            {!isAR && !isVR ? 
                 <PivotControls
                     depthTest={ false }
                     anchor={ [0,0,0] }
