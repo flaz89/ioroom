@@ -26,7 +26,7 @@ export default function ExperienceMode({xrStore}) {
         <div className="experience-buttons">
             <ExperienceButton svg={vrLogo} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
             <ExperienceButton svg={arLogo} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
-            <ExperienceButton svg={fullScreenLogo} onClick={toggleFullScreen} title={"Toggle Fullscreen"}/>
+            <ExperienceButton svg={fullScreenLogo} onClick={toggleFullScreen} title={"Fullscreen"} />
         </div>
     );
 }

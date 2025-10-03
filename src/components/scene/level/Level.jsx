@@ -1,5 +1,6 @@
-import { PivotControls, Text } from "@react-three/drei";
+import { PivotControls, RoundedBoxGeometry, Text } from "@react-three/drei";
 import { useXR } from "@react-three/xr";
+import Room from "./room/Room";
 
 export default function Level() {
 
@@ -10,17 +11,22 @@ export default function Level() {
 
     return(
         <>
-            {/* background color only present in VR */}
-            {isVR && <color args={["rgb(42, 66, 165)"]} attach="background"/>}
+            {/* Only VR */}
+            { isVR && <color args={["rgb(42, 66, 165)"]} attach="background"/> }
 
-            {/* OBJECT TEST */}
+            {/* Only VR || Flatscreen */}
+            {/* ----------- ROOM ---------------- */}
+            {!isAR && <Room sizes={[6, 6]}/>}
+
+
+            {/* ----------- OBJECT TEST ------------------*/}
             {!isAR && !isVR ? 
                 <PivotControls
                     depthTest={ false }
                     anchor={ [0,0,0] }
                 >
                     <mesh castShadow position-y={.5} pointerEventsType={{ deny: 'grab' }}>
-                        <boxGeometry />
+                        <RoundedBoxGeometry />
                         <meshStandardMaterial />
                         <Text
                         position-y={1}

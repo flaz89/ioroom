@@ -3,7 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { XR } from "@react-three/xr";
 import './scene.css'
 import Light from '../light/Light';
-import Level from '../level/Level';
+import Level from './level/Level';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
