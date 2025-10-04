@@ -4,6 +4,7 @@ import { XR } from "@react-three/xr";
 import './scene.css'
 import Light from '../light/Light';
 import Level from './level/Level';
+import { useStore } from '../../store/appStore';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -12,6 +13,9 @@ import Level from './level/Level';
 */
 
 export default function Scene({xrStore}) {
+
+    const isGridVisible = useStore((state) => state.grid.visible);
+    
 
     return(
         <>
@@ -45,7 +49,7 @@ export default function Scene({xrStore}) {
                         fadeStrength={1}
                         followCamera={false}
                         infiniteGrid={false}
-                        visible={true}
+                        visible={isGridVisible}
                     />
                     <Light />
                     <Level />

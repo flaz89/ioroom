@@ -1,10 +1,14 @@
 import './ui.css'
 import CircleButton from './circle-button/CircleButton';
 import { svg } from '../../utils/svg-logos';
+import { useStore } from '../../store/appStore';
+
 
 
 
 export default function RightMenu({xrStore}) {
+
+    const toggleGrid = useStore( state => state.toggleGrid);
 
     // svg logos
     const { fullscreen, ar, vr } = svg;
@@ -31,7 +35,9 @@ export default function RightMenu({xrStore}) {
     return(
         <>
             <div className="right-menu">
-                <CircleButton svg={svg.grid} title={"Grid"}/>
+                <div>
+                    <CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/>
+                </div>
                 <div className="experience-mode">
                     <CircleButton svg={vr} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
                     <CircleButton svg={ar} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
