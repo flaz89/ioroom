@@ -17,7 +17,7 @@ export default function Scene({xrStore}) {
         <>
         <div className="scene">
             <Canvas camera={{
-                        position: [5,3,5],
+                        position: [4,3,7],
                         fov: 50
                     }}
                     dpr={ [1, 2] }
@@ -45,6 +45,7 @@ export default function Scene({xrStore}) {
                         fadeStrength={1}
                         followCamera={false}
                         infiniteGrid={false}
+                        visible={true}
                     />
                     <Light />
                     <Level />

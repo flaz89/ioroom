@@ -37,7 +37,7 @@ export default function Level() {
                 </PivotControls> 
             :
                 <mesh castShadow position-y={.5} pointerEventsType={{ deny: 'grab' }}>
-                    <boxGeometry />
+                    <RoundedBoxGeometry />
                     <meshStandardMaterial />
                     <Text
                     position-y={1}

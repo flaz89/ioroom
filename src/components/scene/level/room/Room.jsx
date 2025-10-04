@@ -47,7 +47,7 @@ export default function Room({sizes}) {
                 position={[0, wallHeight * .5, -(z * .5) - wallThickness * .5]}
                 rotation-y={Math.PI * .5}receiveShadow
             >
-                <boxGeometry args={[wallThickness, wallHeight, z + wallThickness * 2]}/>
+                <boxGeometry args={[wallThickness, wallHeight, x + wallThickness * 2]}/>
                 <meshStandardMaterial />
             </mesh>
         </group>
