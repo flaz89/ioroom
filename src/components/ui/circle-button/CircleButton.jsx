@@ -1,10 +1,10 @@
-import './experiencebutton.css'
+import './circle-button.css'
 
-export default function ExperienceButton({svg, onClick, title, isDisabled = false, text}) {
+export default function CircleButton({svg, onClick, title, isDisabled = false, text}) {
 
     return(
         <button 
-            className='expBtn' 
+            className='circleBtn' 
             onClick={onClick} 
             title={title}
             disabled = {isDisabled}

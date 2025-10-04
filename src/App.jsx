@@ -1,7 +1,7 @@
 import './app.css'
 import Scene from './components/scene/Scene'
 import { createXRStore } from '@react-three/xr'
-import ExperienceMode from './components/ui/experience-mode/ExperienceMode';
+import RightMenu from './components/ui/RightMenu';
 
 const xrStore = createXRStore();
 
@@ -17,7 +17,10 @@ export default function App() {
   return (
     <>
       <div className="ui-container">
-        <ExperienceMode xrStore={xrStore}/>
+        <div className="ui">
+          <RightMenu xrStore={xrStore}/>
+        </div>
+        
       </div>
 
       <div className="scene-container">

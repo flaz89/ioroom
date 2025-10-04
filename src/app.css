@@ -10,7 +10,7 @@
     pointer-events: none;
 }
 
-.ui-container > * {
+.ui > * {
     pointer-events: all;
 }
 
@@ -28,4 +28,5 @@
 
 @media (max-width: 767px) {
     .scene-container { padding: 10px; }
+    .ui-container { padding: 10px;}
 }

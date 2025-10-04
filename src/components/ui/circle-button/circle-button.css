@@ -1,4 +1,4 @@
-.expBtn {
+.circleBtn {
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 50%;
     background: linear-gradient(35deg, rgba(255,255,255,.4) 0%, rgba(255,255,255,0.05) 60%);
@@ -9,14 +9,14 @@
     color: rgba(255, 255, 255, 0.4);
 }
 
-.expBtn:not(:disabled):active {
+.circleBtn:not(:disabled):active {
     color: white;
     scale: .8;
     box-shadow: 0 1px 5px #2d2655;
 }
 
 /* HOVER */
-.expBtn:not(:disabled):hover {
+.circleBtn:not(:disabled):hover {
     background: linear-gradient(35deg, rgba(255, 255, 255, 0.4) 0%, rgba(255,255,255,0.15) 60%);
     color: white;
     cursor: pointer;
@@ -24,14 +24,14 @@
 }
 
 /* DISABLED */
-.expBtn:disabled {
+.circleBtn:disabled {
   opacity: 0.4;
   cursor:unset;
   scale: 1;
   box-shadow: 1px 1px 1px #000000;
 }
 
-.expBtn svg {
+.circleBtn svg {
     display: flex;
     fill: currentColor;
 }
