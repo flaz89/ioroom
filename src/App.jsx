@@ -2,6 +2,7 @@ import './app.css'
 import Scene from './components/scene/Scene'
 import { createXRStore } from '@react-three/xr'
 import RightMenu from './components/ui/RightMenu';
+import LeftMenu from './components/ui/LeftMenu';
 
 const xrStore = createXRStore();
 
@@ -18,6 +19,7 @@ export default function App() {
     <>
       <div className="ui-container">
         <div className="ui">
+          <LeftMenu/>
           <RightMenu xrStore={xrStore}/>
         </div>
         

@@ -9,3 +9,21 @@
     backdrop-filter: blur(14px) saturate(115%);
     -webkit-backdrop-filter: blur(14px) saturate(115%);
 }
+
+.performance-menu {
+    position: fixed !important;
+    transform: translateX(-50%);
+    left: 50%;
+    max-width: 370px;
+}
+
+
+/* ------------------- MOBILE ---------------------- */
+
+@media (max-width: 767px) {
+    .performance-menu {
+        scale: .8;
+        left:0;
+        transform: translateX(5%);
+    }
+}

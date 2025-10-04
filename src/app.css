@@ -10,10 +10,6 @@
     pointer-events: none;
 }
 
-.ui > * {
-    pointer-events: all;
-}
-
 /* ------------------- SCENE ---------------------- */
 .scene-container {
     padding: 2em;

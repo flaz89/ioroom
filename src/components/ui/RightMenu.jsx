@@ -11,7 +11,7 @@ export default function RightMenu({xrStore}) {
     const toggleGrid = useStore( state => state.toggleGrid);
 
     // svg logos
-    const { fullscreen, ar, vr } = svg;
+    const { fullscreenMode, arMode, vrMode } = svg;
 
     // function to allow player to enlarge to full screen visualization on computer
     const toggleFullScreen = () => {
@@ -39,9 +39,9 @@ export default function RightMenu({xrStore}) {
                     <CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/>
                 </div>
                 <div className="experience-mode">
-                    <CircleButton svg={vr} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
-                    <CircleButton svg={ar} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
-                    <CircleButton svg={fullscreen} onClick={toggleFullScreen} title={"Fullscreen"} />
+                    <CircleButton svg={vrMode} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
+                    <CircleButton svg={arMode} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
+                    <CircleButton svg={fullscreenMode} onClick={toggleFullScreen} title={"Fullscreen"} />
                 </div>
             </div>
             

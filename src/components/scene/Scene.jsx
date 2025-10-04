@@ -5,6 +5,7 @@ import './scene.css'
 import Light from '../light/Light';
 import Level from './level/Level';
 import { useStore } from '../../store/appStore';
+import { Perf } from 'r3f-perf';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -15,6 +16,7 @@ import { useStore } from '../../store/appStore';
 export default function Scene({xrStore}) {
 
     const isGridVisible = useStore((state) => state.grid.visible);
+    const isPerfVisible = useStore((state) => state.settings.perfVisibility);
     
 
     return(
@@ -27,6 +29,13 @@ export default function Scene({xrStore}) {
                     dpr={ [1, 2] }
                     shadows
             >
+                {isPerfVisible && <Perf 
+                            className='performance-menu' 
+                            position='bottom-right' 
+                            showGraph={false}
+                        />  
+                }
+
                 <OrbitControls 
                     makeDefault 
                     enableDamping

@@ -3,17 +3,51 @@
     height: 100%;
 }
 
+/* ------------------- LEFT MENU ---------------------- */
+.left-menu {
+    /* border: 1px solid red; */
+    position: absolute;
+    left: 0;
+    height: 100%;
+    padding: 1em 0 1em 10px;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content:space-between;
+}
+
+.left-menu > * {
+    pointer-events: all;
+}
+
+.scene-settings {
+    display: flex;
+    flex-direction: column;
+    width:fit-content;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 50px;
+    background: linear-gradient(35deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,0.05) 80%);
+    box-shadow: 0 10px 30px rgba(2,6,23,0.6), 0 2px 6px rgba(10,20,60,0.35);
+    padding:  .5em;
+    gap: 1em;
+}
+
 /* ------------------- RIGHT MENU ---------------------- */
 .right-menu {
     /* border: 1px solid red; */
     position: absolute;
     right: 0;
     height: 100%;
-    padding: 20px 10px 20px 0;
+    padding: 1em 10px 1em 0;
     text-align: center;
     display: flex;
     flex-direction: column;
     justify-content:space-between;
+    pointer-events: none;
+}
+
+.right-menu > * {
+    pointer-events: all;
 }
 
 .experience-mode{
@@ -33,4 +67,7 @@
 
 @media (max-width: 767px) {
     .experience-mode { display: none;}
+    .right-menu { padding: 10px 10px 10px 0; }
+    .left-menu { padding: 10px 0px 10px 10px; }
+    .scene-settings { padding: 0}
 }

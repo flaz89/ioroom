@@ -1,0 +1,24 @@
+import CircleButton from "./circle-button/CircleButton";
+import { svg } from "../../utils/svg-logos";
+import { useStore } from "../../store/appStore";
+
+export default function LeftMenu() {
+
+    const togglePerf = useStore((state) => state.togglePerf);
+
+    // svg logos
+    const { settingsMenu ,performance } = svg;
+
+    return(
+    <>
+        <div className="left-menu">
+            <div></div>
+            <div className="scene-settings">
+                <CircleButton svg={settingsMenu}/>
+                <CircleButton svg={performance} onClick={togglePerf} title={"Performance"}/>
+            </div>
+            
+        </div>
+    </>
+    );
+}
