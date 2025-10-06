@@ -1,6 +1,7 @@
 import { PivotControls, RoundedBoxGeometry, Text } from "@react-three/drei";
 import { useXR } from "@react-three/xr";
 import Room from "./room/Room";
+import ObjectRenderer from "./ObjectRenderer";
 
 export default function Level() {
 
@@ -18,34 +19,9 @@ export default function Level() {
             {/* ----------- ROOM ---------------- */}
             {!isAR && <Room sizes={[6, 6]}/>}
 
+            {/* Objects in the scene */}
+            <ObjectRenderer />
 
-            {/* ----------- OBJECT TEST ------------------*/}
-            {!isAR && !isVR ? 
-                <PivotControls
-                    depthTest={ false }
-                    anchor={ [0,0,0] }
-                >
-                    <mesh castShadow position-y={.5} pointerEventsType={{ deny: 'grab' }}>
-                        <RoundedBoxGeometry />
-                        <meshStandardMaterial />
-                        <Text
-                        position-y={1}
-                        center
-                        fontSize={.2}
-                        >{mode || "flat screen"}</Text>
-                    </mesh>
-                </PivotControls> 
-            :
-                <mesh castShadow position-y={.5} pointerEventsType={{ deny: 'grab' }}>
-                    <RoundedBoxGeometry />
-                    <meshStandardMaterial />
-                    <Text
-                    position-y={1}
-                    center
-                    fontSize={.2}
-                    >{mode || "flat screen"}</Text>
-                </mesh>
-            }
         </>
     );
 }

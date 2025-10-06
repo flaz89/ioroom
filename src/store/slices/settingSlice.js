@@ -1,4 +1,4 @@
-export const createSettings = (set, get) => ({
+export const createSettingsSlice = (set, get) => ({
 
     settings: {
         perfVisibility: false
