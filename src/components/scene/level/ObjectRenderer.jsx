@@ -1,6 +1,8 @@
 import { useStore } from "../../../store/appStore"
 import { useXR } from "@react-three/xr"
-import { PivotControls } from "@react-three/drei"
+import SingleObject from "./SingleObject";
+
+// component used to load all models inside the level and track all them
 
 export default function ObjectRenderer() {
 
@@ -14,34 +16,7 @@ export default function ObjectRenderer() {
     return(
     <>
         {instances.map((obj) => {
-            // Test semplice: renderizza sempre un box
-            const meshContent = (
-            <mesh 
-                position={obj.position}
-                rotation={obj.rotation}
-                scale={obj.scale}
-                castShadow
-            >
-                <boxGeometry />
-                <meshStandardMaterial color={obj.color} />
-            </mesh>
-            );
-        
-            // Wrappa con PivotControls solo se flatscreen
-            if (isFlatscreen) {
-            return (
-                <PivotControls
-                key={obj.id}
-                depthTest={false}
-                anchor={[0, 0, 0]}
-                >
-                {meshContent}
-                </PivotControls>
-            );
-            }
-        
-            // Altrimenti solo la mesh
-            return <group key={obj.id}>{meshContent}</group>;
+            return <SingleObject key={obj.id} data={obj} showPivot={isFlatscreen}/>
         })}
     </>
     );

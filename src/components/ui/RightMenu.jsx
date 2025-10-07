@@ -4,11 +4,11 @@ import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
 
 
-
-
 export default function RightMenu({xrStore}) {
 
-    const toggleGrid = useStore( state => state.toggleGrid);
+    const toggleGrid = useStore(state => state.toggleGrid);
+    const selectedObject = useStore(state => state.objects.selectedId);
+    const removeSelectedObject = useStore(state => state.removeObject);
 
     // svg logos
     const { fullscreenMode, arMode, vrMode } = svg;
@@ -35,9 +35,13 @@ export default function RightMenu({xrStore}) {
     return(
         <>
             <div className="right-menu">
+                <div><CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/></div>
+
                 <div>
-                    <CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/>
+                    <CircleButton svg={svg.add} onClick={null} title={"Add"}/>
+                    {selectedObject && <CircleButton svg={svg.trash} onClick={() => {removeSelectedObject(selectedObject) }} title={"Delete selected object"}/>}
                 </div>
+
                 <div className="experience-mode">
                     <CircleButton svg={vrMode} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
                     <CircleButton svg={arMode} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
