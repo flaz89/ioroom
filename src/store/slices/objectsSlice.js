@@ -1,3 +1,5 @@
+import { update } from "three/examples/jsm/libs/tween.module.js";
+
 export const objectsList = [
   { type: 'box', name: 'Cube', geometryType: 'boxGeometry', defaultScale: [1, 1, 1], color: '#ffffff' },
   { type: 'sphere', name: 'Sphere', geometryType: 'sphereGeometry', defaultScale: [.5, .5, .5], color: '#ffffff' },
@@ -12,7 +14,7 @@ export const createObjectsSlice = (set, get) => ({
     },
 
 
-    // ADD --------------------- create object and add main array tracking all abject in the scene
+    // ADD --------------------- create object and add to main array tracking all abject in the scene
     addObject: (type) => {
         const object = objectsList.find(item => item.type === type)
         if (!object) { console.warn(`"${type}" type doesen't exist in objects list`); return; };
@@ -45,12 +47,22 @@ export const createObjectsSlice = (set, get) => ({
         }))
     },
 
-    // DESELECT ----------------------- dset to null selectedId property
+    // DESELECT ----------------------- set to null selectedId property
     deselectObject: () => {
         set((state) => ({
             objects: {
                 ...state.objects,
                 selectedId: null
+            }
+        }))
+    },
+
+    // UPDATE ----------------------- update object transform
+    updateObject: (id, updates) => {
+        set((state) => ({
+            objects: {
+                ...state.objects,
+                instances: state.objects.instances.map((obj) => obj.id === id ? {...obj, ...updates} : obj)
             }
         }))
     },
