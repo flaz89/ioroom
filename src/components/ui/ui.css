@@ -4,7 +4,7 @@
 }
 
 /* ------------------- LEFT MENU ---------------------- */
-.left-menu {
+.left-toolbar {
     /* border: 1px solid red; */
     position: absolute;
     left: 0;
@@ -16,7 +16,7 @@
     justify-content:space-between;
 }
 
-.left-menu > * {
+.left-toolbar > * {
     pointer-events: all;
 }
 
@@ -33,21 +33,29 @@
 }
 
 /* ------------------- RIGHT MENU ---------------------- */
-.right-menu {
+.right-toolbar {
     /* border: 1px solid red; */
     position: absolute;
     right: 0;
     height: 100%;
     padding: 1em 10px 1em 0;
-    text-align: center;
     display: flex;
     flex-direction: column;
     justify-content:space-between;
     pointer-events: none;
+    align-items: center;
 }
 
-.right-menu > * {
+.right-toolbar > * {
     pointer-events: all;
+}
+
+.objects-selection {
+    position: relative;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
 .experience-mode{

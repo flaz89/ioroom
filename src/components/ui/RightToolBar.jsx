@@ -2,9 +2,13 @@ import './ui.css'
 import CircleButton from './circle-button/CircleButton';
 import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
+import { useState } from 'react';
+import ObjectsMenu from './objects-menu/ObjectsMenu';
 
 
-export default function RightMenu({xrStore}) {
+export default function RightToolBar({xrStore}) {
+    
+    const [objectsMenuOpen, setObjectsMenuOpen] = useState(false); // track objects menu state (open/close)
 
     const toggleGrid = useStore(state => state.toggleGrid);
     const selectedObject = useStore(state => state.objects.selectedId);
@@ -34,14 +38,15 @@ export default function RightMenu({xrStore}) {
 
     return(
         <>
-            <div className="right-menu">
+            <div className="right-toolbar">
                 <div><CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/></div>
 
-                <div>
-                    <CircleButton svg={svg.add} onClick={null} title={"Add"}/>
-                    {selectedObject && <CircleButton svg={svg.trash} onClick={() => {removeSelectedObject(selectedObject) }} title={"Delete selected object"}/>}
+                <div className='objects-selection'>
+                    <CircleButton svg={svg.add} onClick={() => setObjectsMenuOpen(!objectsMenuOpen)} title={"Add"}/>
+                    { selectedObject && <CircleButton svg={svg.trash} style={{background: "linear-gradient(35deg, rgba(255, 0, 0, 1) 0%, rgba(203, 0, 0, 0.56) 60%)"}} onClick={() => {removeSelectedObject(selectedObject) }} title={"Delete selected object"}/> }
+                    { objectsMenuOpen && (<ObjectsMenu onClose={() => setObjectsMenuOpen(false)}/>) }
                 </div>
-
+                
                 <div className="experience-mode">
                     <CircleButton svg={vrMode} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
                     <CircleButton svg={arMode} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>

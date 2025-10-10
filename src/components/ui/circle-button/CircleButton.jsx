@@ -1,6 +1,6 @@
 import './circle-button.css'
 
-export default function CircleButton({svg, onClick, title, isDisabled = false, text}) {
+export default function CircleButton({svg, onClick, title, style, isDisabled = false, text}) {
 
     return(
         <button 
@@ -8,6 +8,7 @@ export default function CircleButton({svg, onClick, title, isDisabled = false, t
             onClick={onClick} 
             title={title}
             disabled = {isDisabled}
+            style={style}
         >{svg}{text}</button>
     );
 }

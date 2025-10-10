@@ -1,9 +1,13 @@
-import { update } from "three/examples/jsm/libs/tween.module.js";
 
 export const objectsList = [
   { type: 'box', name: 'Cube', geometryType: 'boxGeometry', defaultScale: [1, 1, 1], color: '#ffffff' },
+  { type: 'plane', name: 'Plane', geometryType: 'planeGeometry', defaultScale: [1, 1, 1], color: '#ffffff'},
+  { type: 'capsule', name: 'Capsule', geometryType: 'capsuleGeometry', defaultScale: [.34, .34, .34], color: '#ffffff' },
   { type: 'sphere', name: 'Sphere', geometryType: 'sphereGeometry', defaultScale: [.5, .5, .5], color: '#ffffff' },
-  { type: 'cylinder', name: 'Cylinder', geometryType: 'cylinderGeometry', defaultScale: [.5, 1, .5], color: '#ffffff' }
+  { type: 'cylinder', name: 'Cylinder', geometryType: 'cylinderGeometry', defaultScale: [.5, 1, .5], color: '#ffffff' },
+  { type: 'circle', name: 'Circle', geometryType: 'circleGeometry', defaultScale: [.5, .5, .5], color: '#ffffff' },
+  { type: 'donut', name: 'Donut', geometryType: 'donutGeometry', defaultScale: [.36, .36, .36], color: '#ffffff' },
+  { type: 'knot', name: 'Knot', geometryType: 'knotGeometry', defaultScale: [.28, .28, .28], color: '#ffffff' }
 ];
 
 

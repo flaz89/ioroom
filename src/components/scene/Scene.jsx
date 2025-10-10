@@ -1,9 +1,10 @@
-import { OrbitControls, Grid } from '@react-three/drei';
-import { Canvas } from "@react-three/fiber";
-import { XR } from "@react-three/xr";
 import './scene.css'
 import Light from '../light/Light';
 import Level from './level/Level';
+import WebGPU from 'three/examples/jsm/capabilities/WebGPU.js';
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, Grid } from '@react-three/drei';
+import { XR } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import { Perf } from 'r3f-perf';
 
@@ -13,21 +14,28 @@ import { Perf } from 'r3f-perf';
 * expereience and update the session
 */
 
+
 export default function Scene({xrStore}) {
+
+    const isWebGPUsupported = WebGPU.isAvailable();
+    console.log("WebGPU support: " + isWebGPUsupported);
 
     const isGridVisible = useStore((state) => state.grid.visible);
     const isPerfVisible = useStore((state) => state.settings.perfVisibility);
+    const deselectObject = useStore((state) => state.deselectObject);
     
 
     return(
         <>
         <div className="scene">
-            <Canvas camera={{
-                        position: [4,3,7],
-                        fov: 50
-                    }}
-                    dpr={ [1, 2] }
-                    shadows
+            <Canvas 
+                camera={{
+                    position: [4,3,7],
+                    fov: 50
+                }}
+                dpr={ [1, 2] }
+                shadows
+                onPointerMissed={deselectObject}
             >
                 {isPerfVisible && <Perf 
                             className='performance-menu' 

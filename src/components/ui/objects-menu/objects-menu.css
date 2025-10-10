@@ -1,0 +1,110 @@
+.objects-menu {
+    /* border: 1px solid red; */
+    border: 1px solid rgba(255,255,255,0.15);
+    position: absolute;
+    right: 100%;
+    margin-right: .5em;
+    width: 200px;
+    max-height: 300px;
+
+    background: linear-gradient(35deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2,6,23,0.6), 0 2px 6px rgba(10,20,60,0.35);
+    border-radius: 15px;
+
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* --------------------------------- MENU HEADER */
+.objects-menu-header {
+    display: flex;
+    gap: 0.5em;
+    padding: 0.3em;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.tab {
+   flex: 1; 
+   background: rgba(255,255,255,0.1);
+   border: 1px solid rgba(255,255,255,0.15);
+   border-radius: 8px;
+   color: white;
+   cursor: pointer;
+   transition: all 0.2s;
+   font-family: "SUSE Mono", sans-serif;
+}
+
+.tab.active {
+    background: rgba(255,255,255,0.25);
+    border-color: rgba(255,255,255,0.3);
+}
+
+.tab.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* --------------------------------- MENU LIST */
+
+.objects-menu-list {
+    overflow-y: auto;
+    padding: .3em;
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+}
+
+.objects-menu-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.objects-menu-list::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+}
+
+.objects-menu-list::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.2);
+  border-radius: 3px;
+}
+
+.objects-menu-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* --------------------------------- BUTTON LIST */
+.object-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75em;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    color: white;
+    cursor: pointer;
+    transition: all .2s;
+}
+
+.object-item:hover {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.3);
+  transform: translateX(-2px);
+}
+
+.object-name {
+  font-size: 0.9em;
+  font-family: "SUSE Mono", sans-serif;
+}
+
+
+
+
+/* ------------------- MOBILE ---------------------- */
+
+@media (max-width: 767px) {
+    .objects-menu {
+        bottom: 0%;
+    }
+}
