@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
-import { bindAwareness } from './livePoses';
+import { bindAwareness } from './presence';
 
 /*
 * Shared room sync: keeps the scene objects (store objects.instances) identical on every device that
@@ -12,7 +12,7 @@ import { bindAwareness } from './livePoses';
 * how the store already updates objects (immutable copies, transform committed on release).
 * - local -> room: a store subscription writes the instances whose reference changed, deletes removed ids;
 * - room -> local: remote changes replace objects.instances (selection is cleared if its object is gone).
-* Selection, grab state and settings stay per device. Live motion during drags: see livePoses.js.
+* Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 */
 
 // Worker host without protocol, e.g. "ioroom-sync.<account>.workers.dev" (localhost:8787 = wrangler dev).

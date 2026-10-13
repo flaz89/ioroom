@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { createFistGesture, isPalmVertical } from './fistGesture';
+import { isLockedByOther } from '../../../sync/presence';
 
 /*
 * Deletes the selected object with an "open hand -> fist" gesture of the LEFT hand (hand tracking):
@@ -80,7 +81,8 @@ export default function FistDeleteGesture() {
 
         // Only with a selected object that is not being held, with the palm perpendicular to the floor,
         // and never while the wrist menu is shown
-        const canArm = objects.selectedId != null && objects.grabbedId == null
+        // (an object held by another device in a shared room cannot be deleted)
+        const canArm = objects.selectedId != null && objects.grabbedId == null && !isLockedByOther(objects.selectedId)
             && palmVertical.current && !view.handMenuVisible;
         const result = gesture(performance.now(), openness, canArm);
 

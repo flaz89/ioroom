@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { TWIST_TO_YAW, twistAngle, twistWithDeadzone } from '../controls/surfaceDrag';
+import { isLockedByOther } from '../../../sync/presence';
 
 /*
 * Rotates the SELECTED object with a THUMB-MIDDLE pinch of the right hand (hand tracking) and the same
@@ -48,7 +49,7 @@ export default function PinchRotateGesture() {
         const { objects, settings, updateObject } = useStore.getState();
         const distance = _thumb.copy(thumb.transform.position).distanceTo(_middle.copy(middle.transform.position));
         const pinching = distance < (rotationRef.current ? PINCH_END : PINCH_START);
-        if (!pinching || objects.selectedId == null || objects.grabbedId != null) {
+        if (!pinching || objects.selectedId == null || objects.grabbedId != null || isLockedByOther(objects.selectedId)) {
             rotationRef.current = null;
             return;
         }

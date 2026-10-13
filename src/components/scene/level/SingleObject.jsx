@@ -5,7 +5,7 @@ import { isRayPointer, keepOverSurface, startSurfaceDrag, TWIST_TO_YAW, twistAng
 import * as THREE from 'three'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { endLivePose, publishLivePose, remotePoses } from "../../../sync/livePoses";
+import { endLivePose, holdObject, isLockedByOther, publishLivePose, releaseObject, remotePoses, useObjectLock } from "../../../sync/presence";
 import { useHandle } from "@react-three/handle";
 import { useStore } from "../../../store/appStore";
 
@@ -124,6 +124,10 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
     const setGrabbedObject = useStore((state) => state.setGrabbedObject);
     const isSelected = data.id === selectedId;
     const isDeleteArmed = useStore((state) => state.objects.deleteArmed);
+    // Shared rooms: color of the other device holding this object (locked here), null when free
+    const lockColor = useObjectLock(data.id);
+    // true while a grab started on a locked object (or lost the tie): the grab does nothing until released
+    const blockedGrabRef = useRef(false);
 
     // true while the object itself is grabbed: the gizmo is hidden and comes back on release
     // false, or how it is grabbed: 'ray' (mouse, controller/hand ray) / 'near' (grip or pinch touching it)
@@ -179,6 +183,24 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
         };
     }, [getThree]);
 
+    // End of a grab: reset the drag state, release the lock, save the transform unless the grab was blocked
+    const endGrab = (commit) => {
+        surfaceDragRef.current = null;
+        nearGrabRef.current = null;
+        lastEventRef.current = null;
+        setGrabbedObject(null);
+        setIsGrabbing(false);
+        releaseObject(data.id);
+        if (commit) commitTransform();
+    };
+
+    // Back to the transform saved in the store (a blocked grab must leave no trace)
+    const restoreSavedTransform = (target) => {
+        target.position.fromArray(data.position);
+        target.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);
+        target.scale.fromArray(data.scale);
+    };
+
     // GRAB: free movement with mouse/controller/hand. pointerRotation: 'free' (XR 1:1) follows the
     // controller/hand rotation, 'yaw' (tabletop) keeps pieces upright, 'none' (flatscreen: a mouse ray would spin it).
     // - Ray pointers (mouse, controller ray, hand-ray pinch): surfaceDrag.js — the object slides over the
@@ -194,7 +216,21 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
         // smoothing must keep progressing (see surfaceDrag.js)
         alwaysUpdate: true,
         apply: (state, target) => {
+            // LOCK: held by another device (at press, or a simultaneous grab lost the tie): ignore this grab,
+            // put the object back to its saved transform and never commit it
+            if (blockedGrabRef.current || isLockedByOther(data.id)) {
+                if (!blockedGrabRef.current && !state.first) {
+                    // lost the tie mid-drag: stop owning and publishing, the winner's pose takes over
+                    restoreSavedTransform(target);
+                    releaseObject(data.id);
+                    endLivePose(data.id);
+                }
+                blockedGrabRef.current = !state.last;
+                if (state.last && !state.first) endGrab(false);
+                return;
+            }
             if (state.first) {
+                holdObject(data.id);
                 selectObject(data.id);
                 setGrabbedObject(data.id);
                 setIsGrabbing(isRayPointer(state.event) ? 'ray' : 'near');
@@ -231,19 +267,15 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
                 keepOverSurface(target, meshRef.current, _previous);
             }
             clampAboveFloor(target, meshRef.current); // live floor limit while dragging
-            if (state.last) {
-                surfaceDragRef.current = null;
-                nearGrabRef.current = null;
-                lastEventRef.current = null;
-                setGrabbedObject(null);
-                setIsGrabbing(false);
-                commitTransform();
-            }
+            if (state.last) endGrab(true);
         }
     });
 
+    // Unmounted while held (deleted, room left): release the lock
+    useEffect(() => () => releaseObject(data.id), [data.id]);
+
     /*
-    * LIVE SYNC (shared rooms, see sync/livePoses.js):
+    * LIVE SYNC (shared rooms, see sync/presence.js):
     * - while this device drags the object (grab or gizmo), its board-space pose is published every frame
     *   (gizmo: target x gizmo delta, the same pose committed on release);
     * - otherwise, while another device drags it, the object eases towards the received pose. On release
@@ -253,7 +285,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
     useFrame((_state, delta) => {
         const target = targetRef.current;
         if (target == null) return;
-        if (isDraggingHere) {
+        if (isDraggingHere && !blockedGrabRef.current) {
             _liveMatrix.compose(target.position, target.quaternion, target.scale);
             if (pivotRef.current) _liveMatrix.multiply(pivotRef.current.matrix);
             _liveMatrix.decompose(_livePosition, _liveQuaternion, _liveScale);
@@ -281,6 +313,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
             start: new THREE.Matrix4().compose(target.position, target.quaternion, target.scale)
         };
         setIsGizmoDragging(true);
+        holdObject(data.id);
     };
 
     /*
@@ -315,6 +348,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
     const handlePivotDragEnd = () => {
         gizmoDragRef.current = null;
         setIsGizmoDragging(false);
+        releaseObject(data.id);
         const target = targetRef.current;
         const pivot = pivotRef.current;
         if (!target || !pivot) return;
@@ -340,7 +374,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
             <PivotControls
                 ref={pivotRef}
                 matrix={pivotMatrix}
-                enabled={showPivot && isSelected && !isGrabbing}
+                enabled={showPivot && isSelected && !isGrabbing && lockColor == null}
                 depthTest={false}
                 scale={GIZMO_SCALE}
                 anchor={[0, 0, 0]}
@@ -356,8 +390,10 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
                 >
                     {renderGeometry(data.geometryType)}
                     <meshStandardMaterial color={data.color} />
-                    {/* red = the VR delete gesture is armed for this object */}
-                    {isSelected && <SelectionOutline color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
+                    {/* locked by another device: its color; else selected: orange, red = VR delete gesture armed */}
+                    {lockColor != null
+                        ? <SelectionOutline color={lockColor} thickness={3} />
+                        : isSelected && <SelectionOutline color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
                 </mesh>
             </PivotControls>
         </group>
