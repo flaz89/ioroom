@@ -151,6 +151,11 @@ export function useObjectLock(id) {
 
 // USERS ------------------------------------------------------------------------------------------
 
+// React: this device's presence color, or null without a room
+export function useSelfColor() {
+    return useSyncExternalStore(subscribe, () => roomUsers.find((user) => user.isSelf)?.color ?? null);
+}
+
 // React: everyone in the room, this device first ([] without a room)
 export function useRoomUsers() {
     return useSyncExternalStore(subscribe, () => roomUsers);
