@@ -1,0 +1,39 @@
+/* Snap control (SnapControl.jsx): step buttons revealed to the LEFT of the snap button on hover */
+.snap-control {
+    position: relative;
+    display: flex;
+}
+
+.snap-steps {
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: .5em;
+    /* the padding bridges the gap, so moving the mouse onto the buttons keeps them open */
+    padding-right: 1em;
+}
+
+.snap-step {
+    width: 2.6em;
+    height: 2.6em;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    /* slightly translucent so the scene shows through */
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.75) 0%, rgba(255, 140, 0, 0.75) 70%);
+    color: white;
+    font-weight: 600;
+    font-size: .8em;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(2, 6, 23, 0.5);
+}
+
+.snap-step:hover { filter: brightness(1.12); }
+.snap-step:active { scale: .9; }
+
+/* current cell size */
+.snap-step.is-active {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}

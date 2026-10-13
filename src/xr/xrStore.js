@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { createXRStore } from '@react-three/xr';
 import { useStore } from '../store/appStore';
 
@@ -7,6 +8,8 @@ import { useStore } from '../store/appStore';
 * WebXRManager to this same store, so the store survives backend swaps.
 */
 export const xrStore = createXRStore({
+    // No desktop VR emulator (pmndrs injects one on localhost by default): testing happens on the headset
+    emulate: false,
     hand: {
         // Poking a button with the index finger lasts longer than pmndrs' default 300 ms click window
         // (press -> release), which made touch presses never fire onClick.
@@ -30,6 +33,30 @@ export async function enterXR(mode) {
         restoreBackend();
         throw error;
     }
+}
+
+/*
+* Whether this browser can start an immersive session of `mode` right now. Re-checked on 'devicechange',
+* so on a Windows PC a headset connected later through Quest Link / Air Link / SteamVR (OpenXR) enables
+* the desktop VR button without a reload. Starting the session still needs a click (WebXR rule).
+*/
+export function useXRModeSupported(mode) {
+    const [supported, setSupported] = useState(false);
+    useEffect(() => {
+        const xr = navigator.xr;
+        if (xr == null) return;
+        let canceled = false;
+        const check = () => xr.isSessionSupported(mode)
+            .then((value) => { if (!canceled) setSupported(value); })
+            .catch(() => { if (!canceled) setSupported(false); });
+        check();
+        xr.addEventListener('devicechange', check);
+        return () => {
+            canceled = true;
+            xr.removeEventListener('devicechange', check);
+        };
+    }, [mode]);
+    return supported;
 }
 
 // Resolves when the mounted renderer matches the requested backend

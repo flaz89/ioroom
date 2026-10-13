@@ -1,0 +1,62 @@
+/* Share panel (SharePanel.jsx): modal centered on the screen over a dimmed backdrop, glass style */
+.share-control {
+    display: flex;
+}
+
+.share-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.45);
+    pointer-events: all;
+}
+
+.share-panel {
+    width: 240px;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .6em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.share-qr {
+    width: 100%;
+    border-radius: 8px;
+}
+
+.share-link {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .4em .6em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    color: white;
+    font: inherit;
+}
+
+.share-copy {
+    width: 100%;
+    padding: .5em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.85) 0%, rgba(255, 140, 0, 0.85) 70%);
+    color: white;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.share-copy:active { scale: .97; }

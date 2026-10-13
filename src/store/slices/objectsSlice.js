@@ -94,6 +94,22 @@ export const createObjectsSlice = (set) => ({
         }))
     },
 
+    // REPLACE ALL ------------------------ instances received from the shared room (src/sync/roomSync.js);
+    // the local selection is dropped if its object no longer exists
+    setInstances: (instances) => {
+        set((state) => {
+            const selectedExists = instances.some((obj) => obj.id === state.objects.selectedId);
+            return {
+                objects: {
+                    ...state.objects,
+                    instances,
+                    selectedId: selectedExists ? state.objects.selectedId : null,
+                    deleteArmed: selectedExists && state.objects.deleteArmed
+                }
+            };
+        })
+    },
+
     // REMOVE --------------------------- delete object with specific id from main array
     removeObject: (id) => {
         set((state) => ({

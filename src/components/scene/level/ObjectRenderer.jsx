@@ -22,6 +22,9 @@ export default function ObjectRenderer({ isTabletop }) {
                 showPivot={isFlatscreen}
                 // flatscreen: no rotation from a mouse ray; tabletop: pieces stay upright (yaw only)
                 pointerRotation={isFlatscreen ? 'none' : isTabletop ? 'yaw' : 'free'}
+                // dotted drag footprint on NEAR grabs too (hand/grip touching the object): flatscreen and
+                // tabletop only, at 1:1 in a headset the object is right in the hand. Ray drags always show it.
+                nearGrabFootprint={isFlatscreen || isTabletop}
             />
         })}
     </>

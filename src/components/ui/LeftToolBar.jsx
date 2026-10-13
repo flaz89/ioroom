@@ -1,15 +1,15 @@
 import CircleButton from "./circle-button/CircleButton";
 import { svg } from "../../utils/svg-logos";
 import { useStore } from "../../store/appStore";
+import SharePanel from "./share-panel/SharePanel";
+import { SYNC_HOST } from "../../sync/roomSync";
 
 export default function LeftToolBar() {
 
     const togglePerf = useStore((state) => state.togglePerf);
-    const gridSnap = useStore((state) => state.settings.gridSnap);
-    const toggleGridSnap = useStore((state) => state.toggleGridSnap);
 
     // svg logos
-    const { settingsMenu, performance, gridSnap: gridSnapIcon } = svg;
+    const { settingsMenu, performance } = svg;
 
     return(
     <>
@@ -19,12 +19,8 @@ export default function LeftToolBar() {
             <div className="scene-settings">
                 <CircleButton svg={settingsMenu}/>
                 <CircleButton svg={performance} onClick={togglePerf} title={"Performance"}/>
-                <CircleButton
-                    svg={gridSnapIcon}
-                    onClick={toggleGridSnap}
-                    title={gridSnap ? "Grid snap: on" : "Grid snap: off"}
-                    style={gridSnap ? { outline: '2px solid orange', outlineOffset: '-2px' } : undefined}
-                />
+                {/* shared rooms only (VITE_SYNC_HOST configured) */}
+                {SYNC_HOST && <SharePanel />}
             </div>
             
         </div>

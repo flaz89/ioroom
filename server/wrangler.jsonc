@@ -1,0 +1,16 @@
+// Cloudflare Worker hosting the ioroom shared rooms (see src/index.js).
+// One Durable Object per room; SQLite-backed classes are the only ones allowed on the Workers Free plan.
+{
+  "name": "ioroom-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  "durable_objects": {
+    "bindings": [
+      // Binding name -> URL segment "room-server" (routePartykitRequest kebab-cases it)
+      { "name": "RoomServer", "class_name": "RoomServer" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RoomServer"] }
+  ]
+}

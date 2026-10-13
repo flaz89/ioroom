@@ -1,0 +1,18 @@
+{
+  "name": "ioroom-sync",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "partyserver": "^0.5.10",
+    "y-partyserver": "^2.2.0",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "wrangler": "^4.150.0"
+  }
+}

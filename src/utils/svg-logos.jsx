@@ -37,7 +37,20 @@ export const svg = {
             <circle cx="3" cy="10" r="1.5"/><circle cx="17" cy="10" r="1.5"/>
             <circle cx="3" cy="17" r="1.5"/><circle cx="10" cy="17" r="1.5"/><circle cx="17" cy="17" r="1.5"/>
         </g>
-        <rect x="6.5" y="6.5" width="7" height="7" rx="1" stroke="currentColor" strokeWidth="1.5"/>
+        <rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+    </svg>,
+
+    // circular arrow with angle ticks (rotation snap)
+    rotationSnap: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 10a6 6 0 1 1-2.2-4.65" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+        <path d="M14.6 2.6v3.2h-3.2" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M10 10V6.8M10 10l2.4 1.4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+    </svg>,
+
+    // three connected nodes (share the room with another device)
+    share: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g fill="currentColor"><circle cx="15" cy="4.5" r="2.6"/><circle cx="5" cy="10" r="2.6"/><circle cx="15" cy="15.5" r="2.6"/></g>
+        <path d="M12.8 5.7L7.2 8.8M7.2 11.2l5.6 3.1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
     trash: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -4,6 +4,8 @@ import { xrStore } from './xr/xrStore';
 import RightToolBar from './components/ui/RightToolBar';
 import LeftToolBar from './components/ui/LeftToolBar';
 import PerfPanel from './components/ui/perf-panel/PerfPanel';
+import { useEffect } from 'react';
+import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
 
 
 /* 
@@ -13,7 +15,12 @@ import PerfPanel from './components/ui/perf-panel/PerfPanel';
 
 export default function App() {
 
-    
+  // Shared room (?room=<id> in the URL): same scene on every device that opens the link.
+  // Skipped when VITE_SYNC_HOST is not configured (local only).
+  useEffect(() => {
+    if (!SYNC_HOST) return;
+    return connectRoom(getRoomId());
+  }, []);
 
   return (
     <>

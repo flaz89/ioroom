@@ -25,16 +25,18 @@ import { getPointerRay } from './pointerRay.js';
 *    slow motions are damped, large deliberate motions stay responsive, snaps become short glides.
 * 4. DROP: an object slid off a raised horizontal support (a table, another object) falls onto the
 *    surface below.
-* 8. GRID SNAP (optional, `gridStep` option): once the drag really started, the position snaps to a
-*    grid along the support plane (board space, so cells are real meters at any tabletop scale) and,
-*    on horizontal supports, the yaw snaps to YAW_SNAP steps. Smoothing turns cell jumps into glides.
+* 8. SNAP (optional, `gridStep` / `yawStep` options, independent): once the drag really started, the
+*    position snaps to a grid along the support plane (board space, so cells are real meters at any
+*    tabletop scale) and, on horizontal supports, the yaw snaps to `yawStep`. Smoothing turns the
+*    jumps into glides.
 * 7. PULL THE ROPE (XR rays): on a wall, a quick pull of the hand back along the ray detaches the
 *    object and reels it towards the user, onto the surface below that point (usually the floor).
 *    Only quick pulls count (leaky reference, PULL_WINDOW_MS), so slow hand drift never detaches.
 *
 * Placement rules: objects always stay upright (yaw only); on ROOM walls (userData.surface === 'wall')
 * they turn their front away from the wall; on horizontal supports, twisting the wrist around the
-* ray turns them (XR rays only). Vertical faces of other objects are never supports (no sticking).
+* ray turns them (XR CONTROLLER rays only: hands rotate with a thumb-middle pinch instead, see
+* xr-ui/PinchRotateGesture.jsx, so moving with the index pinch never turns the object). Vertical faces of other objects are never supports (no sticking).
 * All math runs in the parent (board) space, where surfaces are axis-aligned, so it works the same
 * at 1:1 and inside the scaled tabletop model.
 */
@@ -59,7 +61,6 @@ const MOVE_THRESHOLD = 0.01;                         // pointer motion that star
 const PULL_DISTANCE = 0.08;                          // WORLD meters of quick hand pull that detach from a wall
 const PULL_WINDOW_MS = 300;                          // pull reference forgets older motion (higher = slower pulls count)
 const REEL_FACTOR = 0.5;                             // after the pull the object lands at this × its distance
-const YAW_SNAP = (15 * Math.PI) / 180;              // yaw step when grid snap is on
 
 const AXES = [
     new Vector3(0, -1, 0), new Vector3(0, 1, 0),
@@ -115,7 +116,7 @@ function snapToAxis(normal) {
 }
 
 // Signed twist angle of quaternion q around unit axis (swing-twist decomposition)
-function twistAngle(q, axis) {
+export function twistAngle(q, axis) {
     let angle = 2 * Math.atan2(q.x * axis.x + q.y * axis.y + q.z * axis.z, q.w);
     if (angle > Math.PI) angle -= 2 * Math.PI;
     if (angle < -Math.PI) angle += 2 * Math.PI;
@@ -169,37 +170,64 @@ function placeOn(target, body, point, normal, yaw) {
     target.position.addScaledVector(normal, point.dot(normal) - minProjection);
 }
 
+const _down = new Vector3(0, -1, 0);
+
 /*
-* Surface straight below the body center, or null. Returns the parent-space hit ({ point, normal, ... })
-* plus `box`: the parent-space body bounds (a shared temporary, valid until the next call).
-* Used by the DROP rule and by the drag footprint (helpers/DragFootprint.jsx).
+* First surface from the body center along a PARENT-space direction, or null. Returns the parent-space
+* hit ({ point, normal, distance, isWall }) plus `box`: the parent-space body bounds (a shared
+* temporary, valid until the next call). Used by the drag footprint (helpers/DragFootprint.jsx).
 */
-export function surfaceBelow(target, body = target) {
+export function surfaceAlong(target, body, direction) {
     const parent = target.parent;
     if (parent == null) return null;
     const box = bodyBox(parent, body, target);
     box.getCenter(_center);
     _worldRay.origin.copy(_center).applyMatrix4(parent.matrixWorld);
-    _worldRay.direction.copy(_up).negate().transformDirection(parent.matrixWorld);
+    _worldRay.direction.copy(direction).transformDirection(parent.matrixWorld);
     const hit = castSurface(parent, target, _worldRay);
     if (hit != null) hit.box = box;
     return hit;
 }
 
+/*
+* For each parent-space point, whether a surface lies behind it along the parent-space `direction`
+* (out[i] = true/false). Surfaces are collected once for all the rays. Used by the drag footprint to
+* paint red only the dots outside the allowed space (same "something below" rule as keepOverSurface).
+*/
+export function surfacesBehind(target, points, direction, out) {
+    const parent = target.parent;
+    if (parent == null) return out.fill(0);
+    const surfaces = collectSurfaces(parent, target);
+    _raycaster.ray.direction.copy(direction).transformDirection(parent.matrixWorld);
+    for (let i = 0; i < points.length; i++) {
+        _raycaster.ray.origin.copy(points[i]).applyMatrix4(parent.matrixWorld);
+        out[i] = _raycaster.intersectObjects(surfaces, false).some((hit) => hit.face != null) ? 1 : 0;
+    }
+    return out;
+}
+
+// Surface straight below the body center (DROP rule, room bounds, footprint), or null
+export function surfaceBelow(target, body = target) {
+    return surfaceAlong(target, body, _down);
+}
+
 const _candidate = new Vector3();
 
 /*
-* GRID SNAP: rounds the position along the support plane to multiples of `step` (the axis along the
+* SNAP: rounds the position along the support plane to multiples of `gridStep` (the axis along the
 * support normal is left alone, so the object keeps touching its support) and, on horizontal
-* supports, the yaw to YAW_SNAP. Objects stay upright, so the yaw is read straight from the quaternion.
+* supports, the yaw to multiples of `yawStep` (radians). 0 = that snap is off. Objects stay upright,
+* so the yaw is read straight from the quaternion.
 */
-function snapToGrid(target, normal, step) {
-    if (Math.abs(normal.x) < 0.5) target.position.x = Math.round(target.position.x / step) * step;
-    if (Math.abs(normal.y) < 0.5) target.position.y = Math.round(target.position.y / step) * step;
-    if (Math.abs(normal.z) < 0.5) target.position.z = Math.round(target.position.z / step) * step;
-    if (Math.abs(normal.y) > HORIZONTAL_NORMAL_Y) {
+function snapPose(target, normal, gridStep, yawStep) {
+    if (gridStep > 0) {
+        if (Math.abs(normal.x) < 0.5) target.position.x = Math.round(target.position.x / gridStep) * gridStep;
+        if (Math.abs(normal.y) < 0.5) target.position.y = Math.round(target.position.y / gridStep) * gridStep;
+        if (Math.abs(normal.z) < 0.5) target.position.z = Math.round(target.position.z / gridStep) * gridStep;
+    }
+    if (yawStep > 0 && Math.abs(normal.y) > HORIZONTAL_NORMAL_Y) {
         const yaw = 2 * Math.atan2(target.quaternion.y, target.quaternion.w);
-        target.quaternion.setFromAxisAngle(_up, Math.round(yaw / YAW_SNAP) * YAW_SNAP);
+        target.quaternion.setFromAxisAngle(_up, Math.round(yaw / yawStep) * yawStep);
     }
 }
 
@@ -241,15 +269,19 @@ function setSupport(drag, target, normal, supportPoint, anchorPoint, event) {
 * Captures the state at press time (never moves the target).
 * body: the object whose bounds touch surfaces (the mesh), so gizmo handles/outlines never count.
 * options.gridStep: grid cell size (parent-space meters) to snap to, 0 = free placement.
+* options.yawStep: yaw step (radians) to snap the rotation to, 0 = free rotation.
 */
-export function startSurfaceDrag(event, target, body = target, { gridStep = 0 } = {}) {
+export function startSurfaceDrag(event, target, body = target, { gridStep = 0, yawStep = 0 } = {}) {
     const parent = target.parent;
     const drag = {
-        useTwist: event.intersection?.details?.type === 'ray',
+        // wrist twist -> yaw: controller rays only (pointerState = the XR input source state)
+        useTwist: event.intersection?.details?.type === 'ray' && event.pointerState?.type !== 'hand',
         smooth: event.intersection?.details?.type === 'ray', // XR rays jitter; a mouse is precise (no lag)
         reel: event.intersection?.details?.type === 'ray',   // "pull the rope" off walls (XR rays only)
         pullOrigin: new Vector3(), // WORLD ray origin the hand pull is measured from (leaky)
         gridStep,          // grid snap cell size, 0 = off
+        yawStep,           // rotation snap step (radians), 0 = off
+        blocked: false,    // the pointer asks for a place outside the surfaces (room bounds hold the object)
         twistReference: new Quaternion(),
         yaw: target.rotation.y,
         supportNormal: new Vector3(0, 1, 0),
@@ -300,7 +332,7 @@ function distanceToSurfacePlane(box, hit) {
 }
 
 // Twist angle with a dead zone (small wrist rolls are ignored, then rotation continues smoothly)
-function twistWithDeadzone(angle) {
+export function twistWithDeadzone(angle) {
     if (Math.abs(angle) <= TWIST_DEADZONE) return 0;
     return angle - Math.sign(angle) * TWIST_DEADZONE;
 }
@@ -445,11 +477,11 @@ export function updateSurfaceDrag(drag, event, target, body = target, now = even
         }
     }
 
-    // GRID SNAP (only once the drag really started: a click or a still hold never moves the object)
-    if (drag.gridStep > 0 && drag.moved) snapToGrid(target, drag.supportNormal, drag.gridStep);
+    // SNAP (only once the drag really started: a click or a still hold never moves the object)
+    if (drag.moved) snapPose(target, drag.supportNormal, drag.gridStep, drag.yawStep);
 
     // ROOM BOUNDS: never leave the surfaces (open sides of the room, holes in the floor)
-    keepOverSurface(target, body, _previousPosition);
+    drag.blocked = !keepOverSurface(target, body, _previousPosition);
 
     // SMOOTHING: blend from the previous pose; small/slow motions damped, large ones nearly 1:1
     if (!drag.smooth) return true;

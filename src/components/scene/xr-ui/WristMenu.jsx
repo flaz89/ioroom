@@ -3,6 +3,8 @@ import { Vector3 } from 'three';
 import { useThree } from '@react-three/fiber';
 import { XRSpace, useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
+import { GRID_SNAP_STEPS, ROTATION_SNAP_STEPS } from '../../../store/slices/settingSlice';
+import { svg } from '../../../utils/svg-logos';
 import { useFacingViewer } from './useFacingViewer';
 import VRButton from './VRButton';
 import { BUTTON_SIZE } from './layout';
@@ -24,6 +26,25 @@ const MENU_ROTATION = [-Math.PI / 2,  Math.PI / 2, -Math.PI / 2];  // calibrated
 const BUTTON_STEP = BUTTON_SIZE[1] + 0.008; // meters between stacked buttons (height + gap)
 const SIDE_PANEL_X = 0.115;  // meters: catalog panel center, to the side of the button column
 const SPAWN_DISTANCE = 1.2;  // meters in front of the user for objects added at 1:1 scale
+const STEP_X = BUTTON_SIZE[0] + 0.006; // meters: snap step buttons, to the right of their snap toggle
+
+// Next step in the list (wraps around); a value not in the list restarts from the first
+const nextStep = (steps, current) => steps[(steps.indexOf(current) + 1) % steps.length];
+
+// Tabletop toggle (no desktop logo): a small table seen from the front
+function tabletopIcon(ctx, x, y, s) {
+    ctx.lineWidth = Math.max(2, s * 0.08);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.45, y - s * 0.12); // top
+    ctx.lineTo(x + s * 0.45, y - s * 0.12);
+    ctx.moveTo(x - s * 0.32, y - s * 0.12); // legs
+    ctx.lineTo(x - s * 0.32, y + s * 0.38);
+    ctx.moveTo(x + s * 0.32, y - s * 0.12);
+    ctx.lineTo(x + s * 0.32, y + s * 0.38);
+    ctx.stroke();
+    ctx.strokeRect(x - s * 0.12, y - s * 0.38, s * 0.24, s * 0.2); // the model on it
+}
 
 const _eye = new Vector3();
 const _forward = new Vector3();
@@ -48,8 +69,11 @@ export default function WristMenu() {
     const togglePerf = useStore((state) => state.togglePerf);
     const isTabletop = useStore((state) => state.view.mode === 'tabletop');
     const toggleTabletop = useStore((state) => state.toggleTabletop);
-    const gridSnap = useStore((state) => state.settings.gridSnap);
+    const { gridSnap, gridSnapStep, rotationSnap, rotationSnapStep } = useStore((state) => state.settings);
     const toggleGridSnap = useStore((state) => state.toggleGridSnap);
+    const setGridSnapStep = useStore((state) => state.setGridSnapStep);
+    const toggleRotationSnap = useStore((state) => state.toggleRotationSnap);
+    const setRotationSnapStep = useStore((state) => state.setRotationSnapStep);
     const addObject = useStore((state) => state.addObject);
 
     // Tabletop: in the middle of the model. 1:1: on the floor in front of the user (board = identity).
@@ -76,11 +100,15 @@ export default function WristMenu() {
                 {isVisible && (
                     <>
                         {/* Buttons stacked along the menu's local +Y (the palm becomes the control board) */}
-                        <VRButton label="Stats" active={isPerfVisible} onClick={togglePerf} />
-                        <VRButton label="Tabletop" active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
-                        <VRButton label="Add" active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
-                        <VRButton label="Snap" active={gridSnap} onClick={toggleGridSnap} position={[0, BUTTON_STEP * 3, 0]} />
-                        {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 3 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
+                        <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
+                        <VRButton icon={tabletopIcon} active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
+                        <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
+                        {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
+                        <VRButton svg={svg.gridSnap} active={gridSnap} onClick={toggleGridSnap} position={[0, BUTTON_STEP * 3, 0]} />
+                        <VRButton label={`${gridSnapStep}cm`} active={gridSnap} onClick={() => setGridSnapStep(nextStep(GRID_SNAP_STEPS, gridSnapStep))} position={[STEP_X, BUTTON_STEP * 3, 0]} />
+                        <VRButton svg={svg.rotationSnap} active={rotationSnap} onClick={toggleRotationSnap} position={[0, BUTTON_STEP * 4, 0]} />
+                        <VRButton label={`${rotationSnapStep}°`} active={rotationSnap} onClick={() => setRotationSnapStep(nextStep(ROTATION_SNAP_STEPS, rotationSnapStep))} position={[STEP_X, BUTTON_STEP * 4, 0]} />
+                        {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </>
                 )}

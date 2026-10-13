@@ -4,6 +4,7 @@ import Board from "./Board";
 import ObjectRenderer from "./ObjectRenderer";
 import WristMenu from "../xr-ui/WristMenu";
 import FistDeleteGesture from "../xr-ui/FistDeleteGesture";
+import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import { useStore } from "../../../store/appStore";
 
 export default function Level() {
@@ -30,6 +31,8 @@ export default function Level() {
             {isXR && <WristMenu />}
             {/* VR || AR: left hand open -> fist deletes the selected object */}
             {isXR && <FistDeleteGesture />}
+            {/* VR || AR: right hand thumb-middle pinch + wrist twist rotates the selected object in place */}
+            {isXR && <PinchRotateGesture />}
 
         </>
     );

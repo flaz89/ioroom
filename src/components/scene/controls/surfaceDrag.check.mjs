@@ -193,12 +193,15 @@ for (const [ms, detaches] of [[150, true], [2000, false]]) {
     assert.ok(target.position.z <= 3, `stays over the floor (z=${target.position.z})`);
     assert.ok(target.position.x < -0.5, `slides along the edge (x=${target.position.x})`);
     near(target.position.y, 0.5, 'still on the floor');
+    assert.ok(drag.blocked, 'reported as blocked (red footprint)');
+    hold(drag, target, body, outside, new Vector3(-1, 0, 2), 400);      // back over the floor
+    assert.ok(!drag.blocked, 'not blocked any more');
 }
-// Grid snap: the position lands on 10 cm cells, the wrist twist on 15° steps; a still hold never moves
+// Snap: the position lands on 10 cm cells, the wrist twist on 15° steps; a still hold never moves
 {
     const { target, body } = makeBoard();
     const aim = new Vector3(0, 0.5, 0.5);
-    const drag = startSurfaceDrag(rayEvent(eye, aim, { onto: target, time: clock }), target, body, { gridStep: 0.1 });
+    const drag = startSurfaceDrag(rayEvent(eye, aim, { onto: target, time: clock }), target, body, { gridStep: 0.1, yawStep: (15 * Math.PI) / 180 });
     hold(drag, target, body, eye, aim, 300);
     near(target.position.x, 0, 'click: not moved');
     hold(drag, target, body, eye, new Vector3(-0.537, 0.5, 0.31), 800, { roll: 0.5 });
