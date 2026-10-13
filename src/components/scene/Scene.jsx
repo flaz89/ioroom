@@ -1,12 +1,13 @@
 import './scene.css'
 import Light from '../light/Light';
 import Level from './level/Level';
-import WebGPU from 'three/examples/jsm/capabilities/WebGPU.js';
+import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Grid } from '@react-three/drei';
-import { XR } from "@react-three/xr";
+import { OrbitControls } from '@react-three/drei';
+import SceneGrid from './helpers/SceneGrid';
+import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
-import { Perf } from 'r3f-perf';
+import PerfSampler from './perf/PerfSampler';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -15,10 +16,24 @@ import { Perf } from 'r3f-perf';
 */
 
 
+/*
+* Async renderer factory for <Canvas gl>: WebGPURenderer must be initialized before the first frame.
+* If no WebGPU adapter is available, three.js silently falls back to its WebGL2 backend, which does not
+* support the GLSL shader materials used by some drei helpers: in that case switch to a plain WebGLRenderer.
+*/
+async function createWebGPURenderer(props) {
+    // trackTimestamp: GPU frame time for the performance panel (ignored if 'timestamp-query' is unsupported)
+    const renderer = new WebGPURenderer({ ...props, antialias: true, trackTimestamp: true });
+    await renderer.init();
+    if (!renderer.backend.isWebGPUBackend) useStore.getState().disableWebGPU();
+    return renderer;
+}
+
 export default function Scene({xrStore}) {
 
-    const isWebGPUsupported = WebGPU.isAvailable();
-    console.log("WebGPU support: " + isWebGPUsupported);
+    // "webgpu" on flatscreen when supported, "webgl" during XR sessions (see src/xr/xrStore.js)
+    const backend = useStore((state) => state.renderer.backend);
+    const setReadyBackend = useStore((state) => state.setReadyBackend);
 
     const isGridVisible = useStore((state) => state.grid.visible);
     const isPerfVisible = useStore((state) => state.settings.perfVisibility);
@@ -29,6 +44,9 @@ export default function Scene({xrStore}) {
         <>
         <div className="scene">
             <Canvas 
+                key={backend} // a new backend needs a new canvas: a canvas can't switch context type
+                gl={backend === 'webgpu' ? createWebGPURenderer : undefined}
+                onCreated={() => setReadyBackend(backend)}
                 camera={{
                     position: [4,3,7],
                     fov: 50
@@ -36,13 +54,14 @@ export default function Scene({xrStore}) {
                 dpr={ [1, 2] }
                 shadows
                 onPointerMissed={deselectObject}
+                events={noEvents} // pmndrs pointer events (below) replace R3F's: one event system for mouse, touch, controllers and hands
             >
-                {isPerfVisible && <Perf 
-                            className='performance-menu' 
-                            position='bottom-right' 
-                            showGraph={false}
-                        />  
-                }
+                {/* batchEvents={false}: handlers run inside the DOM event. Registered before OrbitControls,
+                    so an object/gizmo press can disable orbiting before OrbitControls sees the same press */}
+                <PointerEvents batchEvents={false} />
+
+                {/* Performance stats for the DOM panel (both renderers) */}
+                {isPerfVisible && <PerfSampler />}
 
                 <OrbitControls 
                     makeDefault 
@@ -54,20 +73,7 @@ export default function Scene({xrStore}) {
                 />
 
                 <XR store={xrStore}>
-                    <Grid 
-                        args={[20, 20]} 
-                        cellSize={.5}
-                        cellThickness={.5}
-                        cellColor="#555555"
-                        sectionSize={2}
-                        sectionThickness={1}
-                        sectionColor="#888888"
-                        fadeDistance={25}
-                        fadeStrength={1}
-                        followCamera={false}
-                        infiniteGrid={false}
-                        visible={isGridVisible}
-                    />
+                    <SceneGrid visible={isGridVisible} />
                     <Light />
                     <Level />
                 </XR>

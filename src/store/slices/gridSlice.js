@@ -1,4 +1,4 @@
-export const createGridSlice = (set, get) => ({
+export const createGridSlice = (set) => ({
 
     grid: {
         visible: true

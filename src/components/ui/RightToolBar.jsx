@@ -4,9 +4,10 @@ import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
 import { useState } from 'react';
 import ObjectsMenu from './objects-menu/ObjectsMenu';
+import { enterXR } from '../../xr/xrStore';
 
 
-export default function RightToolBar({xrStore}) {
+export default function RightToolBar() {
     
     const [objectsMenuOpen, setObjectsMenuOpen] = useState(false); // track objects menu state (open/close)
 
@@ -25,12 +26,12 @@ export default function RightToolBar({xrStore}) {
             if (document.documentElement.requestFullscreen) {
                 document.documentElement.requestFullscreen()
             } else if (document.documentElement.webkitRequestFullscreen) {
-                document.documentElement.requestFullscreen()
+                document.documentElement.webkitRequestFullscreen()
             }
         } else {
             if (document.exitFullscreen) {
                 document.exitFullscreen();
-            } else if (document.webkitExitFullScreen) {
+            } else if (document.webkitExitFullscreen) {
                 document.webkitExitFullscreen();
             }
         }
@@ -48,8 +49,8 @@ export default function RightToolBar({xrStore}) {
                 </div>
                 
                 <div className="experience-mode">
-                    <CircleButton svg={vrMode} onClick={() => {xrStore.enterVR()}} title={"VR Mode"}/>
-                    <CircleButton svg={arMode} onClick={() => {xrStore.enterAR()}} title={"AR Mode"}/>
+                    <CircleButton svg={vrMode} onClick={() => enterXR('immersive-vr').catch(console.error)} title={"VR Mode"}/>
+                    <CircleButton svg={arMode} onClick={() => enterXR('immersive-ar').catch(console.error)} title={"AR Mode"}/>
                     <CircleButton svg={fullscreenMode} onClick={toggleFullScreen} title={"Fullscreen"} />
                 </div>
             </div>

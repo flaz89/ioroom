@@ -4,7 +4,7 @@ import SingleObject from "./SingleObject";
 
 // component used to load all models inside the level and track all them
 
-export default function ObjectRenderer() {
+export default function ObjectRenderer({ isTabletop }) {
 
     const instances = useStore((state) => state.objects.instances)
     
@@ -16,7 +16,13 @@ export default function ObjectRenderer() {
     return(
     <>
         {instances.map((obj) => {
-            return <SingleObject key={obj.id} data={obj} showPivot={isFlatscreen}/>
+            return <SingleObject
+                key={obj.id}
+                data={obj}
+                showPivot={isFlatscreen}
+                // flatscreen: no rotation from a mouse ray; tabletop: pieces stay upright (yaw only)
+                pointerRotation={isFlatscreen ? 'none' : isTabletop ? 'yaw' : 'free'}
+            />
         })}
     </>
     );

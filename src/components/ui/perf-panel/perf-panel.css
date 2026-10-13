@@ -1,0 +1,58 @@
+/* ------------------- PERFORMANCE PANEL ---------------------- */
+.perf-panel {
+    position: absolute;
+    left: 50%;
+    bottom: 1em;
+    transform: translateX(-50%);
+    min-width: 320px;
+    padding: .6em .9em;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 14px;
+    background: linear-gradient(35deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,0.05) 80%);
+    box-shadow: 0 10px 30px rgba(2,6,23,0.6), 0 2px 6px rgba(10,20,60,0.35);
+    backdrop-filter: blur(14px) saturate(115%);
+    -webkit-backdrop-filter: blur(14px) saturate(115%);
+    color: #fff;
+    font-family: 'SUSE Mono', monospace;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.perf-panel-header {
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    opacity: .7;
+    margin-bottom: .4em;
+}
+
+.perf-panel-header {
+    max-width: 420px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.perf-panel-gpu { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+.perf-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 1.2em;
+    row-gap: .2em;
+    margin: 0;
+}
+
+.perf-panel-row {
+    display: flex;
+    justify-content: space-between;
+    gap: .8em;
+}
+
+.perf-panel-row dt { opacity: .65; }
+.perf-panel-row dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+/* ------------------- MOBILE ---------------------- */
+@media (max-width: 767px) {
+    .perf-panel { min-width: 0; width: calc(100% - 20px); bottom: 70px; }
+}

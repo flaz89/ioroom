@@ -1,26 +1,35 @@
-import { PivotControls, RoundedBoxGeometry, Text } from "@react-three/drei";
 import { useXR } from "@react-three/xr";
 import Room from "./room/Room";
+import Board from "./Board";
 import ObjectRenderer from "./ObjectRenderer";
+import WristMenu from "../xr-ui/WristMenu";
+import FistDeleteGesture from "../xr-ui/FistDeleteGesture";
+import { useStore } from "../../../store/appStore";
 
 export default function Level() {
 
     const { mode } = useXR();
     const isVR = mode === "immersive-vr"
     const isAR = mode === "immersive-ar"
-    
+    const isXR = isVR || isAR;
+    // Tabletop (miniature) view exists only inside XR sessions
+    const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
 
     return(
         <>
             {/* Only VR */}
             { isVR && <color args={["rgb(42, 66, 165)"]} attach="background"/> }
 
-            {/* Only VR || Flatscreen */}
-            {/* ----------- ROOM ---------------- */}
-            {!isAR && <Room sizes={[6, 6]}/>}
+            {/* ----------- ROOM + OBJECTS ---------------- */}
+            {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}
+            <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room sizes={[6, 6]}/>}>
+                <ObjectRenderer isTabletop={isTabletop} />
+            </Board>
 
-            {/* Objects in the scene */}
-            <ObjectRenderer />
+            {/* VR || AR: commands on the left wrist */}
+            {isXR && <WristMenu />}
+            {/* VR || AR: left hand open -> fist deletes the selected object */}
+            {isXR && <FistDeleteGesture />}
 
         </>
     );

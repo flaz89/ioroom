@@ -11,15 +11,38 @@ export const objectsList = [
 ];
 
 
-export const createObjectsSlice = (set, get) => ({
+export const createObjectsSlice = (set) => ({
     objects: {
         instances: [],
-        selectedId: null
+        selectedId: null,
+        grabbedId: null, // object currently held by a pointer (mouse drag, grab, pinch); null when free
+        deleteArmed: false // true while the VR "open hand -> fist" delete gesture is armed (red outline)
+    },
+
+    // DELETE GESTURE ----------------- armed state of the VR delete gesture (see FistDeleteGesture.jsx)
+    setDeleteArmed: (armed) => {
+        set((state) => ({
+            objects: {
+                ...state.objects,
+                deleteArmed: armed
+            }
+        }))
+    },
+
+    // GRAB -------------------------- tracks which object is being held (blocks world gestures meanwhile)
+    setGrabbedObject: (id) => {
+        set((state) => ({
+            objects: {
+                ...state.objects,
+                grabbedId: id
+            }
+        }))
     },
 
 
     // ADD --------------------- create object and add to main array tracking all abject in the scene
-    addObject: (type) => {
+    // position: room (board-local) coordinates in meters; default = room center, resting on the floor
+    addObject: (type, position = [0, .5, 0]) => {
         const object = objectsList.find(item => item.type === type)
         if (!object) { console.warn(`"${type}" type doesen't exist in objects list`); return; };
 
@@ -28,7 +51,7 @@ export const createObjectsSlice = (set, get) => ({
             type: object.type,
             geometryType: object.geometryType,
             color: object.color,
-            position: [0, .5, 0],
+            position,
             rotation: [0, 0, 0],
             scale: object.defaultScale
         }
@@ -77,7 +100,8 @@ export const createObjectsSlice = (set, get) => ({
             objects: {
                 ...state.objects,
                 instances: state.objects.instances.filter(obj => obj.id !== id),
-                selectedId: state.objects.selectedId === id ? null : state.object.selectedId
+                selectedId: state.objects.selectedId === id ? null : state.objects.selectedId,
+                deleteArmed: false
             }
         }))
     }

@@ -1,15 +1,14 @@
 import './app.css'
 import Scene from './components/scene/Scene'
-import { createXRStore } from '@react-three/xr'
-import LeftMenu from './components/ui/LeftToolBar';
+import { xrStore } from './xr/xrStore';
 import RightToolBar from './components/ui/RightToolBar';
 import LeftToolBar from './components/ui/LeftToolBar';
+import PerfPanel from './components/ui/perf-panel/PerfPanel';
 
-const xrStore = createXRStore();
 
 /* 
 * App entry point, here logic manages UI and 3D Scene. 
-* XR store is created here and passed as prop in Scene component to provide <XR> component 
+* XR store (src/xr/xrStore.js) is passed as prop in Scene component to provide <XR> component 
 */
 
 export default function App() {
@@ -21,7 +20,8 @@ export default function App() {
       <div className="ui-container">
         <div className="ui">
           <LeftToolBar/>
-          <RightToolBar xrStore={xrStore}/>
+          <RightToolBar/>
+          <PerfPanel/>
         </div>
         
       </div>

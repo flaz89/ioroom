@@ -1,3 +1,6 @@
+// Marks wall meshes for surfaceDrag: objects placed on them turn to face into the room
+const WALL_USER_DATA = { surface: 'wall' };
+
 export default function Room({sizes}) {
 
     const [x, z] = sizes;
@@ -17,8 +20,19 @@ export default function Room({sizes}) {
                 <meshStandardMaterial color="#d4d4d4" /> 
             </mesh>
 
+            {/* ------------- CEILING (invisible) ------------------ */}
+            {/* Not rendered: only a surface for placing objects (lamps) with surfaceDrag. Faces down. */}
+            <mesh
+                rotation={[Math.PI / 2, 0, 0]}
+                position={[0, wallHeight, 0]}
+                visible={false}
+            >
+                <planeGeometry args={[x, z]} />
+            </mesh>
+
             {/* ------------- WALL left ------------------ */}
-            <mesh 
+            <mesh
+                userData={WALL_USER_DATA}
                 position={[
                     -(x * .5) - (wallThickness * .5),
                     wallHeight * .5,
@@ -31,7 +45,9 @@ export default function Room({sizes}) {
             </mesh>
 
             {/* ------------- WALL right ------------------ */}
-            <mesh position={[
+            <mesh
+                userData={WALL_USER_DATA}
+                position={[
                     x * .5 + (wallThickness * .5),
                     wallHeight * .5,
                     0
@@ -43,7 +59,8 @@ export default function Room({sizes}) {
             </mesh>
 
             {/* ------------- WALL back ------------------ */}
-            <mesh 
+            <mesh
+                userData={WALL_USER_DATA}
                 position={[0, wallHeight * .5, -(z * .5) - wallThickness * .5]}
                 rotation-y={Math.PI * .5}receiveShadow
             >
