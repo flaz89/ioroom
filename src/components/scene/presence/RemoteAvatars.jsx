@@ -49,7 +49,6 @@ function toBoardPose(worldMatrix) {
 // Publishes this headset's head + hands every frame (presence.js throttles and skips still poses)
 function LocalAvatar({ anchorRef }) {
     const gl = useThree((state) => state.gl);
-    const camera = useThree((state) => state.camera);
     const leftController = useXRInputSourceState('controller', 'left');
     const leftHand = useXRInputSourceState('hand', 'left');
     const rightController = useXRInputSourceState('controller', 'right');
@@ -70,7 +69,11 @@ function LocalAvatar({ anchorRef }) {
             return pose ? toBoardPose(_matrix.fromArray(pose.transform.matrix).clone()) : null;
         };
 
-        const head = toBoardPose(camera.matrixWorld);
+        // Head from the XR viewer pose, in the SAME reference space as the hands. (The R3F camera keeps
+        // its flatscreen transform during the session: using it put the head far away, looking down.)
+        const viewer = frame.getViewerPose(referenceSpace);
+        if (viewer == null) return; // tracking lost this frame
+        const head = toBoardPose(_matrix.fromArray(viewer.transform.matrix).clone());
         const scale = 1 / board.getWorldScale(_scale).x;
         publishAvatar(head, handPose(leftController ?? leftHand), handPose(rightController ?? rightHand), scale);
     });
