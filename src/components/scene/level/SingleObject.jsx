@@ -130,7 +130,8 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
     const lockColor = useObjectLock(data.id);
     // HOVER: a RAY pointer (mouse, controller/hand ray) is over the object -> tinted with this device's
     // presence color (the color others see for it; neutral white without a room). Never from near
-    // pointers (grip/touch), never while the object is held here, never on objects locked by others.
+    // pointers (grip/touch), never on the selected object or while it is held here, never on objects
+    // locked by others.
     const [isHovered, setIsHovered] = useState(false);
     const hoverColor = useSelfColor() ?? HOVER_FALLBACK_COLOR;
     // true while a grab started on a locked object (or lost the tie): the grab does nothing until released
@@ -406,7 +407,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
                     {/* hover overlay: emissive tint, so it shows on any base color and in any lighting */}
                     <meshStandardMaterial
                         color={data.color}
-                        emissive={isHovered && isGrabbing === false && !isGizmoDragging && lockColor == null ? hoverColor : '#000000'}
+                        emissive={isHovered && !isSelected && isGrabbing === false && !isGizmoDragging && lockColor == null ? hoverColor : '#000000'}
                         emissiveIntensity={HOVER_TINT}
                     />
                     {/* locked by another device: its color; else selected: orange, red = VR delete gesture armed */}

@@ -4,6 +4,8 @@ import Board from "./Board";
 import ObjectRenderer from "./ObjectRenderer";
 import WristMenu from "../xr-ui/WristMenu";
 import FistDeleteGesture from "../xr-ui/FistDeleteGesture";
+import RemotePointers from "../presence/RemotePointers";
+import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import { useStore } from "../../../store/appStore";
 
@@ -25,6 +27,10 @@ export default function Level() {
             {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}
             <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room sizes={[6, 6]}/>}>
                 <ObjectRenderer isTabletop={isTabletop} />
+                {/* shared rooms: other people's pointers (and this device's, published) */}
+                <RemotePointers />
+                {/* shared rooms: headset users (and this headset, published) */}
+                <RemoteAvatars />
             </Board>
 
             {/* VR || AR: commands on the left wrist */}

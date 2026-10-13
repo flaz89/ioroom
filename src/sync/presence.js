@@ -13,6 +13,13 @@ import { useSyncExternalStore } from 'react';
 * grabbed, moved, rotated or deleted, and shows that device's color. If two devices grab the same object
 * at the same time, the lower awareness client id wins and the other one gives up.
 *
+* POINTERS: desktop/mobile devices share where their mouse/touch points in the scene (publishPointer /
+* clearPointer, board space); remotePointers (client id -> { p, n }) is read by the in-scene indicators.
+*
+* AVATARS: headset users share their head and hands/controllers (publishAvatar / clearAvatar, board space,
+* plus the avatar scale = 1 / their board scale, so a tabletop user appears as a "giant" over the room);
+* remoteAvatars (client id -> { h, l, r, s }) is read by the in-scene avatars.
+*
 * USERS: each device shares { name, color } (name = device type for now); useRoomUsers() lists them.
 *
 * Without a room (no awareness bound) everything is a no-op: nothing is published, nothing is locked.
@@ -32,6 +39,10 @@ let lastSent = null; // last published { id, p, q, s }, to skip unchanged poses
 
 // Object id -> last pose received from another device ({ p: [x,y,z], q: [x,y,z,w], s: [x,y,z] })
 export const remotePoses = new Map();
+// Client id -> where that device points in the scene ({ p: [x,y,z] point, n: [x,y,z] surface normal }, board space)
+export const remotePointers = new Map();
+// Client id -> headset pose ({ h, l, r: [px,py,pz, qx,qy,qz,qw] or null for a missing hand, s: scale }, board space)
+export const remoteAvatars = new Map();
 // Object id -> the other device holding it with the lowest client id ({ clientId, color })
 const remoteHolders = new Map();
 // Everyone in the room, this device first: [{ clientId, name, color, isSelf }] (rebuilt on every change,
@@ -58,6 +69,8 @@ function deviceName() {
 function readRemoteStates() {
     remotePoses.clear();
     remoteHolders.clear();
+    remotePointers.clear();
+    remoteAvatars.clear();
     const users = [];
     for (const [clientId, state] of awareness.getStates()) {
         if (state.user != null) {
@@ -65,6 +78,8 @@ function readRemoteStates() {
         }
         if (clientId === awareness.clientID) continue;
         if (state.live != null) remotePoses.set(state.live.id, state.live);
+        if (state.pointer != null) remotePointers.set(clientId, state.pointer);
+        if (state.avatar != null) remoteAvatars.set(clientId, state.avatar);
         const held = state.holding;
         if (held != null && !(remoteHolders.get(held)?.clientId < clientId)) {
             remoteHolders.set(held, { clientId, color: state.user?.color ?? '#ffffff' });
@@ -84,9 +99,13 @@ export function bindAwareness(roomAwareness) {
         awareness.off('change', readRemoteStates);
         awareness.setLocalStateField('live', null);
         awareness.setLocalStateField('holding', null);
+        awareness.setLocalStateField('pointer', null);
+        awareness.setLocalStateField('avatar', null);
         awareness = null;
         remotePoses.clear();
         remoteHolders.clear();
+        remotePointers.clear();
+        remoteAvatars.clear();
         roomUsers = [];
         for (const listener of listeners) listener();
     };
@@ -120,6 +139,60 @@ function hasMoved(last, position, quaternion, scale) {
     const turned = 1 - Math.abs(quaternion.x * qx + quaternion.y * qy + quaternion.z * qz + quaternion.w * qw) > MIN_TURN;
     const scaled = Math.hypot(scale.x - sx, scale.y - sy, scale.z - sz) > MIN_MOVE;
     return moved || turned || scaled;
+}
+
+// POINTERS ---------------------------------------------------------------------------------------
+
+let lastPointerPublish = 0;
+let lastPointer = null; // last published { p, n }
+
+// Where this device's mouse/touch points (board-space THREE.Vector3 point + normal); throttled, change-only
+export function publishPointer(point, normal) {
+    if (awareness == null) return;
+    const now = performance.now();
+    if (now - lastPointerPublish < PUBLISH_INTERVAL_MS) return;
+    if (lastPointer != null && Math.hypot(point.x - lastPointer.p[0], point.y - lastPointer.p[1], point.z - lastPointer.p[2]) <= MIN_MOVE) return;
+    lastPointerPublish = now;
+    lastPointer = { p: point.toArray(), n: normal.toArray() };
+    awareness.setLocalStateField('pointer', lastPointer);
+}
+
+// The pointer left the scene (off the canvas, or pointing at nothing)
+export function clearPointer() {
+    if (awareness == null || lastPointer == null) return;
+    lastPointer = null;
+    awareness.setLocalStateField('pointer', null);
+}
+
+// AVATARS ----------------------------------------------------------------------------------------
+
+let lastAvatarPublish = 0;
+let lastAvatar = null; // last published { h, l, r, s }
+
+// Largest position change (meters) between two [px,py,pz,…] poses; a hand appearing/disappearing counts as a change
+function poseDelta(a, b) {
+    if (a == null || b == null) return a === b ? 0 : Infinity;
+    return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) + Math.hypot(a[3] - b[3], a[4] - b[4], a[5] - b[5], a[6] - b[6]);
+}
+
+// This headset's pose: head / left / right as [px,py,pz, qx,qy,qz,qw] (board space, hands may be null),
+// scale = avatar scale (1 / board scale). Throttled, and skipped while everything stays still.
+export function publishAvatar(head, left, right, scale) {
+    if (awareness == null) return;
+    const now = performance.now();
+    if (now - lastAvatarPublish < PUBLISH_INTERVAL_MS) return;
+    if (lastAvatar != null && Math.abs(lastAvatar.s - scale) < 1e-4
+        && Math.max(poseDelta(head, lastAvatar.h), poseDelta(left, lastAvatar.l), poseDelta(right, lastAvatar.r)) <= MIN_MOVE * scale) return;
+    lastAvatarPublish = now;
+    lastAvatar = { h: head, l: left, r: right, s: scale };
+    awareness.setLocalStateField('avatar', lastAvatar);
+}
+
+// This device left the headset session
+export function clearAvatar() {
+    if (awareness == null || lastAvatar == null) return;
+    lastAvatar = null;
+    awareness.setLocalStateField('avatar', null);
 }
 
 // LOCKS ------------------------------------------------------------------------------------------
