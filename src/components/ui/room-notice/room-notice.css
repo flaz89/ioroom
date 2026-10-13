@@ -1,0 +1,19 @@
+/* Room notice (RoomNotice.jsx): glass banner at the top center */
+.room-notice {
+    position: absolute;
+    top: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(520px, calc(100% - 140px));
+    padding: .6em 1.1em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+    text-align: center;
+    pointer-events: none;
+}

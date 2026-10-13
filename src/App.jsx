@@ -6,6 +6,7 @@ import LeftToolBar from './components/ui/LeftToolBar';
 import PerfPanel from './components/ui/perf-panel/PerfPanel';
 import { useEffect } from 'react';
 import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
+import RoomNotice from './components/ui/room-notice/RoomNotice';
 
 
 /* 
@@ -16,10 +17,12 @@ import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
 export default function App() {
 
   // Shared room (?room=<id> in the URL): same scene on every device that opens the link.
-  // Skipped when VITE_SYNC_HOST is not configured (local only).
+  // Skipped when VITE_SYNC_HOST is not configured, or without a room (only the owner creates rooms).
   useEffect(() => {
     if (!SYNC_HOST) return;
-    return connectRoom(getRoomId());
+    const room = getRoomId();
+    if (room == null) return;
+    return connectRoom(room);
   }, []);
 
   return (
@@ -29,6 +32,7 @@ export default function App() {
           <LeftToolBar/>
           <RightToolBar/>
           <PerfPanel/>
+          <RoomNotice/>
         </div>
         
       </div>

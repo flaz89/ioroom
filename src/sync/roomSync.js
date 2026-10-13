@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
@@ -13,6 +14,11 @@ import { bindAwareness } from './presence';
 * - local -> room: a store subscription writes the instances whose reference changed, deletes removed ids;
 * - room -> local: remote changes replace objects.instances (selection is cleared if its object is gone).
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
+*
+* ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
+* (opened once with ?admin=<token>, then kept in localStorage); it is sent when connecting, so the server
+* (server/src/index.js) lets them create new rooms. Everyone else can only join existing rooms by link:
+* without ?room they stay in local mode, and a room that does not exist reports "not-found".
 */
 
 // Worker host without protocol, e.g. "ioroom-sync.<account>.workers.dev" (localhost:8787 = wrangler dev).
@@ -20,12 +26,50 @@ import { bindAwareness } from './presence';
 export const SYNC_HOST = import.meta.env.VITE_SYNC_HOST;
 const PARTY = 'room-server'; // kebab-case of the RoomServer Durable Object binding (server/wrangler.jsonc)
 const LOCAL = Symbol('local'); // transaction origin of this device's own edits
+const ROOM_NOT_FOUND = 4004;   // close code of the server for rooms that do not exist (and cannot be created)
+const ADMIN_TOKEN_KEY = 'ioroom.adminToken';
 
-// Room id from ?room=…; a new random room (written into the URL, so it can be shared) when missing
+// Owner token: taken from ?admin=… (then removed from the URL and remembered), else from localStorage
+function readAdminToken() {
+    const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get('admin');
+    try {
+        if (fromUrl) {
+            localStorage.setItem(ADMIN_TOKEN_KEY, fromUrl);
+            url.searchParams.delete('admin');
+            window.history.replaceState(null, '', url);
+            return fromUrl;
+        }
+        return localStorage.getItem(ADMIN_TOKEN_KEY);
+    } catch {
+        return fromUrl; // storage blocked: works for this visit only
+    }
+}
+const adminToken = readAdminToken();
+
+// Whether this device belongs to the owner (can create rooms and share them)
+export const isAdmin = adminToken != null && adminToken !== '';
+
+// ROOM STATUS (React: useRoomStatus): 'local' (no room) | 'connecting' | 'connected' | 'not-found'
+let roomStatus = 'local';
+const statusListeners = new Set();
+function setRoomStatus(status) {
+    roomStatus = status;
+    statusListeners.forEach((listener) => listener());
+}
+export function useRoomStatus() {
+    return useSyncExternalStore(
+        (listener) => { statusListeners.add(listener); return () => statusListeners.delete(listener); },
+        () => roomStatus
+    );
+}
+
+// Room id from ?room=…; when missing, the owner gets a new random room (written into the URL, so it can be
+// shared), anyone else gets null (local mode)
 export function getRoomId() {
     const url = new URL(window.location.href);
     let room = url.searchParams.get('room');
-    if (!room) {
+    if (!room && isAdmin) {
         room = crypto.randomUUID();
         url.searchParams.set('room', room);
         window.history.replaceState(null, '', url);
@@ -37,7 +81,18 @@ export function getRoomId() {
 export function connectRoom(room) {
     const doc = new Y.Doc();
     const yObjects = doc.getMap('objects');
-    const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY });
+    const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY, params: isAdmin ? { token: adminToken } : {} });
+
+    // Status for the UI; a room that does not exist stops the reconnection attempts
+    setRoomStatus('connecting');
+    provider.on('status', ({ status }) => {
+        if (status === 'connected') setRoomStatus('connected');
+    });
+    provider.on('connection-close', (event) => {
+        if (event?.code !== ROOM_NOT_FOUND) return;
+        provider.disconnect();
+        setRoomStatus('not-found');
+    });
     let applyingRemote = false; // true while remote state is written into the store (no echo back)
 
     // local -> room: only what changed (instances are immutable, so a new reference = an edit)
@@ -70,6 +125,7 @@ export function connectRoom(room) {
     const unbindAwareness = bindAwareness(provider.awareness);
 
     return () => {
+        setRoomStatus('local');
         unbindAwareness();
         yObjects.unobserve(pull);
         unsubscribe();

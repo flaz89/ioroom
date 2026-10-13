@@ -3,7 +3,7 @@ import { svg } from "../../utils/svg-logos";
 import { useStore } from "../../store/appStore";
 import SharePanel from "./share-panel/SharePanel";
 import RoomUsers from "./room-users/RoomUsers";
-import { SYNC_HOST } from "../../sync/roomSync";
+import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
 
 export default function LeftToolBar() {
 
@@ -21,8 +21,8 @@ export default function LeftToolBar() {
             <div className="scene-settings">
                 <CircleButton svg={settingsMenu}/>
                 <CircleButton svg={performance} onClick={togglePerf} title={"Performance"}/>
-                {/* shared rooms only (VITE_SYNC_HOST configured) */}
-                {SYNC_HOST && <SharePanel />}
+                {/* shared rooms, owner only for now (guests must not spread new rooms) */}
+                {SYNC_HOST && isAdmin && <SharePanel />}
             </div>
             
         </div>
