@@ -13,6 +13,8 @@ import { useSyncExternalStore } from 'react';
 * grabbed, moved, rotated or deleted, and shows that device's color. If two devices grab the same object
 * at the same time, the lower awareness client id wins and the other one gives up.
 *
+* USERS: each device shares { name, color } (name = device type for now); useRoomUsers() lists them.
+*
 * Without a room (no awareness bound) everything is a no-op: nothing is published, nothing is locked.
 */
 // ~15 updates/s: receivers ease towards each pose (REMOTE_FOLLOW_RATE in SingleObject.jsx), so motion stays
@@ -32,14 +34,35 @@ let lastSent = null; // last published { id, p, q, s }, to skip unchanged poses
 export const remotePoses = new Map();
 // Object id -> the other device holding it with the lowest client id ({ clientId, color })
 const remoteHolders = new Map();
-// React subscribers (useObjectLock), notified when locks may have changed
+// Everyone in the room, this device first: [{ clientId, name, color, isSelf }] (rebuilt on every change,
+// so React can compare it by reference)
+let roomUsers = [];
+// React subscribers (useObjectLock, useRoomUsers), notified when presence may have changed
 const listeners = new Set();
+
+// Device label from the user agent, until people have names/accounts (e.g. "Quest 3", "iPhone", "Mac")
+function deviceName() {
+    const agent = navigator.userAgent;
+    const quest = agent.match(/Quest\s?(Pro|\d+)?/);
+    if (quest) return quest[0].trim();
+    if (/iPad/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1)) return 'iPad';
+    if (/iPhone/.test(agent)) return 'iPhone';
+    if (/Android/.test(agent)) return /Mobile/.test(agent) ? 'Android phone' : 'Android tablet';
+    if (/Macintosh/.test(agent)) return 'Mac';
+    if (/Windows/.test(agent)) return 'Windows PC';
+    if (/Linux/.test(agent)) return 'Linux PC';
+    return 'Device';
+}
 
 // Rebuilds remotePoses / remoteHolders from every other client's awareness state
 function readRemoteStates() {
     remotePoses.clear();
     remoteHolders.clear();
+    const users = [];
     for (const [clientId, state] of awareness.getStates()) {
+        if (state.user != null) {
+            users.push({ clientId, name: state.user.name, color: state.user.color, isSelf: clientId === awareness.clientID });
+        }
         if (clientId === awareness.clientID) continue;
         if (state.live != null) remotePoses.set(state.live.id, state.live);
         const held = state.holding;
@@ -47,13 +70,14 @@ function readRemoteStates() {
             remoteHolders.set(held, { clientId, color: state.user?.color ?? '#ffffff' });
         }
     }
+    roomUsers = users.sort((a, b) => (b.isSelf - a.isSelf) || (a.clientId - b.clientId));
     for (const listener of listeners) listener();
 }
 
 // Called by connectRoom: starts sharing poses through this awareness; returns the unbind function
 export function bindAwareness(roomAwareness) {
     awareness = roomAwareness;
-    awareness.setLocalStateField('user', { color: USER_COLORS[awareness.clientID % USER_COLORS.length] });
+    awareness.setLocalStateField('user', { name: deviceName(), color: USER_COLORS[awareness.clientID % USER_COLORS.length] });
     awareness.on('change', readRemoteStates);
     readRemoteStates();
     return () => {
@@ -63,6 +87,7 @@ export function bindAwareness(roomAwareness) {
         awareness = null;
         remotePoses.clear();
         remoteHolders.clear();
+        roomUsers = [];
         for (const listener of listeners) listener();
     };
 }
@@ -117,10 +142,16 @@ export function isLockedByOther(id) {
     return !holdingHere || holder.clientId < awareness.clientID;
 }
 
+const subscribe = (listener) => { listeners.add(listener); return () => listeners.delete(listener); };
+
 // React: color of the other device that owns `id`, or null when the object is free here
 export function useObjectLock(id) {
-    return useSyncExternalStore(
-        (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
-        () => (isLockedByOther(id) ? remoteHolders.get(id).color : null)
-    );
+    return useSyncExternalStore(subscribe, () => (isLockedByOther(id) ? remoteHolders.get(id).color : null));
+}
+
+// USERS ------------------------------------------------------------------------------------------
+
+// React: everyone in the room, this device first ([] without a room)
+export function useRoomUsers() {
+    return useSyncExternalStore(subscribe, () => roomUsers);
 }

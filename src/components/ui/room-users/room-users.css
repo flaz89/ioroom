@@ -1,0 +1,33 @@
+/* Room users (RoomUsers.jsx): pills stacked at the top left, same glass style as the toolbars */
+.room-users {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.room-user {
+    display: flex;
+    align-items: center;
+    gap: .5em;
+    padding: .35em .8em .35em .5em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    box-shadow: 0 6px 18px rgba(2, 6, 23, 0.45);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .75em;
+    white-space: nowrap;
+}
+
+.room-user-dot {
+    width: .8em;
+    height: .8em;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.room-user-self {
+    opacity: .6;
+}
