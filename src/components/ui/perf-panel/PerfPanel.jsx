@@ -11,7 +11,7 @@ const megabytes = (bytes) => (bytes == null ? '-' : `${(bytes / 1048576).toFixed
 * GPU time and GPU memory are WebGPU-only, JS heap is Chromium-only.
 */
 export default function PerfPanel() {
-    const isVisible = useStore((state) => state.settings.perfVisibility);
+    const isVisible = useStore((state) => state.openPanel === 'perf');
     const stats = useStore((state) => state.perf.stats);
 
     if (!isVisible || !stats) return null;

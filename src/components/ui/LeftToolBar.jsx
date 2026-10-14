@@ -9,8 +9,9 @@ import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
 
 export default function LeftToolBar() {
 
-    const togglePerf = useStore((state) => state.togglePerf);
-    const isPerfVisible = useStore((state) => state.settings.perfVisibility);
+    // Performance stats: one of the toolbar panels (only one open at a time, store/slices/panelSlice.js)
+    const isPerfVisible = useStore((state) => state.openPanel === 'perf');
+    const togglePanel = useStore((state) => state.togglePanel);
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -28,7 +29,7 @@ export default function LeftToolBar() {
                 {/* shared rooms, owner only for now (guests must not spread new rooms) */}
                 {SYNC_HOST && isAdmin && <RoomsPanel />}
                 {/* second to last */}
-                <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
+                <CircleButton svg={performance} onClick={() => togglePanel('perf')} isActive={isPerfVisible} title={"Performance"}/>
                 {SYNC_HOST && isAdmin && <SharePanel />}
             </div>
             

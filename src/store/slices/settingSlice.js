@@ -5,7 +5,6 @@ export const ROTATION_SNAP_STEPS = [1, 5, 15, 45, 90]; // degrees
 export const createSettingsSlice = (set) => ({
 
     settings: {
-        perfVisibility: false,
         gridSnap: false,  // moved objects snap to grid cells and 15° yaw steps (see surfaceDrag.js)
         gridSnapStep: 5,  // grid cell size in CENTIMETERS (real cm, also inside the tabletop model)
         rotationSnap: false,  // rotations snap to rotationSnapStep (yaw for drags, every gizmo axis)
@@ -32,13 +31,5 @@ export const createSettingsSlice = (set) => ({
     toggleGridSnap: () =>
         set((state) => ({
             settings: { ...state.settings, gridSnap: !state.settings.gridSnap }
-        })),
-
-    togglePerf: () => 
-        set((state) => ({
-            settings: {
-                ...state.settings,
-                perfVisibility: !state.settings.perfVisibility
-            }
         }))
 })

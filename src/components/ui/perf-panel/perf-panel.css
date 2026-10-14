@@ -53,6 +53,16 @@
 .perf-panel-row dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 /* ------------------- MOBILE ---------------------- */
+/* Centered card, one metric per row: fits the portrait screen without covering the toolbars */
 @media (max-width: 767px) {
-    .perf-panel { min-width: 0; width: calc(100% - 20px); bottom: 70px; }
+    .perf-panel {
+        min-width: 0;
+        width: min(260px, calc(100% - 32px));
+        top: 50%;
+        bottom: auto;
+        transform: translate(-50%, -50%);
+        font-size: 13px;
+    }
+    .perf-panel-header { max-width: none; white-space: normal; }
+    .perf-panel-grid { grid-template-columns: 1fr; row-gap: .35em; }
 }

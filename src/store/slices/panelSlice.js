@@ -1,7 +1,7 @@
 /*
 * Which toolbar menu/panel is open: only one at a time, so opening one closes the previous.
-* Names: 'sun' | 'rooms' | 'share' | 'objects' | 'users' (null = none). Per device, never synced.
-* The performance stats overlay is not a menu and stays independent (settings.perfVisibility).
+* Names: 'sun' | 'rooms' | 'share' | 'objects' | 'users' | 'perf' (null = none). Per device, never synced.
+* 'perf' = performance stats (DOM PerfPanel, and the stats panel of the VR wrist menu).
 */
 export const createPanelSlice = (set) => ({
     openPanel: null,

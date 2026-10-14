@@ -36,7 +36,7 @@ export default function Scene({xrStore}) {
     const setReadyBackend = useStore((state) => state.setReadyBackend);
 
     const isGridVisible = useStore((state) => state.grid.visible);
-    const isPerfVisible = useStore((state) => state.settings.perfVisibility);
+    const isPerfVisible = useStore((state) => state.openPanel === 'perf');
     const deselectObject = useStore((state) => state.deselectObject);
     
 

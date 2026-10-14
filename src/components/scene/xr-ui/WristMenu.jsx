@@ -65,8 +65,9 @@ export default function WristMenu() {
     const [isCatalogOpen, setIsCatalogOpen] = useState(false);
     const getThree = useThree((state) => state.get);
 
-    const isPerfVisible = useStore((state) => state.settings.perfVisibility);
-    const togglePerf = useStore((state) => state.togglePerf);
+    const isPerfVisible = useStore((state) => state.openPanel === 'perf');
+    const togglePanel = useStore((state) => state.togglePanel);
+    const togglePerf = () => togglePanel('perf');
     const isTabletop = useStore((state) => state.view.mode === 'tabletop');
     const toggleTabletop = useStore((state) => state.toggleTabletop);
     const { gridSnap, gridSnapStep, rotationSnap, rotationSnapStep } = useStore((state) => state.settings);
