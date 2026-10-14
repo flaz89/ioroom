@@ -7,14 +7,35 @@ import { useStore } from '../store/appStore';
 * When the Canvas is remounted with a different renderer, <XR> re-binds the new renderer's
 * WebXRManager to this same store, so the store survives backend swaps.
 */
+/*
+* Ray cursor size (meters, world): pmndrs draws a fixed 10 cm glow where a ray hits. Right for a 1:1
+* room, huge on the tabletop model (~50 cm wide, scale 1/12): there it shrinks with the model.
+* Calibration knobs: tune on the headset.
+*/
+const CURSOR_SIZE = 0.1;
+const TABLETOP_CURSOR_SIZE = 0.015;
+
+const handOptions = (cursorSize) => ({
+    // Poking a button with the index finger lasts longer than pmndrs' default 300 ms click window
+    // (press -> release), which made touch presses never fire onClick.
+    touchPointer: { clickThresholdMs: 1500 },
+    rayPointer: { cursorModel: { size: cursorSize } }
+});
+const controllerOptions = (cursorSize) => ({ rayPointer: { cursorModel: { size: cursorSize } } });
+
 export const xrStore = createXRStore({
     // No desktop VR emulator (pmndrs injects one on localhost by default): testing happens on the headset
     emulate: false,
-    hand: {
-        // Poking a button with the index finger lasts longer than pmndrs' default 300 ms click window
-        // (press -> release), which made touch presses never fire onClick.
-        touchPointer: { clickThresholdMs: 1500 }
-    }
+    hand: handOptions(CURSOR_SIZE),
+    controller: controllerOptions(CURSOR_SIZE)
+});
+
+// Tabletop on/off: resize the ray cursors (setHand/setController swap the pmndrs input implementation options)
+useStore.subscribe((state, previousState) => {
+    if (state.view.mode === previousState.view.mode) return;
+    const size = state.view.mode === 'tabletop' ? TABLETOP_CURSOR_SIZE : CURSOR_SIZE;
+    xrStore.setHand(handOptions(size));
+    xrStore.setController(controllerOptions(size));
 });
 
 /*

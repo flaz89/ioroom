@@ -24,7 +24,16 @@ export function acceptsWristPointer(pointerId, pointerType, pointerState) {
 }
 
 /*
+* Panels placed in the room (e.g. the VR sun panel): also the hand ray (pinch to press, keep pinching to
+* drag a slider). Unlike the wrist menu, these panels are aimed at on purpose, far from the scene's objects.
+*/
+export function acceptsPanelPointer(_pointerId, pointerType) {
+    return pointerType === 'touch' || pointerType === 'ray';
+}
+
+/*
 * Pointer filter used by VRButton / VRSlider below this provider: acceptsPointer by default, the
-* WristMenu provides acceptsWristPointer for everything attached to the wrist (buttons, catalog...).
+* WristMenu provides acceptsWristPointer for everything attached to the wrist (buttons, catalog...),
+* VRSunPanel provides acceptsPanelPointer.
 */
 export const PointerFilterContext = createContext(acceptsPointer);

@@ -9,6 +9,7 @@ import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
 import VRSlider from './VRSlider';
 import VRCompassBar from './VRCompassBar';
+import { PointerFilterContext, acceptsPanelPointer } from './pointers';
 
 /*
 * In-VR sun panel (store openPanel 'sun', opened from the wrist menu): the same settings as the desktop
@@ -19,7 +20,8 @@ import VRCompassBar from './VRCompassBar';
 *
 * Placement: fixed in the world, in front of the user and a bit below the eyes when it opens (not on the
 * wrist: a slider attached to the moving hand could not be dragged). Close with X or the wrist button.
-* Distance within arm's reach: hands press it with the index fingertip, controllers with the ray.
+* Distance within arm's reach: hands press it with the index fingertip or aim with the hand ray (pinch),
+* controllers with the ray (acceptsPanelPointer, pointers.js).
 * Calibration knobs: tune on the headset.
 */
 const DISTANCE = 0.45;      // meters in front of the eyes (horizontal)
@@ -87,6 +89,7 @@ export default function VRSunPanel() {
     const setShowingArc = (patch) => { setSun(patch); showSunArc(); };
 
     return (
+        <PointerFilterContext.Provider value={acceptsPanelPointer}>
         <group ref={groupRef}>
             {/* Background: catches presses so they never reach the scene behind the panel.
                 renderOrder -1: drawn before the (transparent) texts and controls on top of it */}
@@ -124,5 +127,6 @@ export default function VRSunPanel() {
                 );
             })}
         </group>
+        </PointerFilterContext.Provider>
     );
 }
