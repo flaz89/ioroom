@@ -68,4 +68,33 @@
     .experience-mode { display: none;}
     .right-menu { padding: 10px 10px 10px 0; }
     .left-menu { padding: 10px 0px 10px 10px; }
+
+    /* Every toolbar menu opens as a card centered on the screen (portrait phones), like the performance
+       panel; "My environments" and Share are centered modals everywhere. `.ui` prefix: wins over the
+       desktop placement rules in each component's own css. Add new menus to this list. */
+    .ui .sun-panel,
+    .ui .objects-menu,
+    .ui .room-users-list {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        right: auto;
+        bottom: auto;
+        margin: 0;
+        transform: translate(-50%, -50%);
+        z-index: 100;
+        width: min(280px, calc(100vw - 32px));
+        box-sizing: border-box;
+    }
+
+    /* The users list has no card of its own on desktop: give it the glass card here */
+    .ui .room-users-list {
+        align-items: stretch;
+        padding: .6em;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 15px;
+        background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    }
 }

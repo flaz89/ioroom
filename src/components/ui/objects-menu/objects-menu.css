@@ -101,10 +101,4 @@
 
 
 
-/* ------------------- MOBILE ---------------------- */
-
-@media (max-width: 767px) {
-    .objects-menu {
-        bottom: 0%;
-    }
-}
+/* MOBILE: centered card, see ui.css */
