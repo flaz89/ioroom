@@ -1,15 +1,21 @@
-/* "My environments" panel (RoomsPanel.jsx): floats to the right of the left toolbar, same glass style as the share panel */
+/* "My environments" panel (RoomsPanel.jsx): modal centered on the screen over a dimmed backdrop, same glass style as the share panel */
 .rooms-control {
-    position: relative;
     display: flex;
 }
 
-.rooms-panel {
-    position: absolute;
-    left: calc(100% + 12px);
-    bottom: 0;
+.rooms-backdrop {
+    position: fixed;
+    inset: 0;
     z-index: 100;
-    width: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.45);
+    pointer-events: all;
+}
+
+.rooms-panel {
+    width: min(340px, calc(100vw - 32px));
     max-height: 70vh;
     padding: .8em;
     display: flex;

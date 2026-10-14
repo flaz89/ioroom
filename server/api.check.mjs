@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Opens a room and returns { doc, provider, closeCode }
 function open(id) {
   const doc = new Y.Doc(); const res = { doc, closeCode: null };
-  res.provider = new YProvider(H, id, doc, { party: 'room-server' });
+  res.provider = new YProvider(H, id, doc, { party: 'rooms' });
   res.provider.on('connection-close', (e) => { res.closeCode ??= e?.code; });
   return res;
 }

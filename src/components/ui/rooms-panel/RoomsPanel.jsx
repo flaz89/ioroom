@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
 import { getRoomId } from '../../../sync/roomSync';
@@ -17,15 +17,15 @@ function openRoom(id) {
 const formatDate = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 
 /*
-* "My environments" toolbar button (owner only for now): a panel next to the left toolbar listing the
-* saved environments (shared rooms), most recently edited first. Click a name to open it; per row:
-* rename (inline field), duplicate, delete (second click confirms). "New" creates an empty environment
-* and opens it. Opens by itself when the page has no room, so the owner starts by picking one.
+* "My environments" toolbar button (owner only for now): a centered modal listing the saved environments
+* (shared rooms), most recently edited first. Click a name to open it; per row: rename (inline field),
+* duplicate, delete (second click confirms). "New" creates an empty environment and opens it.
+* Closed by default; a click on the dimmed backdrop closes it.
 * Server side: server/src/index.js; requests: sync/roomsApi.js.
 */
 export default function RoomsPanel() {
     const currentRoom = getRoomId();
-    const [isOpen, setIsOpen] = useState(currentRoom == null);
+    const [isOpen, setIsOpen] = useState(false);
     const [rooms, setRooms] = useState(null);       // null while loading
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);        // a request is running: actions disabled
@@ -57,12 +57,6 @@ export default function RoomsPanel() {
         run(async () => {});
     };
 
-    // Open from the start (page without a room): first load
-    useEffect(() => {
-        if (currentRoom != null) return;
-        listRooms().then(setRooms).catch((err) => setError(err.message));
-    }, [currentRoom]);
-
     const create = async () => {
         setBusy(true);
         try {
@@ -91,7 +85,8 @@ export default function RoomsPanel() {
         <div className="rooms-control">
             <CircleButton svg={svg.environments} onClick={toggle} title="My environments" />
             {isOpen && (
-                <div className="rooms-panel">
+                <div className="rooms-backdrop" onClick={() => setIsOpen(false)}>
+                <div className="rooms-panel" onClick={(event) => event.stopPropagation()}>
                     <div className="rooms-header">
                         <span className="rooms-title">My environments</span>
                         <button className="rooms-new" onClick={create} disabled={busy}>+ New</button>
@@ -134,6 +129,7 @@ export default function RoomsPanel() {
                             </li>
                         ))}
                     </ul>
+                </div>
                 </div>
             )}
         </div>

@@ -8,7 +8,7 @@ import * as Y from 'yjs';
 * Each room is a Durable Object holding a Yjs document; every client of the room (PC, tablet, phone,
 * headset) syncs the same document over a WebSocket (client side: src/sync/roomSync.js).
 * The document is persisted in the Durable Object's own storage, so a room survives when everyone leaves.
-* URL: wss://<worker host>/parties/room-server/<room id>
+* URL: wss://<worker host>/parties/rooms/<room id>
 *
 * ACCESS (development phase): only the owner manages rooms, through the REST API below authenticated with
 * `Authorization: Bearer <ADMIN_TOKEN>` (Worker secret: `npx wrangler secret put ADMIN_TOKEN`).
@@ -125,7 +125,7 @@ export class RoomRegistry extends DurableObject {
 }
 
 const registry = (env) => env.RoomRegistry.get(env.RoomRegistry.idFromName(OWNER_REGISTRY));
-const room = (env, id) => getServerByName(env.RoomServer, id);
+const room = (env, id) => getServerByName(env.Rooms, id);
 
 // CORS: the app runs on another origin (Vercel, localhost). Bearer token, no cookies, so "*" is fine.
 const CORS = {

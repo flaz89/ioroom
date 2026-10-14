@@ -6,9 +6,10 @@
   "compatibility_date": "2026-09-01",
   "durable_objects": {
     "bindings": [
-      // Binding name -> URL segment "room-server" (routePartykitRequest kebab-cases it): keep it stable,
-      // the client connects to /parties/room-server/<room id>. The class behind it can change.
-      { "name": "RoomServer", "class_name": "Room" },
+      // Binding name -> URL segment "rooms" (routePartykitRequest kebab-cases it): the client connects to
+      // /parties/rooms/<room id> (PARTY in src/sync/roomSync.js). The binding must not share its name with a
+      // deleted class: Cloudflare refuses the migration (error 10061), hence "Rooms" and not "RoomServer".
+      { "name": "Rooms", "class_name": "Room" },
       // List of the owner's rooms ("My environments" API)
       { "name": "RoomRegistry", "class_name": "RoomRegistry" }
     ]

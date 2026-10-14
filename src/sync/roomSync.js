@@ -24,7 +24,7 @@ import { bindAwareness } from './presence';
 // Worker host without protocol, e.g. "ioroom-sync.<account>.workers.dev" (localhost:8787 = wrangler dev).
 // Unset = no sync: the app works locally as before.
 export const SYNC_HOST = import.meta.env.VITE_SYNC_HOST;
-const PARTY = 'room-server'; // kebab-case of the RoomServer Durable Object binding (server/wrangler.jsonc)
+const PARTY = 'rooms'; // kebab-case of the Rooms Durable Object binding (server/wrangler.jsonc)
 const LOCAL = Symbol('local'); // transaction origin of this device's own edits
 const ROOM_NOT_FOUND = 4004;   // close code of the server for rooms that do not exist (and cannot be created)
 const ADMIN_TOKEN_KEY = 'ioroom.adminToken';
@@ -32,7 +32,9 @@ const ADMIN_TOKEN_KEY = 'ioroom.adminToken';
 // Owner token: taken from ?admin=… (then removed from the URL and remembered), else from localStorage
 function readAdminToken() {
     const url = new URL(window.location.href);
-    const fromUrl = url.searchParams.get('admin');
+    // A query string decodes "+" as a space: tokens are base64-like and never contain spaces, so map them
+    // back (a token with "+" pasted unencoded into ?admin= would otherwise be saved wrong -> 401 Unauthorized)
+    const fromUrl = url.searchParams.get('admin')?.replaceAll(' ', '+');
     try {
         if (fromUrl) {
             localStorage.setItem(ADMIN_TOKEN_KEY, fromUrl);

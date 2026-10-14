@@ -4,7 +4,8 @@ import './room-notice.css';
 // Messages for the shared-room states a guest can end up in (see sync/roomSync.js)
 const MESSAGES = {
     local: 'Local mode: changes are not saved. Open a room link shared by the owner to join a project.',
-    'not-found': 'This room does not exist. Ask the owner for a valid link.'
+    'not-found': 'This room does not exist. Ask the owner for a valid link.',
+    adminLocal: 'Local mode: changes are not saved. Open or create an environment from "My environments".'
 };
 
 /*
@@ -13,9 +14,8 @@ const MESSAGES = {
 */
 export default function RoomNotice() {
     const status = useRoomStatus();
-    // The owner picks environments from the "My environments" panel (open on its own in local mode)
-    if (isAdmin && status === 'local') return null;
-    const message = MESSAGES[status];
+    // The owner opens or creates environments from the "My environments" toolbar button
+    const message = isAdmin && status === 'local' ? MESSAGES.adminLocal : MESSAGES[status];
     if (!SYNC_HOST || message == null) return null;
     return <div className="room-notice" role="status">{message}</div>;
 }
