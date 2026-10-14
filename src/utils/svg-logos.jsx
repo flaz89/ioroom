@@ -53,6 +53,12 @@ export const svg = {
         <path d="M12.8 5.7L7.2 8.8M7.2 11.2l5.6 3.1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // stacked layers (list of saved environments)
+    environments: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 2.5l7.5 4-7.5 4-7.5-4z" fill="currentColor"/>
+        <path d="M2.5 10l7.5 4 7.5-4M2.5 13.5l7.5 4 7.5-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>,
+
     trash: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M2 2H22M3.25 2L4.5 19.1429C4.5 19.9006 4.76339 20.6273 5.23223 21.1632C5.70107 21.699 6.33696 22 7 22H17C17.663 22 18.2989 21.699 18.7678 21.1632C19.2366 20.6273 19.5 19.9006 19.5 19.1429L20.75 2M9.5 9.14286L14.5 14.8571M14.5 9.14286L9.5 14.8571" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
     </svg>

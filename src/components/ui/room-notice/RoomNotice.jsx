@@ -1,4 +1,4 @@
-import { SYNC_HOST, useRoomStatus } from '../../../sync/roomSync';
+import { SYNC_HOST, isAdmin, useRoomStatus } from '../../../sync/roomSync';
 import './room-notice.css';
 
 // Messages for the shared-room states a guest can end up in (see sync/roomSync.js)
@@ -13,6 +13,8 @@ const MESSAGES = {
 */
 export default function RoomNotice() {
     const status = useRoomStatus();
+    // The owner picks environments from the "My environments" panel (open on its own in local mode)
+    if (isAdmin && status === 'local') return null;
     const message = MESSAGES[status];
     if (!SYNC_HOST || message == null) return null;
     return <div className="room-notice" role="status">{message}</div>;

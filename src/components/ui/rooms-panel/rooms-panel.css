@@ -1,0 +1,111 @@
+/* "My environments" panel (RoomsPanel.jsx): floats to the right of the left toolbar, same glass style as the share panel */
+.rooms-control {
+    position: relative;
+    display: flex;
+}
+
+.rooms-panel {
+    position: absolute;
+    left: calc(100% + 12px);
+    bottom: 0;
+    z-index: 100;
+    width: 300px;
+    max-height: 70vh;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.rooms-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.rooms-title { font-weight: 600; }
+
+.rooms-panel button {
+    padding: .35em .6em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+}
+
+.rooms-panel button:disabled { opacity: .5; cursor: default; }
+.rooms-panel button:not(:disabled):active { scale: .97; }
+
+/* Primary action: same orange as the share panel's copy button */
+.rooms-panel .rooms-new {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.85) 0%, rgba(255, 140, 0, 0.85) 70%);
+    font-weight: 600;
+}
+
+.rooms-error { color: #ff8a8a; }
+.rooms-empty { opacity: .7; }
+
+.rooms-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: .4em;
+}
+
+.rooms-item {
+    padding: .4em;
+    display: flex;
+    flex-direction: column;
+    gap: .35em;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+/* The environment open on this page */
+.rooms-item.current { border-color: rgba(255, 160, 30, 0.8); }
+
+.rooms-panel .rooms-open {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .15em;
+    border: none;
+    background: none;
+    padding: .1em .2em;
+    text-align: left;
+}
+
+.rooms-name { font-weight: 600; overflow-wrap: anywhere; }
+.rooms-date { opacity: .6; font-size: .9em; }
+
+.rooms-name-input {
+    padding: .35em .5em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font: inherit;
+}
+
+.rooms-actions {
+    display: flex;
+    gap: .3em;
+}
+
+.rooms-panel .rooms-actions button { flex: 1; font-size: .9em; }
+.rooms-panel .rooms-actions .danger { color: #ffb0b0; }

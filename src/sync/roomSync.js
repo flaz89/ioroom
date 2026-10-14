@@ -16,9 +16,9 @@ import { bindAwareness } from './presence';
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 *
 * ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
-* (opened once with ?admin=<token>, then kept in localStorage); it is sent when connecting, so the server
-* (server/src/index.js) lets them create new rooms. Everyone else can only join existing rooms by link:
-* without ?room they stay in local mode, and a room that does not exist reports "not-found".
+* (opened once with ?admin=<token>, then kept in localStorage), used by the "My environments" API of the
+* server (server/src/index.js) to create, rename, duplicate and delete rooms. Joining a room needs only its
+* link: without ?room the app stays in local mode, and a room that does not exist reports "not-found".
 */
 
 // Worker host without protocol, e.g. "ioroom-sync.<account>.workers.dev" (localhost:8787 = wrangler dev).
@@ -45,7 +45,7 @@ function readAdminToken() {
         return fromUrl; // storage blocked: works for this visit only
     }
 }
-const adminToken = readAdminToken();
+export const adminToken = readAdminToken();
 
 // Whether this device belongs to the owner (can create rooms and share them)
 export const isAdmin = adminToken != null && adminToken !== '';
@@ -64,24 +64,16 @@ export function useRoomStatus() {
     );
 }
 
-// Room id from ?room=…; when missing, the owner gets a new random room (written into the URL, so it can be
-// shared), anyone else gets null (local mode)
+// Room id from ?room=…, null when missing (local mode)
 export function getRoomId() {
-    const url = new URL(window.location.href);
-    let room = url.searchParams.get('room');
-    if (!room && isAdmin) {
-        room = crypto.randomUUID();
-        url.searchParams.set('room', room);
-        window.history.replaceState(null, '', url);
-    }
-    return room;
+    return new URL(window.location.href).searchParams.get('room');
 }
 
 // Connects this device to `room`; returns the disconnect function
 export function connectRoom(room) {
     const doc = new Y.Doc();
     const yObjects = doc.getMap('objects');
-    const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY, params: isAdmin ? { token: adminToken } : {} });
+    const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY });
 
     // Status for the UI; a room that does not exist stops the reconnection attempts
     setRoomStatus('connecting');

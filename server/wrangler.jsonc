@@ -6,11 +6,18 @@
   "compatibility_date": "2026-09-01",
   "durable_objects": {
     "bindings": [
-      // Binding name -> URL segment "room-server" (routePartykitRequest kebab-cases it)
-      { "name": "RoomServer", "class_name": "RoomServer" }
+      // Binding name -> URL segment "room-server" (routePartykitRequest kebab-cases it): keep it stable,
+      // the client connects to /parties/room-server/<room id>. The class behind it can change.
+      { "name": "RoomServer", "class_name": "Room" },
+      // List of the owner's rooms ("My environments" API)
+      { "name": "RoomRegistry", "class_name": "RoomRegistry" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["RoomServer"] }
+    { "tag": "v1", "new_sqlite_classes": ["RoomServer"] },
+    // v2: wipe every room created before access control (deleting a class destroys all its objects'
+    // data), new rooms live in the "Room" class. To wipe again: same pattern with a new class name.
+    { "tag": "v2", "deleted_classes": ["RoomServer"], "new_sqlite_classes": ["Room"] },
+    { "tag": "v3", "new_sqlite_classes": ["RoomRegistry"] }
   ]
 }
