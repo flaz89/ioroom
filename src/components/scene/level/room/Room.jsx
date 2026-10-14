@@ -1,4 +1,5 @@
-// Marks wall meshes for surfaceDrag: objects placed on them turn to face into the room
+// Marks wall meshes for surfaceDrag: objects placed on them turn to face into the room.
+// Every wall casts AND receives shadows: the sun can come from any side (sun light: components/light/Light.jsx).
 const WALL_USER_DATA = { surface: 'wall' };
 
 export default function Room({sizes}) {
@@ -38,6 +39,7 @@ export default function Room({sizes}) {
                     wallHeight * .5,
                     0
                 ]}
+                castShadow
                 receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, z]}/>
@@ -53,6 +55,7 @@ export default function Room({sizes}) {
                     0
                 ]}
                 castShadow
+                receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, z]}/>
                 <meshStandardMaterial />
@@ -62,7 +65,9 @@ export default function Room({sizes}) {
             <mesh
                 userData={WALL_USER_DATA}
                 position={[0, wallHeight * .5, -(z * .5) - wallThickness * .5]}
-                rotation-y={Math.PI * .5}receiveShadow
+                rotation-y={Math.PI * .5}
+                castShadow
+                receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, x + wallThickness * 2]}/>
                 <meshStandardMaterial />

@@ -10,6 +10,8 @@ import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import { useStore } from "../../../store/appStore";
 import Light from "../../light/Light";
+import { CameraHeadingTracker } from "../sun/CameraHeadingTracker";
+import CompassLetters from "../sun/CompassLetters";
 
 export default function Level() {
 
@@ -31,6 +33,9 @@ export default function Level() {
             <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room sizes={[6, 6]}/>}>
                 {/* Sun + ambient: inside the board, so light, sun arc and shadows follow the tabletop model */}
                 <Light />
+                {/* Compass: view direction in board space (compass bars), N/E/S/W on the floor around the room */}
+                <CameraHeadingTracker />
+                <CompassLetters />
                 <ObjectRenderer isTabletop={isTabletop} />
                 {/* shared rooms: other people's pointers (and this device's, published) */}
                 <RemotePointers />

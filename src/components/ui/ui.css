@@ -77,9 +77,12 @@
        so it sits level with the bottom buttons of the two toolbars. */
     .ui .objects-selection {
         position: fixed;
-        left: 50%;
+        left: 0;
+        right: 0;
+        width: fit-content;
+        margin: 0 auto; /* centered WITHOUT transform: a transform would become the containing block of
+                           the fixed objects menu inside it, which then opened off screen */
         bottom: calc(10px + 1em + .5em + 2px);
-        transform: translateX(-50%);
         flex-direction: row;
     }
     /* Delete (shown with a selection) next to "+", without moving "+" off center */

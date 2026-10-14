@@ -7,7 +7,6 @@ import SceneGrid from './helpers/SceneGrid';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import PerfSampler from './perf/PerfSampler';
-import { CameraHeadingTracker } from './sun/cameraHeading';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -62,9 +61,6 @@ export default function Scene({xrStore}) {
 
                 {/* Performance stats for the DOM panel (both renderers) */}
                 {isPerfVisible && <PerfSampler />}
-
-                {/* View direction for the DOM compass bar */}
-                <CameraHeadingTracker />
 
                 <OrbitControls 
                     makeDefault 

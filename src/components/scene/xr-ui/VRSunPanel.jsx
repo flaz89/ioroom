@@ -8,11 +8,13 @@ import { formatDay, formatTime } from '../sun/format';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
 import VRSlider from './VRSlider';
+import VRCompassBar from './VRCompassBar';
 
 /*
 * In-VR sun panel (store openPanel 'sun', opened from the wrist menu): the same settings as the desktop
 * sun panel (components/ui/sun-panel/SunPanel.jsx), shared with the room (sync/sunSync.js).
-* - everyone: day and time sliders (the sun arc shows while they move, like on desktop);
+* - everyone: compass bar on top (directions, sun/moon), day and time sliders (the sun arc shows while
+*   they move, like on desktop);
 * - owner only (everyone when sync is off): location (< >, cycling the city list) and north slider.
 *
 * Placement: fixed in the world, in front of the user and a bit below the eyes when it opens (not on the
@@ -72,8 +74,8 @@ export default function VRSunPanel() {
         group.lookAt(_eye); // a plane's front (+Z) towards the eyes, slightly tilted up
     }, [getThree]);
 
-    // Rows from the top: title, [location], day, time, [north]
-    const rows = canEditEnvironment ? ['city', 'day', 'time', 'north'] : ['day', 'time'];
+    // Rows from the top: title, compass, [location], day, time, [north]
+    const rows = canEditEnvironment ? ['compass', 'city', 'day', 'time', 'north'] : ['compass', 'day', 'time'];
     const height = TITLE_H + rows.length * ROW + PAD;
     const top = height / 2;
     const rowY = (index) => top - TITLE_H - ROW * (index + 0.5);
@@ -98,6 +100,9 @@ export default function VRSunPanel() {
 
             {rows.map((row, index) => {
                 const y = rowY(index);
+                if (row === 'compass') return (
+                    <VRCompassBar key={row} width={innerWidth} height={0.034} position={[0, y, 0.001]} />
+                );
                 if (row === 'city') return (
                     <group key={row} position={[0, y, 0.001]}>
                         <VRButton label="<" size={[0.03, 0.03]} onClick={() => cycleCity(-1)} position={[-innerWidth / 2 + 0.015, 0, 0]} />

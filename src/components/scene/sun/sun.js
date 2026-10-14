@@ -46,12 +46,24 @@ export function sunPosition(date, lat, lon) {
     return horizontal(d, lat, lon, rightAscension(L, 0), declination(L, 0));
 }
 
+// One formatter per time zone: creating an Intl.DateTimeFormat is slow (the sun arc converts ~150 times
+// per day change, and on the headset that made the day slider lag)
+const formatters = new Map();
+function formatterFor(timeZone) {
+    let formatter = formatters.get(timeZone);
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone, hourCycle: 'h23',
+            year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'
+        });
+        formatters.set(timeZone, formatter);
+    }
+    return formatter;
+}
+
 // Offset of `timeZone` from UTC at instant `ms`, in ms (e.g. +2 h for Rome in summer)
 function timeZoneOffset(ms, timeZone) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone, hourCycle: 'h23',
-        year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric'
-    }).formatToParts(new Date(ms));
+    const parts = formatterFor(timeZone).formatToParts(new Date(ms));
     const get = (type) => Number(parts.find((part) => part.type === type).value);
     const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
     return asUtc - Math.floor(ms / 1000) * 1000;
