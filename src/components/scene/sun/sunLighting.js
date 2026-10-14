@@ -33,6 +33,17 @@ export function sunAt({ cityId, day, minutes }, atMinutes = minutes) {
     return sunPosition(date, city.lat, city.lon);
 }
 
+/*
+* Where to draw the sun or the moon on the compasses (degrees, compass bearing): the sun while it is up;
+* after sunset the moon, opposite the sun. ponytail: symbolic moon (no lunar ephemeris), the compasses
+* only need a night marker.
+*/
+export function skyMarkers(sun) {
+    const { azimuth, altitude } = sunAt(sun);
+    const degrees = azimuth * 180 / Math.PI;
+    return altitude > 0 ? { sunAzimuth: degrees, moonAzimuth: null } : { sunAzimuth: null, moonAzimuth: (degrees + 180) % 360 };
+}
+
 export function sunLighting(sun) {
     const { azimuth, altitude } = sunAt(sun);
     const height = Math.sin(altitude); // 0 at the horizon, 1 at the zenith

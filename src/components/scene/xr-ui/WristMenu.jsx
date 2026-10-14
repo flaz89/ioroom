@@ -10,10 +10,12 @@ import VRButton from './VRButton';
 import { BUTTON_SIZE } from './layout';
 import VRCatalogPanel from './VRCatalogPanel';
 import VRStatsPanel from './VRStatsPanel';
+import { PointerFilterContext, acceptsWristPointer } from './pointers';
 
 /*
 * Menu attached to the LEFT controller (or left hand when hand tracking is active), pressed with
-* the right hand: ray + trigger/pinch, or poking with the index finger.
+* the right hand: ray + trigger/pinch, or poking with the index finger. The left hand's own fingers
+* can never press it (acceptsWristPointer, pointers.js): curling them used to hit the buttons.
 * It is shown only while it faces the eyes (palm/wrist turned towards the face): with the palm
 * down or a closed fist it disappears, so fingers cannot press it by accident.
 *
@@ -68,6 +70,7 @@ export default function WristMenu() {
     const isPerfVisible = useStore((state) => state.openPanel === 'perf');
     const togglePanel = useStore((state) => state.togglePanel);
     const togglePerf = () => togglePanel('perf');
+    const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
     const isTabletop = useStore((state) => state.view.mode === 'tabletop');
     const toggleTabletop = useStore((state) => state.toggleTabletop);
     const { gridSnap, gridSnapStep, rotationSnap, rotationSnapStep } = useStore((state) => state.settings);
@@ -99,9 +102,10 @@ export default function WristMenu() {
             <group ref={menuRef} position={MENU_POSITION} rotation={MENU_ROTATION}>
                 {/* Unmounted (not just hidden) so hidden buttons can never receive pointer events */}
                 {isVisible && (
-                    <>
+                    <PointerFilterContext.Provider value={acceptsWristPointer}>
                         {/* Buttons stacked along the menu's local +Y (the palm becomes the control board) */}
                         <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
+                        <VRButton svg={svg.sun} active={isSunOpen} onClick={() => togglePanel('sun')} position={[STEP_X, 0, 0]} />
                         <VRButton icon={tabletopIcon} active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
                         <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
                         {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
@@ -111,7 +115,7 @@ export default function WristMenu() {
                         <VRButton label={`${rotationSnapStep}°`} active={rotationSnap} onClick={() => setRotationSnapStep(nextStep(ROTATION_SNAP_STEPS, rotationSnapStep))} position={[STEP_X, BUTTON_STEP * 4, 0]} />
                         {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
-                    </>
+                    </PointerFilterContext.Provider>
                 )}
 
             </group>

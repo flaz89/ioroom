@@ -7,6 +7,7 @@ import PerfPanel from './components/ui/perf-panel/PerfPanel';
 import { useEffect } from 'react';
 import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
 import RoomNotice from './components/ui/room-notice/RoomNotice';
+import CompassBar from './components/ui/compass/CompassBar';
 
 
 /* 
@@ -32,6 +33,7 @@ export default function App() {
           <LeftToolBar/>
           <RightToolBar/>
           <PerfPanel/>
+          <CompassBar/>
           <RoomNotice/>
         </div>
         

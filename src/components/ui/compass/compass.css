@@ -1,0 +1,97 @@
+/* Compass bar (CompassBar.jsx): game-style heading tape at the top center, glass style */
+.compass {
+    position: absolute;
+    top: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    color: white;
+    font-family: "SUSE Mono", monospace;
+}
+
+.compass-bar {
+    position: relative;
+    width: min(360px, calc(100vw - 180px));
+    height: 38px; /* top lane: sun/moon; middle: labels; bottom: ticks */
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    /* ticks fade out towards the ends */
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+.compass-tape {
+    position: absolute;
+    inset: 0;
+    will-change: transform;
+}
+
+.compass-tick {
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.45);
+}
+
+.compass-tick.is-major {
+    height: 9px;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.compass-label {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.compass-label.is-north { color: #ff9a1a; }
+
+/* Sun on the horizon: small glowing disc in the selection orange (top lane, above the labels) */
+.compass-sun {
+    position: absolute;
+    top: 4px;
+    width: 9px;
+    height: 9px;
+    margin-left: -4.5px;
+    border-radius: 50%;
+    background: #ffd27a;
+    box-shadow: 0 0 6px 2px rgba(255, 170, 40, 0.8);
+}
+
+/* Moon on the horizon (night): pale crescent, a disc carved by an inset shadow */
+.compass-moon {
+    position: absolute;
+    top: 2px;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    border-radius: 50%;
+    box-shadow: inset -4px 2px 0 0 #eef2ff;
+    filter: drop-shadow(0 0 3px rgba(210, 225, 255, 0.9));
+}
+
+/* Current heading mark */
+.compass-center {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 8px;
+    margin-left: -1px;
+    border-radius: 2px;
+    background: #ff9a1a;
+}
+
+
+@media (max-width: 767px) {
+    .compass { top: .3em; }
+    .compass-bar { width: calc(100vw - 150px); height: 36px; }
+}

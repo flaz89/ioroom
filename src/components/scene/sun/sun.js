@@ -2,8 +2,8 @@
 * Sun position for the scene's sun light (components/light/Light.jsx).
 *
 * sunPosition(date, lat, lon) -> { azimuth, altitude } in RADIANS:
-*   azimuth  = compass bearing of the sun, from geographic north, clockwise (0 = N, PI/2 = E, PI = S);
-*   altitude = angle above the horizon (negative = below: night).
+*   azimuth  = compass bearing, from geographic north, clockwise (0 = N, PI/2 = E, PI = S);
+*   altitude = angle above the horizon (negative = below).
 * Algorithm: the low-precision solar position used by SunCalc (V. Agafonkin, BSD), based on
 * https://aa.quae.nl/en/reken/zonpositie.html — accurate to a fraction of a degree, plenty for shadows.
 *
@@ -23,28 +23,27 @@ const OBLIQUITY = 23.4397 * RAD; // tilt of the Earth's axis
 
 const toDays = (date) => date.valueOf() / DAY_MS - 0.5 + J1970 - J2000; // days since J2000.0
 
-export function sunPosition(date, lat, lon) {
-    const lw = -lon * RAD;
+// Azimuth (compass bearing) and altitude of a body at right ascension `ra` / declination `dec`
+function horizontal(d, lat, lon, ra, dec) {
     const phi = lat * RAD;
-    const d = toDays(date);
+    const H = RAD * (280.16 + 360.9856235 * d) + lon * RAD - ra; // local hour angle from the sidereal time
+    const altitude = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+    // atan2 gives the azimuth from SOUTH, westward positive: + PI turns it into a compass bearing
+    const fromSouth = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+    return { azimuth: (fromSouth + Math.PI) % (2 * Math.PI), altitude };
+}
 
+// Ecliptic (longitude l, latitude b) -> equatorial (right ascension, declination)
+const rightAscension = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBLIQUITY) - Math.tan(b) * Math.sin(OBLIQUITY), Math.cos(l));
+const declination = (l, b) => Math.asin(Math.sin(b) * Math.cos(OBLIQUITY) + Math.cos(b) * Math.sin(OBLIQUITY) * Math.sin(l));
+
+export function sunPosition(date, lat, lon) {
+    const d = toDays(date);
     // Sun's ecliptic longitude from the mean anomaly and the equation of center
     const M = RAD * (357.5291 + 0.98560028 * d);
     const C = RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
     const L = M + C + RAD * 102.9372 + Math.PI;
-
-    // Equatorial coordinates
-    const declination = Math.asin(Math.sin(OBLIQUITY) * Math.sin(L));
-    const rightAscension = Math.atan2(Math.sin(L) * Math.cos(OBLIQUITY), Math.cos(L));
-
-    // Local hour angle from the sidereal time
-    const H = RAD * (280.16 + 360.9856235 * d) - lw - rightAscension;
-
-    const altitude = Math.asin(Math.sin(phi) * Math.sin(declination) + Math.cos(phi) * Math.cos(declination) * Math.cos(H));
-    // atan2 gives the azimuth from SOUTH, westward positive: + PI turns it into a compass bearing
-    const fromSouth = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(declination) * Math.cos(phi));
-    const azimuth = (fromSouth + Math.PI) % (2 * Math.PI);
-    return { azimuth, altitude };
+    return horizontal(d, lat, lon, rightAscension(L, 0), declination(L, 0));
 }
 
 // Offset of `timeZone` from UTC at instant `ms`, in ms (e.g. +2 h for Rome in summer)

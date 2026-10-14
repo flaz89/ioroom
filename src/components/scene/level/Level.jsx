@@ -7,6 +7,7 @@ import FistDeleteGesture from "../xr-ui/FistDeleteGesture";
 import RemotePointers from "../presence/RemotePointers";
 import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
+import VRSunPanel from "../xr-ui/VRSunPanel";
 import { useStore } from "../../../store/appStore";
 
 export default function Level() {
@@ -17,6 +18,7 @@ export default function Level() {
     const isXR = isVR || isAR;
     // Tabletop (miniature) view exists only inside XR sessions
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
+    const isSunPanelOpen = useStore((state) => state.openPanel === 'sun');
 
     return(
         <>
@@ -35,6 +37,8 @@ export default function Level() {
 
             {/* VR || AR: commands on the left wrist */}
             {isXR && <WristMenu />}
+            {/* VR || AR: sun settings panel, opened from the wrist menu; world space, in front of the user */}
+            {isXR && isSunPanelOpen && <VRSunPanel />}
             {/* VR || AR: left hand open -> fist deletes the selected object */}
             {isXR && <FistDeleteGesture />}
             {/* VR || AR: right hand thumb-middle pinch + wrist twist rotates the selected object in place */}

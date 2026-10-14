@@ -1,24 +1,22 @@
 import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useStore } from '../../../store/appStore';
+import { skyMarkers } from '../../scene/sun/sunLighting';
+import CompassDial from './CompassDial';
+import { formatDay, formatTime } from '../../scene/sun/format';
 import { CITIES, findCity } from '../../scene/sun/sun';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import './sun-panel.css';
 
-// "14 Oct" for a day of the year (UTC: no time zone shift of the label)
-const formatDay = (day) =>
-    new Date(Date.UTC(new Date().getFullYear(), 0, day)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-// "15:05" for minutes after midnight
-const formatTime = (minutes) =>
-    `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-
 /*
 * Sun toolbar button: opens a small panel next to the left toolbar with the sun settings of the
 * environment (store `sun`, light: components/light/Light.jsx):
-* - location: picked from a fixed list of cities; only the owner can change it in a shared room
-*   (everyone, when sync is off);
+* - location: picked from a fixed list of cities;
 * - day of the year and clock time: sliders, the sun moves live along its arc (shown while sliding);
-* - north: room orientation, degrees clockwise from the back wall.
+* - north: room orientation, set by turning a round compass (CompassDial.jsx) around the room plan.
+* Shared with everyone in the room (sync/sunSync.js). Location and north belong to the environment:
+* only the owner changes them (everyone, when sync is off); guests see their values read-only.
 */
 export default function SunPanel() {
     // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
@@ -29,18 +27,35 @@ export default function SunPanel() {
     const showSunArc = useStore((state) => state.showSunArc);
     // Day/time changes also show the sun's path in the scene for a moment
     const setSunShowingArc = (patch) => { setSun(patch); showSunArc(); };
-    const canEditLocation = !SYNC_HOST || isAdmin;
+    const canEditEnvironment = !SYNC_HOST || isAdmin; // location and north
+    const panelRef = useRef();
+
+    // The panel is centered on the button (css); if that pushes it off screen, slide it back inside.
+    // Desktop only: on phones it is a centered card (ui.css), which clears the transform here.
+    useLayoutEffect(() => {
+        const panel = panelRef.current;
+        if (!panel || window.matchMedia('(max-width: 767px)').matches) return;
+        panel.style.transform = '';
+        const { top, bottom } = panel.getBoundingClientRect();
+        const margin = 8;
+        const shift = bottom > window.innerHeight - margin
+            ? window.innerHeight - margin - bottom
+            : Math.max(0, margin - top);
+        if (shift !== 0) panel.style.transform = `translateY(calc(-50% + ${shift}px))`;
+    }, [isOpen]);
+    // Sun (day) / moon (night) on the dial ring, degrees
+    const { sunAzimuth, moonAzimuth } = useMemo(() => skyMarkers(sun), [sun]);
 
     return (
         <div className="sun-control">
             <CircleButton svg={svg.sun} onClick={() => togglePanel('sun')} isActive={isOpen} title="Sun light" />
             {isOpen && (
-                <div className="sun-panel">
+                <div className="sun-panel" ref={panelRef}>
                     <span className="sun-title">Sun</span>
 
                     <label className="sun-row">
                         <span>Location</span>
-                        {canEditLocation ? (
+                        {canEditEnvironment ? (
                             <select value={sun.cityId} onChange={(event) => setSun({ cityId: event.target.value })}>
                                 {CITIES.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
                             </select>
@@ -61,11 +76,18 @@ export default function SunPanel() {
                             onChange={(event) => setSunShowingArc({ minutes: Number(event.target.value) })} />
                     </label>
 
-                    <label className="sun-row">
+                    <div className="sun-row">
                         <span>North <b>{sun.northDeg}°</b></span>
-                        <input type="range" min={0} max={359} value={sun.northDeg}
-                            onChange={(event) => setSun({ northDeg: Number(event.target.value) })} />
-                    </label>
+                        <div className="sun-dial">
+                            <CompassDial
+                                value={sun.northDeg}
+                                onChange={(northDeg) => setSun({ northDeg })}
+                                sunAzimuth={sunAzimuth}
+                                moonAzimuth={moonAzimuth}
+                                disabled={!canEditEnvironment}
+                            />
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

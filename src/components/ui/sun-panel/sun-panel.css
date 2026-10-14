@@ -51,3 +51,42 @@
 }
 
 .sun-value { opacity: .85; }
+
+/* Compass dial (CompassDial.jsx) */
+.sun-dial {
+    display: flex;
+    justify-content: center;
+}
+
+.compass-dial {
+    cursor: grab;
+    touch-action: none; /* dragging the dial must not scroll or zoom the page */
+}
+.compass-dial:active { cursor: grabbing; }
+.compass-dial.is-disabled { cursor: default; opacity: .85; }
+/* No square focus box: keyboard focus colors the round face instead */
+.compass-dial:focus { outline: none; }
+.compass-dial:focus-visible .dial-face { stroke: #ff9a1a; stroke-width: 2.5; }
+
+.dial-face {
+    fill: rgba(0, 0, 0, 0.25);
+    stroke: rgba(255, 255, 255, 0.25);
+    stroke-width: 1.5;
+}
+.dial-tick { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; }
+.dial-tick.is-major { stroke: rgba(255, 255, 255, 0.8); stroke-width: 1.5; }
+
+.dial-room { fill: rgba(255, 255, 255, 0.12); stroke: rgba(255, 255, 255, 0.5); stroke-width: 1; }
+.dial-room-back { stroke: white; stroke-width: 3; stroke-linecap: round; }
+
+.dial-letter {
+    fill: white;
+    font: 600 11px "SUSE Mono", monospace;
+    text-anchor: middle;
+    dominant-baseline: central;
+    user-select: none;
+}
+.dial-letter.is-north { fill: #ff9a1a; }
+.dial-north { fill: #ff9a1a; }
+.dial-sun { fill: #ffd27a; filter: drop-shadow(0 0 3px rgba(255, 170, 40, 0.9)); }
+.dial-moon { fill: #eef2ff; filter: drop-shadow(0 0 3px rgba(210, 225, 255, 0.9)); }

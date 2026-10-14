@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
 import { bindAwareness } from './presence';
+import { bindSun } from './sunSync';
 
 /*
 * Shared room sync: keeps the scene objects (store objects.instances) identical on every device that
@@ -14,6 +15,7 @@ import { bindAwareness } from './presence';
 * - local -> room: a store subscription writes the instances whose reference changed, deletes removed ids;
 * - room -> local: remote changes replace objects.instances (selection is cleared if its object is gone).
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
+* Sun settings of the environment (location, north, day, time): see sunSync.js.
 *
 * ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
 * (opened once with ?admin=<token>, then kept in localStorage), used by the "My environments" API of the
@@ -117,10 +119,12 @@ export function connectRoom(room) {
     yObjects.observe(pull);
 
     const unbindAwareness = bindAwareness(provider.awareness);
+    const unbindSun = bindSun(doc, provider);
 
     return () => {
         setRoomStatus('local');
         unbindAwareness();
+        unbindSun();
         yObjects.unobserve(pull);
         unsubscribe();
         provider.destroy();

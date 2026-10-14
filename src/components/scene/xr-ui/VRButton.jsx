@@ -1,22 +1,11 @@
-import { cloneElement, useEffect, useState } from 'react';
+import { cloneElement, useContext, useEffect, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import { BUTTON_SIZE } from './layout';
+import { PointerFilterContext } from './pointers';
 
 // Label buttons default to BUTTON_SIZE; icon buttons pass a square `size`.
 const PIXELS_PER_METER = 4000; // canvas resolution: crisp at arm's length, cheap to redraw
-
-/*
-* Which pointers can press menu buttons (pmndrs pointerEventsType filter, state = XR input source state):
-* - hands: only the index-finger "touch" pointer. The hand ray is excluded (no accidental presses
-*   while aiming at the scene; rays pass through the menu) and so is the "grab" pointer, which sits on
-*   the same fingertip and would otherwise win ties against "touch".
-* - controllers: the ray (trigger), since controllers have no touch pointer.
-*/
-function acceptsPointer(_pointerId, pointerType, pointerState) {
-    if (pointerType === 'touch') return true;
-    return pointerType === 'ray' && pointerState?.type === 'controller';
-}
 
 /*
 * The desktop SVG logos (utils/svg-logos.jsx, React elements) as images for the canvas: white, like
@@ -42,6 +31,7 @@ function useSvgImage(svg) {
 */
 export default function VRButton({ label, icon, svg, size = BUTTON_SIZE, active = false, onClick, ...groupProps }) {
     const [hovered, setHovered] = useState(false);
+    const acceptsPointer = useContext(PointerFilterContext); // which pointers can press it (pointers.js)
     const svgImage = useSvgImage(svg);
     const [width, height] = size;
 
