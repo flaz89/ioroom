@@ -20,6 +20,16 @@ function describeGpu(gl) {
 }
 
 /*
+* What really renders: a WebGPURenderer without a usable adapter runs on its WebGL2 backend (only briefly:
+* the store then swaps to a WebGLRenderer), so the renderer type alone is not enough. XR sessions always
+* run on WebGLRenderer (src/xr/xrStore.js: WebXR has no WebGPU binding).
+*/
+function backendLabel(gl) {
+    const backend = gl.isWebGPURenderer ? (gl.backend.isWebGPUBackend ? 'WebGPU' : 'WebGPU on WebGL2') : 'WebGL';
+    return gl.xr?.isPresenting ? `${backend} · XR` : backend;
+}
+
+/*
 * Reads renderer.info into a renderer-agnostic snapshot.
 * - WebGPURenderer: draw calls, triangles, resources and an estimate of GPU memory in bytes (info.memory.total).
 * - WebGLRenderer: same counters except GPU memory, which WebGL does not expose.
@@ -32,7 +42,7 @@ function readStats(gl, frames, elapsedMs, gpuMs, gpuName) {
     const heap = performance.memory; // non-standard, Chromium only
 
     return {
-        backend: isWebGPU ? 'WebGPU' : 'WebGL',
+        backend: backendLabel(gl),
         gpuName,
         fps: (frames * 1000) / elapsedMs,
         frameMs: elapsedMs / frames,

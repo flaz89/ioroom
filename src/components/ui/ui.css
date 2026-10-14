@@ -69,6 +69,25 @@
     .right-menu { padding: 10px 10px 10px 0; }
     .left-menu { padding: 10px 0px 10px 10px; }
 
+    /* Right toolbar: the snap pill goes to the bottom, level with the left toolbar */
+    .right-toolbar { justify-content: flex-end; }
+
+    /* "+" at the bottom center of the screen (the objects menu opens as a centered card, below).
+       Fixed to the viewport: bottom = .ui-container padding (app.css) + toolbar padding + pill padding,
+       so it sits level with the bottom buttons of the two toolbars. */
+    .ui .objects-selection {
+        position: fixed;
+        left: 50%;
+        bottom: calc(10px + 1em + .5em + 2px);
+        transform: translateX(-50%);
+        flex-direction: row;
+    }
+    /* Delete (shown with a selection) next to "+", without moving "+" off center */
+    .ui .objects-selection > button + button {
+        position: absolute;
+        left: calc(100% + 12px);
+    }
+
     /* Every toolbar menu opens as a card centered on the screen (portrait phones), like the performance
        panel; "My environments" and Share are centered modals everywhere. `.ui` prefix: wins over the
        desktop placement rules in each component's own css. Add new menus to this list. */

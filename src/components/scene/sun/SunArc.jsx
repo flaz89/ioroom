@@ -9,9 +9,10 @@ import { sunDirection } from './sun';
 * Visual helper for the sun panel: the sun's path over the selected day as an arc (a "rail") around the
 * room center, with a glowing sphere at the current sun position, tinted like the sunlight.
 * Shown only while the day/time sliders move (store sunArcVisible, see sunSlice.js).
-* Fixed size (ARC_RADIUS), centered on the room: big enough to read, inside the default camera view.
-* Only the part above the horizon is drawn; the sphere hides at night.
-* Not interactive: raycasting is disabled, so it never blocks object picking.
+* Fixed size (ARC_RADIUS, room meters), centered on the room; inside the Board (via Light), so in tabletop
+* mode it keeps the same proportion to the model as on desktop. Only the part above the horizon is drawn;
+* the sphere hides at night. Drawn on top of everything (no depth test): from inside the room in VR the
+* walls would hide it. Not interactive: raycasting is disabled, so it never blocks object picking.
 */
 const ARC_RADIUS = 4.5;          // meters
 const SAMPLE_MINUTES = 10;       // arc resolution
@@ -43,19 +44,19 @@ export default function SunArc({ sun, lighting }) {
 
     return (
         <group>
-            <Line points={points} color={ARC_COLOR} lineWidth={2} transparent opacity={0.7} raycast={noRaycast} />
+            <Line points={points} color={ARC_COLOR} lineWidth={2} transparent opacity={0.7} depthTest={false} renderOrder={10} raycast={noRaycast} />
             {isDay && (
                 <group position={position}>
                     {/* Core: unlit, not tone mapped -> reads as emissive */}
-                    <mesh raycast={noRaycast}>
+                    <mesh raycast={noRaycast} renderOrder={11}>
                         <sphereGeometry args={[SPHERE_RADIUS, 24, 16]} />
-                        <meshBasicMaterial color={lighting.color} toneMapped={false} />
+                        <meshBasicMaterial color={lighting.color} depthTest={false} toneMapped={false} />
                     </mesh>
                     {/* Halo: additive translucent shell, fakes a glow without post-processing */}
-                    <mesh raycast={noRaycast}>
+                    <mesh raycast={noRaycast} renderOrder={11}>
                         <sphereGeometry args={[HALO_RADIUS, 24, 16]} />
                         <meshBasicMaterial color={lighting.color} transparent opacity={0.25}
-                            blending={AdditiveBlending} depthWrite={false} toneMapped={false} />
+                            blending={AdditiveBlending} depthTest={false} depthWrite={false} toneMapped={false} />
                     </mesh>
                 </group>
             )}

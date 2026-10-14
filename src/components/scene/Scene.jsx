@@ -1,5 +1,4 @@
 import './scene.css'
-import Light from '../light/Light';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
@@ -78,7 +77,6 @@ export default function Scene({xrStore}) {
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />
-                    <Light />
                     <Level />
                 </XR>
             

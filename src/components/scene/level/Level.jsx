@@ -9,6 +9,7 @@ import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import { useStore } from "../../../store/appStore";
+import Light from "../../light/Light";
 
 export default function Level() {
 
@@ -28,6 +29,8 @@ export default function Level() {
             {/* ----------- ROOM + OBJECTS ---------------- */}
             {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}
             <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room sizes={[6, 6]}/>}>
+                {/* Sun + ambient: inside the board, so light, sun arc and shadows follow the tabletop model */}
+                <Light />
                 <ObjectRenderer isTabletop={isTabletop} />
                 {/* shared rooms: other people's pointers (and this device's, published) */}
                 <RemotePointers />
