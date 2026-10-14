@@ -1,4 +1,4 @@
-/* Room users (RoomUsers.jsx): pills stacked at the top left, same glass style as the toolbars */
+/* Room users (RoomUsers.jsx): collapsed group pill at the top left, list below it when open; glass style like the toolbars */
 .room-users {
     display: flex;
     flex-direction: column;
@@ -6,6 +6,8 @@
     gap: 6px;
 }
 
+/* Shared pill look: the group button and the list rows */
+.room-users-group,
 .room-user {
     display: flex;
     align-items: center;
@@ -19,6 +21,32 @@
     font-family: "SUSE Mono", monospace;
     font-size: .75em;
     white-space: nowrap;
+}
+
+.room-users-group {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+/* Open: same orange fill as the other active toolbar buttons (circle-button.css) */
+.room-users-group.is-active {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.75) 0%, rgba(255, 140, 0, 0.75) 70%);
+}
+
+/* Overlapping dots, like stacked avatars */
+.room-users-dots {
+    display: flex;
+}
+.room-users-dots .room-user-dot + .room-user-dot {
+    margin-left: -.3em;
+}
+
+.room-users-list {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
 }
 
 .room-user-dot {

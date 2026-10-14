@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import QRCode from 'qrcode';
 import CircleButton from '../circle-button/CircleButton';
+import { useStore } from '../../../store/appStore';
 import { svg } from '../../../utils/svg-logos';
 import './share-panel.css';
 
@@ -23,18 +24,21 @@ function shareLink() {
 * device (headset, tablet, phone) can join the same scene: scan the QR or open/copy the link.
 */
 export default function SharePanel() {
-    const [isOpen, setIsOpen] = useState(false);
+    // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
+    const isOpen = useStore((state) => state.openPanel === 'share');
+    const togglePanel = useStore((state) => state.togglePanel);
+    const closePanel = useStore((state) => state.closePanel);
     const [link, setLink] = useState('');
     const [qr, setQr] = useState(null);     // QR image (data URL)
     const [copied, setCopied] = useState(false);
 
     // Link and QR are built when the panel opens (the room id is in the URL by then)
     const toggle = () => {
-        if (isOpen) return setIsOpen(false);
+        togglePanel('share');
+        if (isOpen) return;
         const url = shareLink();
         setLink(url);
         setCopied(false);
-        setIsOpen(true);
         QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: '#0b1030', light: '#ffffff' } })
             .then(setQr)
             .catch(console.error);
@@ -51,7 +55,7 @@ export default function SharePanel() {
             <CircleButton svg={svg.share} onClick={toggle} isActive={isOpen} title="Share this room" />
             {isOpen && (
                 // Centered modal; a click on the dimmed backdrop (outside the panel) closes it
-                <div className="share-backdrop" onClick={() => setIsOpen(false)}>
+                <div className="share-backdrop" onClick={closePanel}>
                 <div className="share-panel" onClick={(event) => event.stopPropagation()}>
                     <span className="share-title">Open on another device</span>
                     {qr && <img className="share-qr" src={qr} alt="QR code of the room link" />}

@@ -2,7 +2,6 @@ import './ui.css'
 import CircleButton from './circle-button/CircleButton';
 import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
-import { useState } from 'react';
 import ObjectsMenu from './objects-menu/ObjectsMenu';
 import { enterXR, useXRModeSupported } from '../../xr/xrStore';
 import SnapControl from './snap-control/SnapControl';
@@ -12,7 +11,10 @@ import { GRID_SNAP_STEPS, ROTATION_SNAP_STEPS } from '../../store/slices/setting
 
 export default function RightToolBar() {
     
-    const [objectsMenuOpen, setObjectsMenuOpen] = useState(false); // track objects menu state (open/close)
+    // Objects menu open state, shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
+    const objectsMenuOpen = useStore(state => state.openPanel === 'objects');
+    const togglePanel = useStore(state => state.togglePanel);
+    const closePanel = useStore(state => state.closePanel);
 
     const toggleGrid = useStore(state => state.toggleGrid);
     const selectedObject = useStore(state => state.objects.selectedId);
@@ -79,9 +81,9 @@ export default function RightToolBar() {
 
                 <div className='objects-selection'>
                     {/* orange "+" (same orange as the snap step buttons) */}
-                    <CircleButton svg={svg.add} onClick={() => setObjectsMenuOpen(!objectsMenuOpen)} title={"Add"} isActive={objectsMenuOpen} style={objectsMenuOpen ? undefined : { color: '#ff9a1a' }}/>
+                    <CircleButton svg={svg.add} onClick={() => togglePanel('objects')} title={"Add"} isActive={objectsMenuOpen} style={objectsMenuOpen ? undefined : { color: '#ff9a1a' }}/>
                     { selectedObject && <CircleButton svg={svg.trash} style={{background: "linear-gradient(35deg, rgba(255, 0, 0, 1) 0%, rgba(203, 0, 0, 0.56) 60%)"}} onClick={() => { if (!isLockedByOther(selectedObject)) removeSelectedObject(selectedObject); }} title={"Delete selected object"}/> }
-                    { objectsMenuOpen && (<ObjectsMenu onClose={() => setObjectsMenuOpen(false)}/>) }
+                    { objectsMenuOpen && (<ObjectsMenu onClose={closePanel}/>) }
                 </div>
                 
                 <div className="experience-mode">

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
 import { useStore } from '../../../store/appStore';
@@ -22,7 +21,9 @@ const formatTime = (minutes) =>
 * - north: room orientation, degrees clockwise from the back wall.
 */
 export default function SunPanel() {
-    const [isOpen, setIsOpen] = useState(false);
+    // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
+    const isOpen = useStore((state) => state.openPanel === 'sun');
+    const togglePanel = useStore((state) => state.togglePanel);
     const sun = useStore((state) => state.sun);
     const setSun = useStore((state) => state.setSun);
     const showSunArc = useStore((state) => state.showSunArc);
@@ -32,7 +33,7 @@ export default function SunPanel() {
 
     return (
         <div className="sun-control">
-            <CircleButton svg={svg.sun} onClick={() => setIsOpen(!isOpen)} isActive={isOpen} title="Sun light" />
+            <CircleButton svg={svg.sun} onClick={() => togglePanel('sun')} isActive={isOpen} title="Sun light" />
             {isOpen && (
                 <div className="sun-panel">
                     <span className="sun-title">Sun</span>

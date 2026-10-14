@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStore } from '../../../store/appStore';
 import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
 import { getRoomId } from '../../../sync/roomSync';
@@ -25,7 +26,10 @@ const formatDate = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: '
 */
 export default function RoomsPanel() {
     const currentRoom = getRoomId();
-    const [isOpen, setIsOpen] = useState(false);
+    // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
+    const isOpen = useStore((state) => state.openPanel === 'rooms');
+    const togglePanel = useStore((state) => state.togglePanel);
+    const closePanel = useStore((state) => state.closePanel);
     const [rooms, setRooms] = useState(null);       // null while loading
     const [error, setError] = useState(null);
     const [busy, setBusy] = useState(false);        // a request is running: actions disabled
@@ -50,10 +54,10 @@ export default function RoomsPanel() {
 
     // Fresh list every time the panel opens (another device may have changed it)
     const toggle = () => {
-        if (isOpen) return setIsOpen(false);
+        togglePanel('rooms');
+        if (isOpen) return;
         setEditing(null);
         setConfirmDelete(null);
-        setIsOpen(true);
         run(async () => {});
     };
 
@@ -85,7 +89,7 @@ export default function RoomsPanel() {
         <div className="rooms-control">
             <CircleButton svg={svg.environments} onClick={toggle} isActive={isOpen} title="My environments" />
             {isOpen && (
-                <div className="rooms-backdrop" onClick={() => setIsOpen(false)}>
+                <div className="rooms-backdrop" onClick={closePanel}>
                 <div className="rooms-panel" onClick={(event) => event.stopPropagation()}>
                     <div className="rooms-header">
                         <span className="rooms-title">My environments</span>
