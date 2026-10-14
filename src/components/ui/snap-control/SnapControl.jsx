@@ -4,7 +4,7 @@ import './snap-control.css';
 
 /*
 * Snap toggle with a step picker (grid cell size, rotation step...).
-* - click on the main button: snap on/off (orange outline when on);
+* - click on the main button: snap on/off (orange fill when on);
 * - hover: round orange buttons with the available steps appear next to it (to the LEFT: the control
 *   lives in the right toolbar); picking one sets the step and turns the snap on.
 * Props: icon (svg), label (tooltip name), unit ('cm', '°'), enabled, step, steps, onToggle, onPick.
@@ -18,7 +18,7 @@ export default function SnapControl({ icon, label, unit, enabled, step, steps, o
                 svg={icon}
                 onClick={onToggle}
                 title={enabled ? `${label}: on (${step}${unit})` : `${label}: off`}
-                style={enabled ? { outline: '2px solid orange', outlineOffset: '-2px' } : undefined}
+                isActive={enabled}
             />
             {isOpen && (
                 <div className="snap-steps">

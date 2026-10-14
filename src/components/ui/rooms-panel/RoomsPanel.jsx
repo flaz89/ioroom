@@ -83,7 +83,7 @@ export default function RoomsPanel() {
 
     return (
         <div className="rooms-control">
-            <CircleButton svg={svg.environments} onClick={toggle} title="My environments" />
+            <CircleButton svg={svg.environments} onClick={toggle} isActive={isOpen} title="My environments" />
             {isOpen && (
                 <div className="rooms-backdrop" onClick={() => setIsOpen(false)}>
                 <div className="rooms-panel" onClick={(event) => event.stopPropagation()}>

@@ -48,7 +48,7 @@ export default function SharePanel() {
 
     return (
         <div className="share-control">
-            <CircleButton svg={svg.share} onClick={toggle} title="Share this room" />
+            <CircleButton svg={svg.share} onClick={toggle} isActive={isOpen} title="Share this room" />
             {isOpen && (
                 // Centered modal; a click on the dimmed backdrop (outside the panel) closes it
                 <div className="share-backdrop" onClick={() => setIsOpen(false)}>

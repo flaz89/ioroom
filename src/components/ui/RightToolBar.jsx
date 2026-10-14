@@ -79,7 +79,7 @@ export default function RightToolBar() {
 
                 <div className='objects-selection'>
                     {/* orange "+" (same orange as the snap step buttons) */}
-                    <CircleButton svg={svg.add} onClick={() => setObjectsMenuOpen(!objectsMenuOpen)} title={"Add"} style={{ color: '#ff9a1a' }}/>
+                    <CircleButton svg={svg.add} onClick={() => setObjectsMenuOpen(!objectsMenuOpen)} title={"Add"} isActive={objectsMenuOpen} style={objectsMenuOpen ? undefined : { color: '#ff9a1a' }}/>
                     { selectedObject && <CircleButton svg={svg.trash} style={{background: "linear-gradient(35deg, rgba(255, 0, 0, 1) 0%, rgba(203, 0, 0, 0.56) 60%)"}} onClick={() => { if (!isLockedByOther(selectedObject)) removeSelectedObject(selectedObject); }} title={"Delete selected object"}/> }
                     { objectsMenuOpen && (<ObjectsMenu onClose={() => setObjectsMenuOpen(false)}/>) }
                 </div>

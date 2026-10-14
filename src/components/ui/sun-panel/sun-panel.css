@@ -1,0 +1,53 @@
+/* Sun panel (SunPanel.jsx): floats to the right of the left toolbar, vertically centered on the sun button, glass style like the other panels */
+.sun-control {
+    position: relative;
+    display: flex;
+}
+
+.sun-panel {
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    width: 230px;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .7em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.sun-title { font-weight: 600; }
+
+.sun-row {
+    display: flex;
+    flex-direction: column;
+    gap: .3em;
+}
+
+.sun-row b { color: #ffb733; }
+
+.sun-row select {
+    padding: .35em .5em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font: inherit;
+}
+
+/* Sliders in the selection orange */
+.sun-row input[type="range"] {
+    width: 100%;
+    accent-color: #ff9a1a;
+}
+
+.sun-value { opacity: .85; }

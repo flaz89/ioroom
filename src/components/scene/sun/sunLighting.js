@@ -1,0 +1,46 @@
+import { Color } from 'three';
+import { findCity, localTimeToDate, sunDirection, sunPosition } from './sun';
+
+/*
+* Everything the scene derives from the sun settings (store `sun`): shared by the sun light
+* (components/light/Light.jsx) and the sun arc helper (SunArc.jsx), so they always agree.
+*
+* sunLighting({ cityId, day, minutes, northDeg }) -> {
+*   direction  - [x, y, z] unit vector from the room center towards the sun (room space, see sun.js)
+*   altitude   - radians above the horizon (negative at night)
+*   intensity  - directional light intensity (0 below the horizon)
+*   ambient    - ambient light intensity (dimmer at night)
+*   color      - THREE.Color of the sunlight (warm near the horizon, white-ish when high)
+* }
+* Constants are calibration knobs: tune them on the headset.
+*/
+const SUN_INTENSITY = 1.1;                    // high noon
+const AMBIENT_DAY = 0.4;
+const AMBIENT_NIGHT = 0.12;
+const NOON_COLOR = new Color('#fffaf0');
+const HORIZON_COLOR = new Color('#ffb066');   // low sun: warm light
+
+// 0 below `from`, 1 above `to`, smooth in between
+const smoothstep = (from, to, value) => {
+    const t = Math.min(Math.max((value - from) / (to - from), 0), 1);
+    return t * t * (3 - 2 * t);
+};
+
+// Sun's azimuth/altitude for the settings, at a given clock time (defaults to the settings' own)
+export function sunAt({ cityId, day, minutes }, atMinutes = minutes) {
+    const city = findCity(cityId);
+    const date = localTimeToDate(new Date().getFullYear(), day, atMinutes, city.timeZone);
+    return sunPosition(date, city.lat, city.lon);
+}
+
+export function sunLighting(sun) {
+    const { azimuth, altitude } = sunAt(sun);
+    const height = Math.sin(altitude); // 0 at the horizon, 1 at the zenith
+    return {
+        direction: sunDirection(azimuth, altitude, sun.northDeg),
+        altitude,
+        intensity: SUN_INTENSITY * smoothstep(0, 0.12, height),
+        ambient: AMBIENT_NIGHT + (AMBIENT_DAY - AMBIENT_NIGHT) * smoothstep(-0.1, 0.25, height),
+        color: HORIZON_COLOR.clone().lerp(NOON_COLOR, smoothstep(0, 0.5, height))
+    };
+}

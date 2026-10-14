@@ -53,6 +53,12 @@ export const svg = {
         <path d="M12.8 5.7L7.2 8.8M7.2 11.2l5.6 3.1" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // sun with rays (sun light settings)
+    sun: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="10" cy="10" r="3.6" fill="currentColor"/>
+        <path d="M10 1.8v2.2M10 16v2.2M1.8 10H4M16 10h2.2M4.2 4.2l1.6 1.6M14.2 14.2l1.6 1.6M4.2 15.8l1.6-1.6M14.2 5.8l1.6-1.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+
     // stacked layers (list of saved environments)
     environments: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M10 2.5l7.5 4-7.5 4-7.5-4z" fill="currentColor"/>

@@ -5,6 +5,7 @@ import { createObjectsSlice } from "./slices/objectsSlice";
 import { createRendererSlice } from "./slices/rendererSlice";
 import { createPerfSlice } from "./slices/perfSlice";
 import { createViewSlice } from "./slices/viewSlice";
+import { createSunSlice } from "./slices/sunSlice";
 
 // main store
 export const useStore = create((set, get) => ({
@@ -13,5 +14,6 @@ export const useStore = create((set, get) => ({
     ...createObjectsSlice(set, get),
     ...createRendererSlice(set, get),
     ...createPerfSlice(set, get),
-    ...createViewSlice(set, get)
+    ...createViewSlice(set, get),
+    ...createSunSlice(set, get)
 }))

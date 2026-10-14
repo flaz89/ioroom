@@ -3,12 +3,14 @@ import { svg } from "../../utils/svg-logos";
 import { useStore } from "../../store/appStore";
 import SharePanel from "./share-panel/SharePanel";
 import RoomsPanel from "./rooms-panel/RoomsPanel";
+import SunPanel from "./sun-panel/SunPanel";
 import RoomUsers from "./room-users/RoomUsers";
 import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
 
 export default function LeftToolBar() {
 
     const togglePerf = useStore((state) => state.togglePerf);
+    const isPerfVisible = useStore((state) => state.settings.perfVisibility);
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -21,9 +23,12 @@ export default function LeftToolBar() {
 
             <div className="scene-settings">
                 <CircleButton svg={settingsMenu}/>
-                <CircleButton svg={performance} onClick={togglePerf} title={"Performance"}/>
+                {/* not last: its panel is centered on the button and needs room below it */}
+                <SunPanel />
                 {/* shared rooms, owner only for now (guests must not spread new rooms) */}
                 {SYNC_HOST && isAdmin && <RoomsPanel />}
+                {/* second to last */}
+                <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
                 {SYNC_HOST && isAdmin && <SharePanel />}
             </div>
             
