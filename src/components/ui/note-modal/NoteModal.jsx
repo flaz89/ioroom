@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+import { xrStore } from '../../../xr/xrStore';
 import { useStore } from '../../../store/appStore';
 import { getSelfUser } from '../../../sync/presence';
 import './note-modal.css';
@@ -12,9 +13,11 @@ const MAX_LENGTH = 500;
 * Delete (existing notes): second click confirms.
 */
 export default function NoteModal() {
+    // in XR the editor is the in-world panel (scene/xr-ui/VRNotePanel.jsx); this one would steal its focus
+    const isXR = useSyncExternalStore(xrStore.subscribe, () => xrStore.getState().mode != null);
     const draft = useStore((state) => state.notes.draft);
     const note = useStore((state) => state.notes.items.find((item) => item.id === state.notes.openId));
-    if (draft == null && note == null) return null;
+    if (isXR || (draft == null && note == null)) return null;
     // keyed: a fresh editor (text, confirm state) for every note opened
     return <NoteEditor key={note?.id ?? 'draft'} note={note} />;
 }

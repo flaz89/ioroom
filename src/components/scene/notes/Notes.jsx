@@ -1,22 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
-import NameLabel from '../presence/NameLabel';
+import { useCanvasTexture } from '../xr-ui/useCanvasTexture';
 
 /*
 * Post-it notes in the scene (data and rules: store/slices/notesSlice.js).
-* - BoardNotes (inside the Board): notes stuck on room surfaces, plus the desktop placing mode.
-* - NotePin: one note, a square of paper in its author's color just off the surface; hover shows the
-*   author's name (same label as the multiplayer pointers), click opens the editor (ui/note-modal/).
+* - BoardNotes (inside the Board): notes stuck on room surfaces, plus the placing mode (desktop/mobile:
+*   NotePlacer, press on the canvas; XR: XRNotePlacer, controller trigger / hand pinch with the ray).
+* - NotePin: one note, a round HUD marker in its author's color just off the surface (three canvas-drawn
+*   layers: static frame, slowly turning arcs, counter-turning breathing core) with an always visible
+*   HUD tag (leader line from the marker edge + author's name); hover speeds the marker up and enlarges
+*   it; click opens the editor (ui/note-modal/).
 *   Notes stuck on an object are rendered by SingleObject.jsx inside the object, so they follow it.
 * Calibration knobs in board meters (real size at 1:1, scaled down with the tabletop model).
 */
-const PAPER_SIZE = 0.12;           // side of the paper square
-const PAPER_OFFSET = 0.004;        // distance from the surface (no z-fighting with walls and floor)
-const LABEL_HEIGHT = 0.14;         // author label center above the note
-const LABEL_SIZE = [0.36, 0.09];   // author label sprite [width, height]
+const MARKER_SIZE = 0.22;          // marker diameter
+const MARKER_OFFSET = 0.004;       // distance of the first layer from the surface (no z-fighting)
+const LAYER_GAP = 0.001;           // distance between the marker layers
+const RING_SPEED = 0.4;            // rad/s of the dashed ring (the core turns the other way, faster)
+const CORE_SPEED = 0.9;            // rad/s of the core
+const HOVER_SPEED = 3;             // rotation speed multiplier while hovered
+const HOVER_SCALE = 1.15;          // marker scale while hovered
+const PULSE = 0.05;                // core "breathing" amplitude (fraction of its size)
+const TEXTURE_PIXELS = 256;        // canvas resolution of each layer
+const TAG_SIZE = [0.88, 0.22];     // author tag sprite [width, height] (same 4:1 aspect as TAG_PIXELS)
+const TAG_PIXELS = [512, 128];     // canvas resolution of the tag
 const NOTE_USER_DATA = { isNote: true }; // skipped by placing and by surfaceDrag.js (never a support)
 
 const _forward = new THREE.Vector3(0, 0, 1); // planeGeometry faces +Z
@@ -24,6 +34,9 @@ const _ndc = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
 const _normal = new THREE.Vector3();
 const _boardQuaternion = new THREE.Quaternion();
+const _rayMatrix = new THREE.Matrix4();
+const noRaycast = () => {};
+const TAU = Math.PI * 2;
 
 export default function BoardNotes() {
     const anchorRef = useRef(); // child of the board: its parent is the board root
@@ -32,7 +45,7 @@ export default function BoardNotes() {
 
     return (
         <group ref={anchorRef}>
-            {!isXR && <NotePlacer anchorRef={anchorRef} />}
+            {isXR ? <XRNotePlacer anchorRef={anchorRef} /> : <NotePlacer anchorRef={anchorRef} />}
             {items.map((note) => note.objectId == null && <NotePin key={note.id} note={note} />)}
         </group>
     );
@@ -44,7 +57,6 @@ export default function BoardNotes() {
 */
 export function NotePin({ note, objectScale }) {
     const [isHovered, setIsHovered] = useState(false);
-    const isXR = useXR((state) => state.mode != null);
     const openNote = useStore((state) => state.openNote);
 
     const { scale, quaternion } = useMemo(() => {
@@ -57,31 +69,184 @@ export function NotePin({ note, objectScale }) {
         };
     }, [note.n, objectScale]);
 
-    // ponytail: the editor is a DOM modal, so in XR a click does nothing yet (VR window: next step)
+    // opens the editor: DOM modal on desktop/mobile (ui/note-modal/), VRNotePanel in XR
     const handleClick = (event) => {
         event.stopPropagation();
-        if (!isXR) openNote(note.id);
+        openNote(note.id);
     };
 
     return (
         <group position={note.p} scale={scale}>
-            {/* turned onto the surface; the paper stands off it along its local +Z (= the normal) */}
+            {/* turned onto the surface; the marker stands off it along its local +Z (= the normal) */}
             <group quaternion={quaternion}>
-                <mesh
-                    position={[0, 0, PAPER_OFFSET]}
-                    userData={NOTE_USER_DATA}
-                    receiveShadow
+                <NoteMarker
+                    color={note.author.color}
+                    phase={note.id.charCodeAt(0)}
+                    isHovered={isHovered}
                     onClick={handleClick}
                     onPointerEnter={() => setIsHovered(true)}
                     onPointerLeave={() => setIsHovered(false)}
-                >
-                    <planeGeometry args={[PAPER_SIZE, PAPER_SIZE]} />
-                    <meshStandardMaterial color={note.author.color} side={THREE.DoubleSide} />
-                </mesh>
+                />
+                {/* tag anchored on the marker's upper right edge (45°), always facing the viewer */}
+                <NoteTag
+                    name={note.author.name}
+                    color={note.author.color}
+                    position={[MARKER_SIZE * 0.35, MARKER_SIZE * 0.35, MARKER_OFFSET + 3 * LAYER_GAP]}
+                />
             </group>
-            {isHovered && <NameLabel name={note.author.name} color={note.author.color} size={LABEL_SIZE} position={[0, LABEL_HEIGHT, 0]} />}
         </group>
     );
+}
+
+/*
+* Round HUD marker, in the XY plane facing +Z. Three canvas-textured discs (WebGL and WebGPU: built-in
+* materials only): the static frame catches the pointer, the ring and the core are animated.
+* `phase` desyncs the breathing of different notes.
+*/
+function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
+    const rootRef = useRef();
+    const ringRef = useRef();
+    const coreRef = useRef();
+    const frame = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawFrame(ctx, w / 2, color), [color]);
+    const ring = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawRing(ctx, w / 2, color), [color]);
+    const core = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawCore(ctx, w / 2, color), [color]);
+
+    useFrame((state, delta) => {
+        const speed = isHovered ? HOVER_SPEED : 1;
+        ringRef.current.rotation.z += delta * RING_SPEED * speed;
+        coreRef.current.rotation.z -= delta * CORE_SPEED * speed;
+        coreRef.current.scale.setScalar(1 + PULSE * Math.sin(state.clock.elapsedTime * 2.5 + phase));
+        rootRef.current.scale.setScalar(THREE.MathUtils.damp(rootRef.current.scale.x, isHovered ? HOVER_SCALE : 1, 12, delta));
+    });
+
+    return (
+        <group ref={rootRef}>
+            <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} {...pointerHandlers}>
+                <circleGeometry args={[MARKER_SIZE / 2, 48]} />
+                <MarkerMaterial map={frame} />
+            </mesh>
+            <mesh ref={ringRef} position={[0, 0, MARKER_OFFSET + LAYER_GAP]} raycast={noRaycast} renderOrder={2}>
+                <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
+                <MarkerMaterial map={ring} />
+            </mesh>
+            <mesh ref={coreRef} position={[0, 0, MARKER_OFFSET + 2 * LAYER_GAP]} raycast={noRaycast} renderOrder={3}>
+                <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
+                <MarkerMaterial map={core} />
+            </mesh>
+        </group>
+    );
+}
+
+// Unlit, glowing look; no depth write so the stacked layers never cut each other
+function MarkerMaterial({ map }) {
+    return <meshBasicMaterial map={map} transparent depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />;
+}
+
+// Canvas helpers: `c` = canvas center (= radius available), angles in radians
+function arc(ctx, c, radius, from, to, width, style) {
+    ctx.beginPath();
+    ctx.arc(c, c, radius, from, to);
+    ctx.lineWidth = width;
+    ctx.strokeStyle = style;
+    ctx.stroke();
+}
+function radial(ctx, c, angle, inner, outer, width, style) {
+    ctx.beginPath();
+    ctx.moveTo(c + Math.cos(angle) * inner, c + Math.sin(angle) * inner);
+    ctx.lineTo(c + Math.cos(angle) * outer, c + Math.sin(angle) * outer);
+    ctx.lineWidth = width;
+    ctx.strokeStyle = style;
+    ctx.stroke();
+}
+
+// Static frame: glass disc tinted with the author's color, thick colored ring, thin white ring, notches
+function drawFrame(ctx, c, color) {
+    ctx.beginPath();
+    ctx.arc(c, c, c * 0.94, 0, TAU);
+    ctx.fillStyle = 'rgba(10, 16, 32, 0.45)';
+    ctx.fill();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    arc(ctx, c, c * 0.9, 0, TAU, 10, color);
+    arc(ctx, c, c * 0.8, 0, TAU, 2, 'rgba(255, 255, 255, 0.8)');
+    for (let i = 0; i < 4; i++) radial(ctx, c, i * TAU / 4, c * 0.78, c, 8, color);
+}
+
+// Turning ring: three thick arcs in the author's color
+function drawRing(ctx, c, color) {
+    for (let i = 0; i < 3; i++) arc(ctx, c, c * 0.64, i * TAU / 3, i * TAU / 3 + 1.4, 16, color);
+}
+
+// Counter-turning core: broken white ring around a solid colored dot
+function drawCore(ctx, c, color) {
+    for (let i = 0; i < 2; i++) arc(ctx, c, c * 0.38, i * Math.PI + 0.3, i * Math.PI + 2.6, 5, '#ffffff');
+    ctx.beginPath();
+    ctx.arc(c, c, c * 0.2, 0, TAU);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(c, c, c * 0.06, 0, TAU);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+}
+
+/*
+* Author tag in HUD style: a sprite anchored at its bottom left corner (= `position`, the marker edge),
+* drawn as a leader line rising from there + a dark bar with a colored accent and the name in capitals.
+*/
+function NoteTag({ name, color, position }) {
+    const texture = useCanvasTexture(TAG_PIXELS[0], TAG_PIXELS[1], (ctx, w, h) => drawTag(ctx, w, h, name, color), [name, color]);
+    return (
+        <sprite position={position} center={[0, 0]} scale={[TAG_SIZE[0], TAG_SIZE[1], 1]} raycast={noRaycast} renderOrder={4}>
+            <spriteMaterial map={texture} transparent depthWrite={false} toneMapped={false} />
+        </sprite>
+    );
+}
+
+function drawTag(ctx, w, h, name, color) {
+    const bar = { x: h * 0.5, y: h * 0.12, height: h * 0.5 };
+    // name: capitals, shrunk to fit the canvas; the bar is only as wide as the name needs
+    const text = name.toUpperCase();
+    const padding = { left: 22, right: 26 };
+    const maxWidth = w - 6 - bar.x - padding.left - padding.right;
+    const size = bar.height * 0.6;
+    ctx.font = `700 ${size}px "SUSE Mono", monospace`;
+    const measured = ctx.measureText(text).width;
+    if (measured > maxWidth) ctx.font = `700 ${size * maxWidth / measured}px "SUSE Mono", monospace`;
+    const right = bar.x + padding.left + Math.min(measured, maxWidth) + padding.right;
+    // leader: anchor dot, diagonal up, short horizontal into the bar
+    ctx.beginPath();
+    ctx.arc(6, h - 6, 5, 0, TAU);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(6, h - 6);
+    ctx.lineTo(bar.x - 14, bar.y + bar.height / 2);
+    ctx.lineTo(bar.x, bar.y + bar.height / 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    // bar: dark glass, colored outline, solid accent on the left, clipped top right corner
+    const cut = bar.height * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(bar.x, bar.y);
+    ctx.lineTo(right - cut, bar.y);
+    ctx.lineTo(right, bar.y + cut);
+    ctx.lineTo(right, bar.y + bar.height);
+    ctx.lineTo(bar.x, bar.y + bar.height);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(10, 16, 32, 0.8)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillRect(bar.x, bar.y, 10, bar.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, bar.x + 22, bar.y + bar.height / 2 + 2);
 }
 
 /*
@@ -118,6 +283,40 @@ function NotePlacer({ anchorRef }) {
             document.body.classList.remove('placing-note');
         };
     }, [isPlacing, gl, camera, anchorRef]);
+
+    return null;
+}
+
+/*
+* XR placing mode (wrist menu post-it button): the next "select" (controller trigger, hand pinch) aims
+* the input's target ray at a room surface or an object and opens a new note there (VRNotePanel.jsx).
+* Read from the session's select event, not from pmndrs pointer events: objects own their pointer
+* events (Handle); grabs are off while placing (SingleObject.jsx). Selects while the wrist menu is shown
+* are ignored: that is the controller ray pressing a menu button (e.g. the post-it button to cancel).
+* The pmndrs ray cursor already shows where the note will go. A select on nothing keeps the mode on.
+*/
+function XRNotePlacer({ anchorRef }) {
+    const session = useXR((state) => state.session);
+    const gl = useThree((state) => state.gl);
+    const isPlacing = useStore((state) => state.notes.placing);
+
+    useEffect(() => {
+        if (!isPlacing || session == null) return;
+        const select = (event) => {
+            const { view, openNoteDraft } = useStore.getState();
+            if (view.handMenuVisible) return;
+            // reference space = world space (no XROrigin offset in this app, see RemoteAvatars.jsx)
+            const pose = event.frame.getPose(event.inputSource.targetRaySpace, gl.xr.getReferenceSpace());
+            if (pose == null) return;
+            _rayMatrix.fromArray(pose.transform.matrix);
+            _raycaster.ray.origin.setFromMatrixPosition(_rayMatrix);
+            _raycaster.ray.direction.set(0, 0, -1).transformDirection(_rayMatrix); // target rays point along -Z
+            const anchor = noteAnchor(_raycaster, anchorRef.current?.parent);
+            if (anchor != null) openNoteDraft(anchor);
+        };
+        session.addEventListener('select', select);
+        return () => session.removeEventListener('select', select);
+    }, [isPlacing, session, gl, anchorRef]);
 
     return null;
 }

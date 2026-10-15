@@ -167,6 +167,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // CLICK on mesh
     const handleClick = (event) => {
         event.stopPropagation();
+        if (useStore.getState().notes.placing) return; // the press sticks a post-it note (scene/notes/Notes.jsx)
         selectObject(data.id);
     };
 
@@ -225,6 +226,8 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // - Near pointers (grip/pinch touching the object): rigid attachment computed by Handle.
     useHandle(targetRef, {
         handle: meshRef,
+        // post-it placing mode (scene/notes/Notes.jsx): the press sticks a note, it never grabs
+        filter: () => !useStore.getState().notes.placing,
         translate: true,
         rotate: HANDLE_ROTATE[pointerRotation],
         scale: false,

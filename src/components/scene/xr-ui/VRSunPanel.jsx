@@ -1,5 +1,4 @@
 import { useLayoutEffect, useRef } from 'react';
-import { Vector3 } from 'three';
 import { useThree } from '@react-three/fiber';
 import { useStore } from '../../../store/appStore';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
@@ -10,6 +9,7 @@ import VRButton from './VRButton';
 import VRSlider from './VRSlider';
 import VRCompassBar from './VRCompassBar';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
+import { placeInFrontOfUser } from './layout';
 
 /*
 * In-VR sun panel (store openPanel 'sun', opened from the wrist menu): the same settings as the desktop
@@ -31,9 +31,6 @@ const ROW = 0.058;          // meters between rows
 const TITLE_H = 0.04;
 const PIXELS_PER_METER = 4000;
 const PAD = 0.02;
-
-const _eye = new Vector3();
-const _forward = new Vector3();
 
 // Plain text on a transparent canvas (titles, the city name)
 function VRText({ text, width, height = 0.03, align = 'left', bold = true, ...groupProps }) {
@@ -66,14 +63,7 @@ export default function VRSunPanel() {
 
     // Place once, when it opens: in front of the user, facing the eyes
     useLayoutEffect(() => {
-        const camera = getThree().camera; // follows the headset during XR sessions
-        camera.getWorldPosition(_eye);
-        camera.getWorldDirection(_forward).setY(0);
-        if (_forward.lengthSq() < 1e-6) _forward.set(0, 0, -1);
-        _forward.normalize();
-        const group = groupRef.current;
-        group.position.set(_eye.x + _forward.x * DISTANCE, _eye.y - BELOW_EYES, _eye.z + _forward.z * DISTANCE);
-        group.lookAt(_eye); // a plane's front (+Z) towards the eyes, slightly tilted up
+        placeInFrontOfUser(groupRef.current, getThree().camera, DISTANCE, BELOW_EYES);
     }, [getThree]);
 
     // Rows from the top: title, compass, [location], day, time, [north]

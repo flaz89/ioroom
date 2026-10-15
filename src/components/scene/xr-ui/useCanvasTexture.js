@@ -43,3 +43,31 @@ export function drawPanel(ctx, width, height, fill = 'rgba(16, 20, 48, 0.85)', s
     ctx.strokeStyle = stroke;
     ctx.stroke();
 }
+
+/*
+* Splits `text` into lines no wider than `maxWidth` (current ctx font): words wrap, newlines break,
+* overlong words are cut. Past `maxLines` the last line ends with "…".
+*/
+export function wrapLines(ctx, text, maxWidth, maxLines) {
+    const lines = [];
+    for (const paragraph of text.split('\n')) {
+        let line = '';
+        for (const word of paragraph.split(' ')) {
+            const candidate = line === '' ? word : `${line} ${word}`;
+            if (ctx.measureText(candidate).width <= maxWidth) { line = candidate; continue; }
+            if (line !== '') lines.push(line);
+            line = word;
+            while (ctx.measureText(line).width > maxWidth && line.length > 1) { // a word longer than the line
+                let cut = line.length - 1;
+                while (cut > 1 && ctx.measureText(line.slice(0, cut)).width > maxWidth) cut--;
+                lines.push(line.slice(0, cut));
+                line = line.slice(cut);
+            }
+        }
+        lines.push(line);
+    }
+    if (lines.length <= maxLines) return lines;
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = `${kept[maxLines - 1].slice(0, -1)}…`;
+    return kept;
+}
