@@ -2,9 +2,16 @@
 // Every wall casts AND receives shadows: the sun can come from any side (sun light: components/light/Light.jsx).
 const WALL_USER_DATA = { surface: 'wall' };
 
+import SurfaceMaterial from './SurfaceMaterial';
+
 // Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
 const ROOM_USER_DATA = { isRoom: true };
 
+/*
+* The fixed test room: floor, invisible ceiling, three walls (left, right, back). Each visible surface
+* takes the material picked for it (SurfaceMaterial.jsx; ids in surfaceMaterials.js ROOM_SURFACES), tiled
+* at real scale on the face the room sees (box faces span their own 0..1 UVs).
+*/
 export default function Room({sizes}) {
 
     const [x, z] = sizes;
@@ -21,7 +28,7 @@ export default function Room({sizes}) {
                 receiveShadow
             >
                 <planeGeometry args={[x, z]} />
-                <meshStandardMaterial color="#d4d4d4" /> 
+                <SurfaceMaterial surfaceId="floor" size={[x, z]} color="#d4d4d4" />
             </mesh>
 
             {/* ------------- CEILING (invisible) ------------------ */}
@@ -46,7 +53,7 @@ export default function Room({sizes}) {
                 receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, z]}/>
-                <meshStandardMaterial />
+                <SurfaceMaterial surfaceId="wall-left" size={[z, wallHeight]} color="#ffffff" />
             </mesh>
 
             {/* ------------- WALL right ------------------ */}
@@ -61,7 +68,7 @@ export default function Room({sizes}) {
                 receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, z]}/>
-                <meshStandardMaterial />
+                <SurfaceMaterial surfaceId="wall-right" size={[z, wallHeight]} color="#ffffff" />
             </mesh>
 
             {/* ------------- WALL back ------------------ */}
@@ -73,7 +80,7 @@ export default function Room({sizes}) {
                 receiveShadow
             >
                 <boxGeometry args={[wallThickness, wallHeight, x + wallThickness * 2]}/>
-                <meshStandardMaterial />
+                <SurfaceMaterial surfaceId="wall-back" size={[x + wallThickness * 2, wallHeight]} color="#ffffff" />
             </mesh>
         </group>
     )

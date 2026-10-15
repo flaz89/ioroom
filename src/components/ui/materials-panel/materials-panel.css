@@ -1,0 +1,59 @@
+/* Room materials panel (MaterialsPanel.jsx): floats to the right of the left toolbar, vertically centered on its button, glass style like the sun panel */
+.materials-control {
+    position: relative;
+    display: flex;
+}
+
+.materials-panel {
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    width: 230px;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .7em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.materials-title { font-weight: 600; }
+
+.materials-row {
+    display: flex;
+    flex-direction: column;
+    gap: .3em;
+}
+
+.materials-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4em;
+}
+
+/* Swatch: the material's color map; plain = flat light gray */
+.materials-swatch {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    background: #d4d4d4 center / cover;
+    cursor: pointer;
+}
+
+.materials-swatch:active { scale: .95; }
+
+/* Selected: the selection orange */
+.materials-swatch.is-selected {
+    border-color: #ff9a1a;
+    box-shadow: 0 0 0 2px rgba(255, 154, 26, 0.45);
+}

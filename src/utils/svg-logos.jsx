@@ -65,6 +65,13 @@ export const svg = {
         <path d="M2.5 10l7.5 4 7.5-4M2.5 13.5l7.5 4 7.5-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>,
 
+    // material swatches fanned out (room surface materials)
+    materials: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="3" width="8" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M11 6.5l4.2 1.5a1.2 1.2 0 0 1 .7 1.5L13 17" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <circle cx="7" cy="13.5" r="1.3" fill="currentColor"/>
+    </svg>,
+
     // post-it with a folded corner (notes placing mode)
     note: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M3.5 3.5h13v8.5l-4.5 4.5H3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

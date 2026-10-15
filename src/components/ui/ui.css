@@ -95,6 +95,7 @@
        panel; "My environments" and Share are centered modals everywhere. `.ui` prefix: wins over the
        desktop placement rules in each component's own css. Add new menus to this list. */
     .ui .sun-panel,
+    .ui .materials-panel,
     .ui .objects-menu,
     .ui .room-users-list {
         position: fixed;

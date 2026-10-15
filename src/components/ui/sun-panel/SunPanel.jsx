@@ -1,6 +1,7 @@
 import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
+import { usePanelInViewport } from '../usePanelInViewport';
 import { useStore } from '../../../store/appStore';
 import { skyMarkers } from '../../scene/sun/sunLighting';
 import CompassDial from './CompassDial';
@@ -30,19 +31,8 @@ export default function SunPanel() {
     const canEditEnvironment = !SYNC_HOST || isAdmin; // location and north
     const panelRef = useRef();
 
-    // The panel is centered on the button (css); if that pushes it off screen, slide it back inside.
-    // Desktop only: on phones it is a centered card (ui.css), which clears the transform here.
-    useLayoutEffect(() => {
-        const panel = panelRef.current;
-        if (!panel || window.matchMedia('(max-width: 767px)').matches) return;
-        panel.style.transform = '';
-        const { top, bottom } = panel.getBoundingClientRect();
-        const margin = 8;
-        const shift = bottom > window.innerHeight - margin
-            ? window.innerHeight - margin - bottom
-            : Math.max(0, margin - top);
-        if (shift !== 0) panel.style.transform = `translateY(calc(-50% + ${shift}px))`;
-    }, [isOpen]);
+    // Centered on the button (css), kept inside the screen
+    usePanelInViewport(panelRef, isOpen);
     // Sun (day) / moon (night) on the dial ring, degrees
     const { sunAzimuth, moonAzimuth } = useMemo(() => skyMarkers(sun), [sun]);
 

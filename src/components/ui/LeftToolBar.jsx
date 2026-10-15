@@ -4,6 +4,7 @@ import { useStore } from "../../store/appStore";
 import SharePanel from "./share-panel/SharePanel";
 import RoomsPanel from "./rooms-panel/RoomsPanel";
 import SunPanel from "./sun-panel/SunPanel";
+import MaterialsPanel from "./materials-panel/MaterialsPanel";
 import RoomUsers from "./room-users/RoomUsers";
 import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
 
@@ -26,6 +27,8 @@ export default function LeftToolBar() {
                 <CircleButton svg={settingsMenu}/>
                 {/* not last: its panel is centered on the button and needs room below it */}
                 <SunPanel />
+                {/* room surface materials (floor, walls) */}
+                <MaterialsPanel />
                 {/* shared rooms, owner only for now (guests must not spread new rooms) */}
                 {SYNC_HOST && isAdmin && <RoomsPanel />}
                 {/* second to last */}

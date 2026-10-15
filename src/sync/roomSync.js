@@ -4,6 +4,7 @@ import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
 import { bindAwareness } from './presence';
 import { bindSun } from './sunSync';
+import { bindFieldMap } from './fieldMapSync';
 
 /*
 * Shared room sync: keeps the scene objects (store objects.instances) identical on every device that
@@ -17,6 +18,7 @@ import { bindSun } from './sunSync';
 * Post-it notes (store notes.items, see store/slices/notesSlice.js): same model, Y.Map "notes" (bindInstances).
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
+* Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
 *
 * ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
 * (opened once with ?admin=<token>, then kept in localStorage), used by the "My environments" API of the
@@ -137,11 +139,17 @@ export function connectRoom(room) {
         (state) => state.notes.items, (list) => useStore.getState().setNotes(list));
     const unbindAwareness = bindAwareness(provider.awareness);
     const unbindSun = bindSun(doc, provider);
+    const unbindSurfaces = bindFieldMap(doc, provider, {
+        name: 'surfaces',
+        read: (state) => state.surfaces,
+        write: (patch) => useStore.getState().setSurfaces(patch)
+    });
 
     return () => {
         setRoomStatus('local');
         unbindAwareness();
         unbindSun();
+        unbindSurfaces();
         unbindObjects();
         unbindNotes();
         provider.destroy();

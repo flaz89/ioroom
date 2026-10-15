@@ -1,6 +1,6 @@
 /*
 * Which toolbar menu/panel is open: only one at a time, so opening one closes the previous.
-* Names: 'sun' | 'rooms' | 'share' | 'objects' | 'users' | 'perf' (null = none). Per device, never synced.
+* Names: 'sun' | 'materials' | 'rooms' | 'share' | 'objects' | 'users' | 'perf' (null = none). Per device, never synced.
 * 'perf' = performance stats (DOM PerfPanel, and the stats panel of the VR wrist menu).
 */
 export const createPanelSlice = (set) => ({
