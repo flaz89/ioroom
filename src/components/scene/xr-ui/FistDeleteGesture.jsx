@@ -3,12 +3,13 @@ import { Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
-import { createFistGesture, isPalmVertical } from './fistGesture';
+import { createFistGesture, isDeletePose } from './fistGesture';
 import { isLockedByOther } from '../../../sync/presence';
 
 /*
 * Deletes the selected object with an "open hand -> fist" gesture of the LEFT hand (hand tracking):
-* select with the right hand, open and close the left one, palm perpendicular to the floor.
+* select with the right hand, then hold the left hand up (fingers up, BACK of the hand towards you, palm
+* perpendicular to the floor) and close it into a fist.
 * The left hand also carries the wrist menu: while the menu is shown (palm facing the eyes) the
 * gesture cannot arm, so closing the hand after using the menu never deletes anything.
 * While armed, objects.deleteArmed is true (the selected object's outline turns red).
@@ -25,6 +26,8 @@ const _indexKnuckle = new Vector3();
 const _pinkyKnuckle = new Vector3();
 const _along = new Vector3();
 const _across = new Vector3();
+const _toUser = new Vector3();
+const _eyes = new Vector3();
 
 // Joint position in the reference space, or false if not tracked this frame
 function readJoint(frame, hand, joint, referenceSpace, target) {
@@ -46,24 +49,31 @@ function measureOpenness(frame, hand, referenceSpace) {
     return sum / FINGERS.length;
 }
 
-// y of the unit palm normal, from wrist -> middle knuckle (along the hand) and index -> pinky knuckle
-// (across the palm). These joints barely move when making a fist, so it stays valid while closing.
-// Only the absolute value is used, so the sign convention (left/right hand) does not matter.
-function measurePalmNormalY(frame, hand, referenceSpace) {
+/*
+* Hand orientation for isDeletePose (fistGesture.js), or null if not tracked:
+* - along: wrist -> middle knuckle (the direction the fingers point);
+* - back normal: along x (index knuckle -> pinky knuckle). For the LEFT hand this points out of the BACK
+*   of the hand (fingers up, palm away from you: index on the right, pinky on the left, so the cross
+*   product points at you). Knuckles barely move when making a fist, so it stays valid while closing.
+* `eyes`: viewer position (same reference space).
+*/
+function measureDeletePose(frame, hand, referenceSpace, eyes) {
     if (!readJoint(frame, hand, 'wrist', referenceSpace, _wrist)) return null;
     if (!readJoint(frame, hand, 'middle-finger-phalanx-proximal', referenceSpace, _middleKnuckle)) return null;
     if (!readJoint(frame, hand, 'index-finger-phalanx-proximal', referenceSpace, _indexKnuckle)) return null;
     if (!readJoint(frame, hand, 'pinky-finger-phalanx-proximal', referenceSpace, _pinkyKnuckle)) return null;
-    _along.subVectors(_middleKnuckle, _wrist);
+    _along.subVectors(_middleKnuckle, _wrist).normalize();
     _across.subVectors(_pinkyKnuckle, _indexKnuckle);
-    return _along.cross(_across).normalize().y;
+    const back = _across.crossVectors(_along, _across).normalize();
+    _toUser.subVectors(eyes, _wrist).setY(0).normalize();
+    return { fingersUp: _along.y, backToUser: back.dot(_toUser) };
 }
 
 export default function FistDeleteGesture() {
     const gestureHand = useXRInputSourceState('hand', GESTURE_HAND);
     const gl = useThree((state) => state.gl);
     const gesture = useMemo(() => createFistGesture(), []);
-    const palmVertical = useRef(false); // hysteresis state of isPalmVertical
+    const inPose = useRef(false); // hysteresis state of isDeletePose
 
     // Leaving XR while armed must not leave the red outline behind
     useEffect(() => () => useStore.getState().setDeleteArmed(false), []);
@@ -75,15 +85,16 @@ export default function FistDeleteGesture() {
         const { objects, view, setDeleteArmed, removeObject } = useStore.getState();
         const referenceSpace = gl.xr.getReferenceSpace();
         const openness = measureOpenness(frame, hand, referenceSpace);
-        const palmNormalY = measurePalmNormalY(frame, hand, referenceSpace);
-        if (openness == null || palmNormalY == null) return; // tracking lost: keep the current state
-        palmVertical.current = isPalmVertical(palmNormalY, palmVertical.current);
+        const viewer = frame.getViewerPose(referenceSpace)?.transform.position;
+        const pose = viewer && measureDeletePose(frame, hand, referenceSpace, _eyes.set(viewer.x, viewer.y, viewer.z));
+        if (openness == null || pose == null) return; // tracking lost: keep the current state
+        inPose.current = isDeletePose(pose.fingersUp, pose.backToUser, inPose.current);
 
-        // Only with a selected object that is not being held, with the palm perpendicular to the floor,
+        // Only with a selected object that is not being held, in the delete pose,
         // and never while the wrist menu is shown
         // (an object held by another device in a shared room cannot be deleted)
         const canArm = objects.selectedId != null && objects.grabbedId == null && !isLockedByOther(objects.selectedId)
-            && palmVertical.current && !view.handMenuVisible;
+            && inPose.current && !view.handMenuVisible;
         const result = gesture(performance.now(), openness, canArm);
 
         const armed = result === 'armed';

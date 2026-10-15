@@ -3,14 +3,18 @@
 * (binding MATERIALS, bucket "ioroom-materials", see wrangler.jsonc). Client: src/materials/materialsApi.js.
 *
 *   GET    /api/materials             -> [record]   public: every viewer must render the materials in use
-*   POST   /api/materials             multipart: name, category ('floor' | 'wall'), tileSize (meters),
+*   POST   /api/materials             multipart: name, category ('floor' | 'wall'), kind (optional, e.g.
+*                                     'wood' | 'marble': the list lives in the client, src/materials/
+*                                     grouping.js; here only its shape is checked), tileSize (meters),
 *                                     color (file, required), normal / orm (files, optional),
 *                                     id (optional: keeps a known id, e.g. when migrating materials)
 *                                     -> record     owner only (Authorization: Bearer <ADMIN_TOKEN>)
+*   PATCH  /api/materials/:id         JSON { name, category, kind, tileSize } (any subset)
+*                                     -> record     owner only: edits the fields, never the maps
 *   DELETE /api/materials/:id         -> 204        owner only: removes the record and its files
 *   GET    /files/materials/:id/:file -> the texture file (public, immutable, cached for a year)
 *
-* Record: { id, name, category, tileSize, maps: { color, normal?, orm? } (R2 keys), createdAt }.
+* Record: { id, name, category, kind, tileSize, maps: { color, normal?, orm? } (R2 keys), createdAt }.
 * orm = packed map like glTF: R ambient occlusion, G roughness, B metalness (records uploaded before ORM
 * may have `roughness` instead: the client reads both).
 * Files are converted to WebP (1K) and packed by the browser before the upload; the server only checks
@@ -24,6 +28,7 @@ const INDEX_KEY = 'materials/index.json';
 const MAPS = ['color', 'normal', 'orm'];
 const ID_PATTERN = /^[a-z0-9_-]{1,64}$/;
 const CATEGORIES = ['floor', 'wall'];
+const KIND_PATTERN = /^[a-z0-9-]{1,24}$/;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_NAME_LENGTH = 60;
 const TILE_SIZE_RANGE = [0.05, 20]; // meters
@@ -38,18 +43,42 @@ const writeIndex = (env, list) => env.MATERIALS.put(INDEX_KEY, JSON.stringify(li
     httpMetadata: { contentType: 'application/json' }
 });
 
+/*
+* Validates the editable fields of a record (raw values from a form or JSON); returns { fields } or
+* { error }. `partial`: only the given keys are checked and returned (PATCH).
+*/
+function readFields(raw, partial = false) {
+    const fields = {};
+    const has = (key) => !partial || raw[key] !== undefined;
+    if (has('name')) {
+        fields.name = String(raw.name ?? '').trim().slice(0, MAX_NAME_LENGTH);
+        if (!fields.name) return { error: 'Name is required' };
+    }
+    if (has('category')) {
+        fields.category = String(raw.category ?? '');
+        if (!CATEGORIES.includes(fields.category)) return { error: 'Unknown category' };
+    }
+    if (has('kind')) {
+        fields.kind = raw.kind ? String(raw.kind) : null; // null = no kind ("Other" in the panel)
+        if (fields.kind != null && !KIND_PATTERN.test(fields.kind)) return { error: 'Invalid kind' };
+    }
+    if (has('tileSize')) {
+        fields.tileSize = Number(raw.tileSize);
+        if (!(fields.tileSize >= TILE_SIZE_RANGE[0] && fields.tileSize <= TILE_SIZE_RANGE[1])) {
+            return { error: `Real size must be between ${TILE_SIZE_RANGE[0]} and ${TILE_SIZE_RANGE[1]} m` };
+        }
+    }
+    return { fields };
+}
+
 // Validates the multipart form; returns { fields, files } or { error }
 async function readUpload(request) {
     const form = await request.formData().catch(() => null);
     if (!form) return { error: 'Expected a multipart form' };
-    const name = String(form.get('name') ?? '').trim().slice(0, MAX_NAME_LENGTH);
-    const category = String(form.get('category') ?? '');
-    const tileSize = Number(form.get('tileSize'));
-    if (!name) return { error: 'Name is required' };
-    if (!CATEGORIES.includes(category)) return { error: 'Unknown category' };
-    if (!(tileSize >= TILE_SIZE_RANGE[0] && tileSize <= TILE_SIZE_RANGE[1])) {
-        return { error: `Real size must be between ${TILE_SIZE_RANGE[0]} and ${TILE_SIZE_RANGE[1]} m` };
-    }
+    const { fields, error } = readFields({
+        name: form.get('name'), category: form.get('category'), kind: form.get('kind'), tileSize: form.get('tileSize')
+    });
+    if (error) return { error };
     const files = {};
     for (const map of MAPS) {
         const file = form.get(map);
@@ -61,7 +90,7 @@ async function readUpload(request) {
     if (!files.color) return { error: 'The color map is required' };
     const id = form.get('id') ? String(form.get('id')) : null;
     if (id != null && !ID_PATTERN.test(id)) return { error: 'Invalid id' };
-    return { id, fields: { name, category, tileSize }, files };
+    return { id, fields, files };
 }
 
 /*
@@ -110,6 +139,19 @@ export async function handleMaterials(request, env, { cors, isOwner }) {
         const record = { id: newId, ...upload.fields, maps, createdAt: Date.now() };
         await writeIndex(env, [...list, record]);
         return json(record, 201);
+    }
+
+    if (id && request.method === 'PATCH') {
+        const body = await request.json().catch(() => null);
+        if (body == null || typeof body !== 'object') return error('Expected a JSON body', 400);
+        const { fields, error: invalid } = readFields(body, true);
+        if (invalid) return error(invalid, 400);
+        const list = await readIndex(env);
+        const record = list.find((item) => item.id === id);
+        if (!record) return error('Material not found', 404);
+        const updated = { ...record, ...fields };
+        await writeIndex(env, list.map((item) => (item.id === id ? updated : item)));
+        return json(updated);
     }
 
     if (id && request.method === 'DELETE') {

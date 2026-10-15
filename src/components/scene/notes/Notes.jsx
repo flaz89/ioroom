@@ -122,7 +122,11 @@ export function NotePin({ note, objectScale }) {
 * pointers measure the distance to bounding boxes, a near-tie). pointerEventsOrder 1 makes the card win,
 * so the touch reaches it (same trick as the gizmo in SingleObject.jsx; for the fingertip pointer the
 * order is applied by the custom sort in xr/xrStore.js, pmndrs' sphere pointers ignore it otherwise).
+* The hand's GRAB pointer sits on the same fingertip as touch: on a tie the hand's combined pointer
+* picks grab, which only clicks on a pinch, so poking did nothing. The card denies grab (like the VR
+* buttons, xr-ui/pointers.js): poke = touch, pinch at a distance = ray, mouse / screen touch unchanged.
 */
+const CARD_POINTER_TYPES = { deny: ['grab'] };
 function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
     const rootRef = useRef();
     const bracketsRef = useRef();
@@ -144,7 +148,7 @@ function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
 
     return (
         <group ref={rootRef}>
-            <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} pointerEventsOrder={1} {...pointerHandlers}>
+            <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} pointerEventsOrder={1} pointerEventsType={CARD_POINTER_TYPES} {...pointerHandlers}>
                 <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
                 <MarkerMaterial map={card} />
             </mesh>

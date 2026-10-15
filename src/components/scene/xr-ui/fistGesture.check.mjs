@@ -1,6 +1,6 @@
 // Self-check for fistGesture.js. Run: node src/components/scene/xr-ui/fistGesture.check.mjs
 import assert from 'node:assert/strict';
-import { createFistGesture, isPalmVertical } from './fistGesture.js';
+import { createFistGesture, isDeletePose } from './fistGesture.js';
 
 const OPEN = 1.9, HALF = 1.4, FIST = 1.1;
 
@@ -33,12 +33,15 @@ const OPEN = 1.9, HALF = 1.4, FIST = 1.1;
     assert.equal(g(500, OPEN, false), null);
     assert.equal(g(600, FIST, false), null);
 }
-// Palm orientation: vertical palm (normal horizontal) yes, palm parallel to the floor no
+// Delete pose: fingers up + back of the hand towards the user
 {
-    assert.equal(isPalmVertical(0.1, false), true, 'karate-chop hand');
-    assert.equal(isPalmVertical(-0.95, false), false, 'palm facing the floor');
-    assert.equal(isPalmVertical(0.55, false), false, 'not yet vertical enough to enter');
-    assert.equal(isPalmVertical(0.55, true), true, 'hysteresis keeps it while closing');
-    assert.equal(isPalmVertical(0.7, true), false, 'rotated away');
+    assert.equal(isDeletePose(0.95, 0.95, false), true, 'fingers up, back to the user');
+    assert.equal(isDeletePose(-0.95, 0.95, false), false, 'fingers down');
+    assert.equal(isDeletePose(0.95, 0.05, false), false, 'hand sideways (karate chop)');
+    assert.equal(isDeletePose(0.95, -0.95, false), false, 'palm towards the user (wrist menu)');
+    assert.equal(isDeletePose(0.1, 0.95, false), false, 'palm parallel to the floor');
+    assert.equal(isDeletePose(0.7, 0.6, false), false, 'not yet in the pose');
+    assert.equal(isDeletePose(0.7, 0.6, true), true, 'hysteresis keeps it while closing');
+    assert.equal(isDeletePose(0.5, 0.6, true), false, 'fingers tilted away');
 }
 console.log('fistGesture: ok');

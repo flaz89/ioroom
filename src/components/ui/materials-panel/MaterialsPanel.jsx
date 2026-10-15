@@ -4,6 +4,7 @@ import { svg } from '../../../utils/svg-logos';
 import { useStore } from '../../../store/appStore';
 import { usePanelInViewport } from '../usePanelInViewport';
 import { useMaterialList } from '../../../materials/library';
+import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { deleteMaterial } from '../../../materials/materialsApi';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import MaterialCreateModal from './MaterialCreateModal';
@@ -11,20 +12,18 @@ import { pickSurfaceAt } from '../../scene/level/room/surfacePicker';
 import { setCursorGrabbing } from '../../scene/sceneCursor';
 import './materials-panel.css';
 
-const GROUPS = [
-    { category: 'floor', title: 'Floors' },
-    { category: 'wall', title: 'Walls' },
-    { category: null, title: 'Basic' }
-];
 
 /*
 * Materials toolbar button (Unreal / Twinmotion style): a panel next to the left toolbar with the material
-* library as shaded balls, grouped by category. Drag a ball onto a wall face or the floor: while dragging, the
+* library as shaded balls. Tabs by category (Floors / Walls) and chips by kind (Wood, Marble...; only the
+* kinds present), materials/grouping.js; the choice is shared with the VR panel (store libraryFilter).
+* Plain is the first ball of every tab. Drag a ball onto a wall face or the floor: while dragging, the
 * surface under the pointer previews the material (orange tint, SurfaceMesh.jsx); releasing there
 * applies it (store `surfaces`, shared with the room). Any material can go on any surface.
 * Pointer events (not HTML drag & drop), so the same gesture works with mouse, pen and touch.
 * Which surface is under the pointer: surfacePicker.js (answered by the scene, MaterialDropTarget.jsx).
-* OWNER (admin token; later pro accounts): "+" uploads a new material (MaterialCreateModal.jsx), "×" on a
+* OWNER (admin token; later pro accounts): "+" uploads a new material (MaterialCreateModal.jsx), "✎" edits
+* its name / category / kind / real size (same modal), "×" on a
 * material (any but Plain) deletes it from the library (second press confirms). Surfaces using a deleted
 * material turn plain.
 */
@@ -38,6 +37,13 @@ export default function MaterialsPanel() {
     const [drag, setDrag] = useState(null); // { material, x, y } while a ball is dragged (ghost ball)
     const materials = useMaterialList();
     const [isCreating, setIsCreating] = useState(false);
+    const [editing, setEditing] = useState(null); // material record in the edit modal
+    const filter = useStore((state) => state.libraryFilter);
+    const setLibraryFilter = useStore((state) => state.setLibraryFilter);
+    const kinds = kindsIn(materials, filter.category);
+    // a chip that no longer has materials (e.g. after an edit) falls back to "All"
+    const kind = kinds.some((k) => k.id === filter.kind) ? filter.kind : null;
+    const shown = visibleMaterials(materials, { category: filter.category, kind });
     const [confirmDelete, setConfirmDelete] = useState(null); // id waiting for the confirming press
     const [deleteError, setDeleteError] = useState(null);
 
@@ -102,11 +108,24 @@ export default function MaterialsPanel() {
                     </div>
                     {deleteError && <span className="materials-error" role="alert">{deleteError}</span>}
                     <span className="materials-hint">Drag a material onto a wall or the floor</span>
-                    {GROUPS.map((group) => (
-                        <div key={group.title} className="materials-group">
-                            <span>{group.title}</span>
+                    <div className="materials-tabs" role="tablist">
+                        {MATERIAL_CATEGORIES.map((category) => (
+                            <button key={category.id} role="tab" aria-selected={filter.category === category.id}
+                                className={filter.category === category.id ? 'is-active' : ''}
+                                onClick={() => setLibraryFilter({ category: category.id })}>{category.label}</button>
+                        ))}
+                    </div>
+                    {kinds.length > 0 && (
+                        <div className="materials-chips">
+                            {[{ id: null, label: 'All' }, ...kinds].map((chip) => (
+                                <button key={chip.id ?? 'all'} className={kind === chip.id ? 'is-active' : ''}
+                                    onClick={() => setLibraryFilter({ kind: chip.id })}>{chip.label}</button>
+                            ))}
+                        </div>
+                    )}
+                    <div className="materials-group">
                             <div className="materials-balls">
-                                {materials.filter((material) => material.category === group.category).map((material) => (
+                                {shown.map((material) => (
                                     <button
                                         key={material.id}
                                         className="materials-item"
@@ -115,6 +134,15 @@ export default function MaterialsPanel() {
                                     >
                                         <MaterialBall material={material} />
                                         <span className="materials-name">{material.name}</span>
+                                        {canManage && material.maps != null && (
+                                            <span
+                                                className="materials-edit"
+                                                role="button"
+                                                title="Edit material"
+                                                onPointerDown={(event) => event.stopPropagation()}
+                                                onClick={(event) => { event.stopPropagation(); setEditing(material); }}
+                                            >✎</span>
+                                        )}
                                         {canManage && material.maps != null && (
                                             <span
                                                 className={confirmDelete === material.id ? 'materials-delete is-confirm' : 'materials-delete'}
@@ -128,11 +156,11 @@ export default function MaterialsPanel() {
                                     </button>
                                 ))}
                             </div>
-                        </div>
-                    ))}
+                    </div>
                 </div>
             )}
-            {isCreating && <MaterialCreateModal onClose={() => setIsCreating(false)} />}
+            {isCreating && <MaterialCreateModal initialCategory={filter.category} onClose={() => setIsCreating(false)} />}
+            {editing != null && <MaterialCreateModal material={editing} onClose={() => setEditing(null)} />}
             {/* ghost ball following the pointer while dragging */}
             {drag != null && (
                 <div className="materials-ghost" style={{ left: drag.x, top: drag.y }}>

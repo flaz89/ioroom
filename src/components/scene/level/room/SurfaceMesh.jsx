@@ -55,7 +55,8 @@ function plainMaterial(color, tinted) {
 
 // textures: { color, normal?, orm?, roughness? } (loaded, drei cache)
 function texturedMaterial(material, textures, tinted) {
-    const key = `${material.id}|${tinted}`;
+    // tileSize in the key: an owner edit of the real size builds a new material (and re-tiles the textures)
+    const key = `${material.id}|${material.tileSize}|${tinted}`;
     if (!materials.has(key)) {
         // drei's cached textures, configured in place: every user of this set wants the same tiling
         for (const texture of Object.values(textures)) {

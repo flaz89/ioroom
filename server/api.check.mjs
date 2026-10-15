@@ -60,6 +60,13 @@ assert.equal(mat.name, 'Test'); assert.equal(mat.tileSize, 1.5); assert.ok(mat.m
 assert.ok((await (await fetch(M)).json()).some((m) => m.id === mat.id)); // public list
 const served = await fetch(`http://${H}/files/${mat.maps.color}`);
 assert.equal(served.status, 200); assert.equal(served.headers.get('content-type'), 'image/png');
+// edit (PATCH, owner only): fields only, maps untouched; bad values refused
+const patch = (body, headers = { ...ownerOnly, 'Content-Type': 'application/json' }) => fetch(`${M}/${mat.id}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
+assert.equal((await patch({ kind: 'wood' }, { 'Content-Type': 'application/json' })).status, 401);
+assert.equal((await patch({ category: 'roof' })).status, 400);
+assert.equal((await patch({ kind: 'Wood!' })).status, 400);
+const edited = await (await patch({ kind: 'wood', tileSize: 2 })).json();
+assert.equal(edited.kind, 'wood'); assert.equal(edited.tileSize, 2); assert.equal(edited.name, 'Test'); assert.deepEqual(edited.maps, mat.maps);
 assert.equal((await fetch(`${M}/${mat.id}`, { method: 'DELETE', headers: ownerOnly })).status, 204);
 assert.ok(!(await (await fetch(M)).json()).some((m) => m.id === mat.id));
 assert.equal((await fetch(`http://${H}/files/${mat.maps.color}`)).status, 404);

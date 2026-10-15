@@ -10,8 +10,9 @@
 *    (the UI should show it, e.g. a red outline).
 * 2. FIRE: a fist within FIRE_WINDOW_MS from the last armed instant -> 'fire' (once).
 *    A slow close, or a fist while not armed, does nothing. After firing, the hand must open again.
-* The hand must also be held "vertical" (palm perpendicular to the floor, like a karate chop):
-* see isPalmVertical. A palm parallel to the floor never arms (outline stays orange).
+* The hand must also be in the DELETE POSE (see isDeletePose): palm perpendicular to the floor, fingers
+* pointing up and the BACK of the hand towards the user (palm facing away). Fingers down, a hand held
+* sideways (karate chop) or a palm facing the user never arm (outline stays orange).
 * Thresholds are calibration knobs: tune them on the headset.
 */
 export const OPEN_RATIO = 1.6;      // openness above this = open hand
@@ -19,15 +20,24 @@ export const FIST_RATIO = 1.25;     // openness below this = fist
 export const ARM_MS = 400;          // open hand must be held this long to arm
 export const FIRE_WINDOW_MS = 600;  // max time from armed (hand starts closing) to fist
 
-// Palm orientation: |palmNormal.y| = 0 -> palm vertical (perpendicular to the floor), 1 -> palm horizontal.
-// Hysteresis: becomes vertical within ~30° of vertical, stops being vertical beyond ~37°,
-// so small wrist rotations while closing the fist do not cancel the gesture.
-export const PALM_VERTICAL_ENTER = Math.sin((30 * Math.PI) / 180);
-export const PALM_VERTICAL_EXIT = Math.sin((37 * Math.PI) / 180);
+/*
+* Delete pose, from two unit vectors of the hand (world up = +Y):
+* - fingersUp: y of the direction wrist -> middle knuckle (1 = fingers straight up, -1 = down);
+* - backToUser: cosine between the BACK-of-hand normal and the horizontal direction hand -> eyes
+*   (1 = back of the hand squarely towards the user, 0 = hand sideways, -1 = palm towards the user).
+* Fingers up already makes the palm perpendicular to the floor.
+* Hysteresis: enters within ~35° (fingers) / ~45° (back), leaves beyond ~50° / ~65°, so the small
+* wrist rotations of closing the fist do not cancel the gesture.
+*/
+const cos = (degrees) => Math.cos((degrees * Math.PI) / 180);
+export const FINGERS_UP_ENTER = cos(35);
+export const FINGERS_UP_EXIT = cos(50);
+export const BACK_TO_USER_ENTER = cos(45);
+export const BACK_TO_USER_EXIT = cos(65);
 
-// palmNormalY: y component of the unit palm normal (world up = +Y); wasVertical: previous result
-export function isPalmVertical(palmNormalY, wasVertical) {
-    return Math.abs(palmNormalY) < (wasVertical ? PALM_VERTICAL_EXIT : PALM_VERTICAL_ENTER);
+export function isDeletePose(fingersUp, backToUser, wasPose) {
+    if (wasPose) return fingersUp > FINGERS_UP_EXIT && backToUser > BACK_TO_USER_EXIT;
+    return fingersUp > FINGERS_UP_ENTER && backToUser > BACK_TO_USER_ENTER;
 }
 
 export function createFistGesture() {

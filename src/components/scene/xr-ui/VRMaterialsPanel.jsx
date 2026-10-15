@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { useMaterialList } from '../../../materials/library';
+import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
@@ -10,7 +11,10 @@ import { placeInFrontOfUser } from './layout';
 
 /*
 * In-VR materials panel (store openPanel 'materials', opened from the wrist menu): the material library
-* as shaded balls, like the desktop panel (components/ui/materials-panel/MaterialsPanel.jsx).
+* as shaded balls, like the desktop panel (components/ui/materials-panel/MaterialsPanel.jsx), with the same
+* organization (materials/grouping.js, filter shared through the store): category tabs (Floors / Walls),
+* kind chips (All, Wood, Marble... only the kinds present), and pages of PAGE_SIZE balls with < > when a
+* group has more. Plain is the first ball of every tab.
 *
 * Drag with the RAY (hand pinch / controller trigger), as on desktop: press on a ball, aim at a floor or
 * wall face (it previews the material, orange tint) and release there to apply it. The drag lives in the
@@ -28,6 +32,11 @@ import { placeInFrontOfUser } from './layout';
 const DISTANCE = 0.45;       // meters in front of the eyes (horizontal)
 const BELOW_EYES = 0.18;     // meters below the eyes
 const COLUMNS = 4;
+const PAGE_ROWS = 3;         // ball rows per page
+const PAGE_SIZE = COLUMNS * PAGE_ROWS;
+const ROW = 0.034;           // meters: tabs / chips / pager rows
+const CHIP_W = 0.062;        // meters (4 chips per row)
+const TAB_W = 0.12;
 const CELL_W = 0.065;        // meters
 const CELL_H = 0.075;        // meters (ball + name)
 const BALL = 0.046;          // meters (diameter)
@@ -91,20 +100,39 @@ export default function VRMaterialsPanel() {
     const session = useXR((state) => state.session);
     const closePanel = useStore((state) => state.closePanel);
     const drag = useStore((state) => state.materialDrag);
-    const materials = useMaterialList();
-    const thumbnails = useThumbnails(materials);
-    const [hovered, setHovered] = useState(null); // index of the ball under a pointer
+    const library = useMaterialList();
+    const thumbnails = useThumbnails(library);
+    const [hovered, setHovered] = useState(null); // index (in the page) of the ball under a pointer
+    const filter = useStore((state) => state.libraryFilter);
+    const setLibraryFilter = useStore((state) => state.setLibraryFilter);
+    const kinds = kindsIn(library, filter.category);
+    const kind = kinds.some((k) => k.id === filter.kind) ? filter.kind : null; // emptied chip -> All
+    const chips = kinds.length > 0 ? [{ id: null, label: 'All' }, ...kinds] : [];
+    const shown = visibleMaterials(library, { category: filter.category, kind });
+    // Page of the current group (reset when the group changes: the key below)
+    const groupKey = `${filter.category}|${kind}`;
+    const [pageState, setPageState] = useState({ groupKey, page: 0 });
+    const pageCount = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+    const page = pageState.groupKey === groupKey ? Math.min(pageState.page, pageCount - 1) : 0;
+    const setPage = (next) => setPageState({ groupKey, page: (next + pageCount) % pageCount });
+    const materials = shown.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE); // the balls on screen
 
     // Place once, when it opens: in front of the user, facing the eyes
     useLayoutEffect(() => {
         placeInFrontOfUser(groupRef.current, getThree().camera, DISTANCE, BELOW_EYES);
     }, [getThree]);
 
-    const rows = Math.max(1, Math.ceil(materials.length / COLUMNS));
+    // Rows from the top: title, tabs, chip rows, grid (always PAGE_ROWS tall once a group needs paging,
+    // so the panel does not jump between pages), pager
+    const chipRows = Math.ceil(chips.length / COLUMNS);
+    const rows = pageCount > 1 ? PAGE_ROWS : Math.max(1, Math.ceil(materials.length / COLUMNS));
     const gridW = COLUMNS * CELL_W;
     const gridH = rows * CELL_H;
-    const height = TITLE_H + gridH + PAD;
+    const height = TITLE_H + ROW * (1 + chipRows) + gridH + (pageCount > 1 ? ROW : 0) + PAD;
     const top = height / 2;
+    const tabsY = top - TITLE_H - ROW / 2;
+    const chipY = (index) => top - TITLE_H - ROW * (1.5 + Math.floor(index / COLUMNS));
+    const gridTop = top - TITLE_H - ROW * (1 + chipRows);
 
     const background = useCanvasTexture(Math.round(WIDTH * 2000), Math.round(height * 2000), (ctx, w, h) => drawPanel(ctx, w, h), [height]);
     const title = useCanvasTexture(Math.round(0.2 * PIXELS_PER_METER), Math.round(0.03 * PIXELS_PER_METER), (ctx, w, h) => {
@@ -130,7 +158,7 @@ export default function VRMaterialsPanel() {
             if (fit < 1) ctx.font = `500 ${Math.round(cell * 0.13 * fit)}px "SUSE Mono", monospace`;
             ctx.fillText(material.name, x, y + radius + cell * 0.13);
         });
-    }, [materials, thumbnails, hovered, drag?.materialId]);
+    }, [materials, thumbnails, hovered, drag?.materialId, rows]);
 
     // Ball under a hit on the grid (uv: 0..1 left to right, bottom to top); null between/after the balls
     const ballAt = (uv) => {
@@ -179,9 +207,22 @@ export default function VRMaterialsPanel() {
             </mesh>
             <VRButton label="X" size={[0.026, 0.026]} onClick={closePanel} position={[WIDTH / 2 - PAD, top - TITLE_H / 2 - 0.004, 0.001]} />
 
-            {/* All the balls: one mesh, one texture */}
+            {/* Category tabs */}
+            {MATERIAL_CATEGORIES.map((category, index) => (
+                <VRButton key={category.id} label={category.label} size={[TAB_W, 0.026]} active={filter.category === category.id}
+                    onClick={() => setLibraryFilter({ category: category.id })}
+                    position={[(index - (MATERIAL_CATEGORIES.length - 1) / 2) * (TAB_W + 0.008), tabsY, 0.001]} />
+            ))}
+            {/* Kind chips, 4 per row */}
+            {chips.map((chip, index) => (
+                <VRButton key={chip.id ?? 'all'} label={chip.label} size={[CHIP_W - 0.004, 0.024]} active={kind === chip.id}
+                    onClick={() => setLibraryFilter({ kind: chip.id })}
+                    position={[(index % COLUMNS - (COLUMNS - 1) / 2) * CELL_W, chipY(index), 0.001]} />
+            ))}
+
+            {/* All the balls of the page: one mesh, one texture */}
             <mesh
-                position={[0, top - TITLE_H - gridH / 2, 0.001]}
+                position={[0, gridTop - gridH / 2, 0.001]}
                 pointerEventsType={acceptsPanelPointer}
                 onPointerDown={startDrag}
                 onPointerMove={(event) => setHovered(ballAt(event.uv))}
@@ -191,6 +232,15 @@ export default function VRMaterialsPanel() {
                 <planeGeometry args={[gridW, gridH]} />
                 <meshBasicMaterial map={grid} transparent depthWrite={false} toneMapped={false} />
             </mesh>
+
+            {/* Pages: < page/count > */}
+            {pageCount > 1 && (
+                <group position={[0, gridTop - gridH - ROW / 2, 0.001]}>
+                    <VRButton label="<" size={[0.03, 0.026]} onClick={() => setPage(page - 1)} position={[-0.05, 0, 0]} />
+                    <VRButton label={`${page + 1}/${pageCount}`} size={[0.05, 0.026]} onClick={() => setPage(page + 1)} />
+                    <VRButton label=">" size={[0.03, 0.026]} onClick={() => setPage(page + 1)} position={[0.05, 0, 0]} />
+                </group>
+            )}
         </group>
         </PointerFilterContext.Provider>
     );
