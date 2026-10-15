@@ -22,6 +22,12 @@ const VERTICAL_FACES = ['px', 'nx', 'pz', 'nz'];
 */
 // Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
 const ROOM_USER_DATA = { isRoom: true };
+/*
+* XR touch/grab pointers test a mesh's BOUNDING BOX, not its triangles: a batch merging three walls has a
+* box as big as the room, so hands would always "touch" it and that contact beats the ray (nothing works).
+* The room only takes rays (and the mouse).
+*/
+const ROOM_POINTER_TYPES = { deny: ['touch', 'grab'] };
 
 /*
 * The fixed test room: floor, invisible ceiling, three walls (left, right, back). Every face has its own
@@ -76,7 +82,7 @@ export default function Room({ sizes }) {
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA}>
+        <group userData={ROOM_USER_DATA} pointerEventsType={ROOM_POINTER_TYPES}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh
