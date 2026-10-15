@@ -15,8 +15,8 @@ const GROUPS = [
 
 /*
 * Materials toolbar button (Unreal / Twinmotion style): a panel next to the left toolbar with the material
-* library as shaded balls, grouped by category. Drag a ball onto a wall or the floor: while dragging, the
-* surface under the pointer previews the material (orange tint, SurfaceMaterial.jsx); releasing there
+* library as shaded balls, grouped by category. Drag a ball onto a wall face or the floor: while dragging, the
+* surface under the pointer previews the material (orange tint, SurfaceMesh.jsx); releasing there
 * applies it (store `surfaces`, shared with the room). Any material can go on any surface.
 * Pointer events (not HTML drag & drop), so the same gesture works with mouse, pen and touch.
 * Which surface is under the pointer: surfacePicker.js (answered by the scene, MaterialDropTarget.jsx).

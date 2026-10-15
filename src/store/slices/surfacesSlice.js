@@ -2,7 +2,7 @@
 * Materials of the room surfaces (floor, each wall).
 *
 * surfaces (saved in the environment, sync: Y.Map "surfaces", sync/roomSync.js + fieldMapSync.js):
-*   surface id (userData.surfaceId of the room meshes, Room.jsx) -> material id (materials/library.js);
+*   surface id (userData.surfaceId of the room face meshes, Room.jsx: 'floor', '<wall>:inner|outer|edge') -> material id (materials/library.js);
 *   a missing surface uses the plain material. Everyone in the room can change them (like the objects).
 * materialDrag (per device, never synced): { materialId, surfaceId } while a material is dragged from the
 *   materials panel; surfaceId = surface under the pointer (previewed there), null over nothing.
@@ -11,7 +11,7 @@ export const createSurfacesSlice = (set) => ({
     surfaces: {},
     materialDrag: null,
 
-    // Sets one surface's material, e.g. setSurfaceMaterial('wall-back', 'brick_wall_001')
+    // Sets one surface's material, e.g. setSurfaceMaterial('wall-back:inner', 'brick_wall_001')
     setSurfaceMaterial: (surfaceId, materialId) => set((state) => ({
         surfaces: { ...state.surfaces, [surfaceId]: materialId }
     })),
