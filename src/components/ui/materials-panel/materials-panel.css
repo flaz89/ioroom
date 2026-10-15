@@ -1,4 +1,4 @@
-/* Room materials panel (MaterialsPanel.jsx): floats to the right of the left toolbar, vertically centered on its button, glass style like the sun panel */
+/* Materials panel (MaterialsPanel.jsx): floats to the right of the left toolbar, vertically centered on its button, glass style like the sun panel */
 .materials-control {
     position: relative;
     display: flex;
@@ -10,7 +10,7 @@
     top: 50%;
     transform: translateY(-50%);
     z-index: 100;
-    width: 230px;
+    width: 250px;
     padding: .8em;
     display: flex;
     flex-direction: column;
@@ -26,34 +26,70 @@
 }
 
 .materials-title { font-weight: 600; }
+.materials-hint { opacity: .7; margin-top: -.4em; }
 
-.materials-row {
+.materials-group {
     display: flex;
     flex-direction: column;
-    gap: .3em;
-}
-
-.materials-swatches {
-    display: flex;
-    flex-wrap: wrap;
     gap: .4em;
 }
 
-/* Swatch: the material's color map; plain = flat light gray */
-.materials-swatch {
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    border-radius: 8px;
-    background: #d4d4d4 center / cover;
-    cursor: pointer;
+.materials-balls {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5em;
 }
 
-.materials-swatch:active { scale: .95; }
-
-/* Selected: the selection orange */
-.materials-swatch.is-selected {
-    border-color: #ff9a1a;
-    box-shadow: 0 0 0 2px rgba(255, 154, 26, 0.45);
+.materials-item {
+    padding: .3em .1em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .3em;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    color: white;
+    font: inherit;
+    cursor: grab;
+    touch-action: none; /* dragging a ball must not scroll the panel or zoom the page */
+    user-select: none;
 }
+.materials-item:hover { border-color: rgba(255, 154, 26, 0.6); background: rgba(0, 0, 0, 0.15); }
+
+.materials-name {
+    font-size: .85em;
+    text-align: center;
+    line-height: 1.15;
+}
+
+/* Material ball: the color map on a disc + a light from the top left and a darker rim, so it reads as a sphere */
+.material-ball {
+    position: relative;
+    display: block;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #d4d4d4 center / 180%;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, 0.5);
+}
+.material-ball::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.55) 0, rgba(255, 255, 255, 0) 30%),
+        radial-gradient(circle at 42% 38%, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 0.6) 100%);
+}
+
+/* Ghost ball under the pointer while dragging (never catches the pointer) */
+.materials-ghost {
+    position: fixed;
+    z-index: 200;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    opacity: .85;
+}
+.materials-ghost .material-ball { width: 44px; height: 44px; }
+body:has(.materials-ghost) { cursor: grabbing; }

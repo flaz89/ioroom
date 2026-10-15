@@ -14,6 +14,7 @@ import Light from "../../light/Light";
 import { CameraHeadingTracker } from "../sun/CameraHeadingTracker";
 import CompassLetters from "../sun/CompassLetters";
 import BoardNotes from "../notes/Notes";
+import MaterialDropTarget from "./room/MaterialDropTarget";
 
 export default function Level() {
 
@@ -41,6 +42,8 @@ export default function Level() {
                 <ObjectRenderer isTabletop={isTabletop} />
                 {/* post-it notes on room surfaces + desktop placing mode (notes on objects: SingleObject) */}
                 <BoardNotes />
+                {/* desktop/mobile: drop target of the materials panel (drag a material onto a wall/floor) */}
+                {!isXR && <MaterialDropTarget />}
                 {/* shared rooms: other people's pointers (and this device's, published) */}
                 <RemotePointers />
                 {/* shared rooms: headset users (and this headset, published) */}
