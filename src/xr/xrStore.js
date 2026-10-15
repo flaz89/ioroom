@@ -39,6 +39,13 @@ useStore.subscribe((state, previousState) => {
 });
 
 /*
+* Renderer of XR sessions: 'webgl' (WebGLRenderer, default) or, with ?xr=multiview in the URL,
+* 'webgl-multiview' (WebGPURenderer on its WebGL2 backend with OVR_multiview2: both eyes drawn in one
+* pass). EXPERIMENT: compare draw calls / frame time in the VR performance panel, then keep one.
+*/
+const XR_BACKEND = new URL(window.location.href).searchParams.get('xr') === 'multiview' ? 'webgl-multiview' : 'webgl';
+
+/*
 * Enter an immersive session ("immersive-vr" | "immersive-ar").
 * WebXR has no WebGPU binding, so the Canvas is first swapped to a WebGLRenderer and the session
 * is requested only once that renderer is mounted. The swap is fast enough to stay within the
@@ -46,8 +53,8 @@ useStore.subscribe((state, previousState) => {
 */
 export async function enterXR(mode) {
     const { setBackend, restoreBackend } = useStore.getState();
-    setBackend('webgl');
-    await waitForReadyBackend('webgl');
+    setBackend(XR_BACKEND);
+    await waitForReadyBackend(XR_BACKEND);
     try {
         return await xrStore.enterXR(mode);
     } catch (error) {

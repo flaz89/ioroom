@@ -5,9 +5,11 @@
 * then WebP conversion). ARM = R ambient occlusion, G roughness, B metalness: uploaded as the ORM map.
 *
 * Run from the project root with the owner's token:
-*   ADMIN_TOKEN=... node scripts/seed-materials.mjs
+*   ADMIN_TOKEN=... node scripts/seed-materials.mjs              (adds the missing ones)
+*   ADMIN_TOKEN=... node scripts/seed-materials.mjs --replace wall   (re-uploads a category, same ids)
 * Sync host: env SYNC_HOST, else VITE_SYNC_HOST from .env.local. Materials already in the library are
-* skipped (the server answers 409), so it can be run again after a failure.
+* skipped (the server answers 409), so it can be run again after a failure. --replace <category> first
+* deletes that category's materials, then uploads them again (rooms keep using them: same ids).
 */
 import { readFile } from 'node:fs/promises';
 
@@ -29,14 +31,22 @@ const host = process.env.SYNC_HOST ?? envHost;
 if (!host) throw new Error('Set SYNC_HOST (or VITE_SYNC_HOST in .env.local)');
 const api = `${/^(localhost|127\.)/.test(host) ? 'http' : 'https'}://${host}/api/materials`;
 
+const replaceIndex = process.argv.indexOf('--replace');
+const replaceCategory = replaceIndex >= 0 ? process.argv[replaceIndex + 1] : null;
+const auth = { Authorization: `Bearer ${token}` };
+
 for (const material of MATERIALS) {
+    if (material.category === replaceCategory) {
+        const removed = await fetch(`${api}/${material.id}`, { method: 'DELETE', headers: auth });
+        if (removed.ok) console.log(`- ${material.id} (replacing)`);
+    }
     const form = new FormData();
     for (const [key, value] of Object.entries(material)) form.append(key, String(value));
     for (const [field, suffix] of Object.entries(FILES)) {
         const path = `scripts/.textures/${material.id}/${material.id}_${suffix}_1k.webp`;
         form.append(field, new Blob([await readFile(path)], { type: 'image/webp' }), `${field}.webp`);
     }
-    const response = await fetch(api, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form });
+    const response = await fetch(api, { method: 'POST', headers: auth, body: form });
     if (response.status === 409) console.log(`= ${material.id} (already in the library)`);
     else if (response.ok) console.log(`+ ${material.id}`);
     else throw new Error(`${material.id}: ${response.status} ${await response.text()}`);

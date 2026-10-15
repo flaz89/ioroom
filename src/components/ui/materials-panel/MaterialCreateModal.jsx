@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
 import { createMaterial } from '../../../materials/materialsApi';
-import { ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
+import { COLOR_MAX_SIZE, ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
 import './material-create.css';
 
 // Maps the form asks for. The ORM data comes either from one ready-made ARM/ORM image (e.g. Poly Haven
@@ -52,9 +52,9 @@ export default function MaterialCreateModal({ onClose }) {
         setError(null);
         try {
             const converted = {
-                color: await imageToWebp(files.color, { quality: 0.85 }),
+                color: await imageToWebp(files.color, { maxSize: COLOR_MAX_SIZE[category], quality: 0.85 }),
                 // normal maps carry data, not color: a higher quality keeps them smooth
-                normal: files.normal ? await imageToWebp(files.normal, { quality: 0.9 }) : null,
+                normal: files.normal ? await imageToWebp(files.normal, { maxSize: COLOR_MAX_SIZE[category], quality: 0.9 }) : null,
                 orm: files.arm
                     ? await imageToWebp(files.arm, { maxSize: ORM_MAX_SIZE, quality: 0.9 })
                     : await packOrm(files)
@@ -95,7 +95,7 @@ export default function MaterialCreateModal({ onClose }) {
                     </label>
                 </div>
                 <span className="material-create-help">Real size = width of one texture tile in the room (e.g. 2 m of parquet).</span>
-                <span className="material-create-help">Maps: upload the best you have (2K recommended). Color and normal are kept up to 2K, the ARM map (ready-made or packed) at 1K.</span>
+                <span className="material-create-help">Maps: upload the best you have (2K recommended). Color and normal are kept up to 2K for walls (seen up close) and 1K for floors; the ARM map at 1K.</span>
 
                 {[...MAIN_MAPS, ARM_MAP].map((map) => <FileField key={map.key} map={map} onPick={pickFile} />)}
                 <fieldset className="material-create-group" disabled={files.arm != null}>
