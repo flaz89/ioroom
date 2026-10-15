@@ -28,5 +28,8 @@
     .scene-container { padding: 10px; height: 100dvh;}
     .ui-container { padding: 10px;}
 }
-/* Post-it placing mode (scene/notes/Notes.jsx): the next click on the scene sticks a note */
+/* Scene cursor (components/scene/sceneCursor.js): hand over clickable things, closed hand while dragging */
+body.scene-hover canvas { cursor: pointer; }
+body.scene-grabbing, body.scene-grabbing canvas { cursor: grabbing; }
+/* Post-it placing mode (scene/notes/Notes.jsx): the next click on the scene sticks a note (wins: last) */
 body.placing-note canvas { cursor: crosshair; }

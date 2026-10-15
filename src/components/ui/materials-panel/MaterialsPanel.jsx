@@ -8,6 +8,7 @@ import { deleteMaterial } from '../../../materials/materialsApi';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import MaterialCreateModal from './MaterialCreateModal';
 import { pickSurfaceAt } from '../../scene/level/room/surfacePicker';
+import { setCursorGrabbing } from '../../scene/sceneCursor';
 import './materials-panel.css';
 
 const GROUPS = [
@@ -71,7 +72,9 @@ export default function MaterialsPanel() {
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', end);
         window.addEventListener('pointercancel', end);
+        setCursorGrabbing('material-drag', true); // closed hand everywhere while a ball is dragged
         return () => {
+            setCursorGrabbing('material-drag', false);
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', end);
             window.removeEventListener('pointercancel', end);

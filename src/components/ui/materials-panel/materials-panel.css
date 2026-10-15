@@ -92,7 +92,6 @@
     opacity: .85;
 }
 .materials-ghost .material-ball { width: 44px; height: 44px; }
-body:has(.materials-ghost) { cursor: grabbing; }
 
 /* ------------------- MOBILE ----------------------
    Docked low, between the two side toolbars and just above the "+" button, with smaller balls: the

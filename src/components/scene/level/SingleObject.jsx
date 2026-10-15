@@ -9,6 +9,7 @@ import { endLivePose, holdObject, isLockedByOther, publishLivePose, releaseObjec
 import { useHandle } from "@react-three/handle";
 import { useStore } from "../../../store/appStore";
 import { NotePin } from "../notes/Notes";
+import { setCursorGrabbing, setCursorHover } from "../sceneCursor";
 
 function renderGeometry(type) {
   switch(type) {
@@ -302,6 +303,16 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     *   the saved scene update sets the final transform through the data props.
     */
     const isDraggingHere = isGrabbing !== false || isGizmoDragging;
+
+    // Mouse cursor (sceneCursor.js): hand while hovered, closed hand while this object is dragged here
+    useEffect(() => {
+        setCursorHover(data.id, isHovered);
+        setCursorGrabbing(data.id, isDraggingHere);
+    }, [data.id, isHovered, isDraggingHere]);
+    useEffect(() => () => {
+        setCursorHover(data.id, false);
+        setCursorGrabbing(data.id, false);
+    }, [data.id]);
     useFrame((_state, delta) => {
         const target = targetRef.current;
         if (target == null) return;

@@ -1,0 +1,8 @@
+# Files the Vercel CLI must not upload (`npm run deploy`): Vercel builds the app from the sources on
+# its servers, so only what `vite build` needs goes up.
+# Texture staging of scripts/seed-materials.mjs (the material library lives in R2)
+scripts/.textures
+# Local builds (Vercel builds its own)
+dist
+# Sync server: deployed to Cloudflare separately (npm run sync:deploy), with local Wrangler data and secrets
+server

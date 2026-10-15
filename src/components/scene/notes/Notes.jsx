@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { useCanvasTexture } from '../xr-ui/useCanvasTexture';
+import { setCursorHover } from '../sceneCursor';
 
 /*
 * Post-it notes in the scene (data and rules: store/slices/notesSlice.js).
@@ -73,6 +74,12 @@ export function NotePin({ note, objectScale }) {
             quaternion: new THREE.Quaternion().setFromUnitVectors(_forward, normal)
         };
     }, [note.n, objectScale, boost]);
+
+    // Mouse cursor: hand while hovered (sceneCursor.js); cleared when the note goes away
+    useEffect(() => {
+        setCursorHover(`note:${note.id}`, isHovered);
+        return () => setCursorHover(`note:${note.id}`, false);
+    }, [note.id, isHovered]);
 
     // opens the editor: DOM modal on desktop/mobile (ui/note-modal/), VRNotePanel in XR
     const handleClick = (event) => {
