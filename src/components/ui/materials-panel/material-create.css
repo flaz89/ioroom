@@ -81,3 +81,16 @@
     background: linear-gradient(35deg, rgba(255, 183, 51, 0.85) 0%, rgba(255, 140, 0, 0.85) 70%);
     font-weight: 600;
 }
+
+/* Separate AO / roughness / metallic maps: grouped, greyed out when a ready-made ARM map is given */
+.material-create-group {
+    margin: 0;
+    padding: .5em .6em .6em;
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+}
+.material-create-group legend { padding: 0 .3em; opacity: .75; }
+.material-create-group:disabled { opacity: .45; }
