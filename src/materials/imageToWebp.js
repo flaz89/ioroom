@@ -1,14 +1,17 @@
 /*
 * Texture preparation for uploads (owner, browser side):
-* - imageToWebp: downscales to fit `maxSize` (1K: crisp at room scale, light for the Quest) and encodes
-*   WebP. Chrome / Firefox / Edge encode natively; browsers that cannot (Safari) use @jsquash/webp
+* - imageToWebp: downscales to fit `maxSize` and encodes WebP. Color and normal maps go up to 2K (the
+*   detail you see when walking up to a wall in VR). Chrome / Firefox / Edge encode natively; browsers that cannot (Safari) use @jsquash/webp
 *   (Google's libwebp compiled to WebAssembly), loaded on demand only here.
 * - packOrm: packs grayscale ambient occlusion / roughness / metalness images into one ORM image
-*   (R / G / B, like glTF; three.js reads aoMap.r, roughnessMap.g, metalnessMap.b), then WebP.
+*   (R / G / B, like glTF; three.js reads aoMap.r, roughnessMap.g, metalnessMap.b), then WebP. 1K is
+*   enough: AO and roughness are soft, low-frequency detail.
+* Users can upload any size (2K or more recommended): only the downscaled files are uploaded.
 *   Missing maps get neutral values: AO 1 (none), roughness 1 (matte), metalness 0.
 * Both resolve with a WebP Blob.
 */
-const DEFAULT_MAX_SIZE = 1024;
+export const COLOR_MAX_SIZE = 2048; // color and normal maps
+export const ORM_MAX_SIZE = 1024;
 
 // 2D context of a new canvas of width × height
 function createContext(width, height) {
@@ -21,6 +24,7 @@ function createContext(width, height) {
 // Draws `bitmap` into a new canvas of width × height; returns its 2D context
 function drawToCanvas(bitmap, width, height) {
     const ctx = createContext(width, height);
+    ctx.imageSmoothingQuality = 'high'; // big downscales (4K -> 2K) without aliasing
     ctx.drawImage(bitmap, 0, 0, width, height);
     return ctx;
 }
@@ -41,7 +45,7 @@ async function encodeWebp(ctx, quality) {
     return new Blob([buffer], { type: 'image/webp' });
 }
 
-export async function imageToWebp(file, { maxSize = DEFAULT_MAX_SIZE, quality = 0.85 } = {}) {
+export async function imageToWebp(file, { maxSize = COLOR_MAX_SIZE, quality = 0.85 } = {}) {
     const bitmap = await createImageBitmap(file);
     const ctx = drawToCanvas(bitmap, ...fitSize(bitmap.width, bitmap.height, maxSize));
     bitmap.close();
@@ -49,7 +53,7 @@ export async function imageToWebp(file, { maxSize = DEFAULT_MAX_SIZE, quality = 
 }
 
 // files: { ao?, roughness?, metalness? } (File); null when none is given
-export async function packOrm(files, { maxSize = DEFAULT_MAX_SIZE, quality = 0.9 } = {}) {
+export async function packOrm(files, { maxSize = ORM_MAX_SIZE, quality = 0.9 } = {}) {
     const sources = ['ao', 'roughness', 'metalness'].map((key) => files[key] ?? null);
     if (sources.every((file) => file == null)) return null;
     const bitmaps = await Promise.all(sources.map((file) => (file ? createImageBitmap(file) : null)));

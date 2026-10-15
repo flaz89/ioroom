@@ -85,6 +85,7 @@ export default function MaterialCreateModal({ onClose }) {
                     </label>
                 </div>
                 <span className="material-create-help">Real size = width of one texture tile in the room (e.g. 2 m of parquet).</span>
+                <span className="material-create-help">Maps: upload the best you have (2K recommended). Color and normal are kept up to 2K, AO / roughness / metallic are packed at 1K.</span>
 
                 {MAPS.map((map) => (
                     <label key={map.key} className="material-create-file">
