@@ -107,6 +107,12 @@ npm run sync:deploy  # Deploy del server stanze su Cloudflare (Workers + Durable
 - Pannelli UI: un solo pannello aperto per volta (`store/slices/panelSlice.js`, `openPanel`: sun, rooms, share, objects, users, perf). Su mobile ogni menu si apre come card centrata (`ui.css`). Bottoni attivi: `CircleButton isActive`.
 - VR: pannello sole nel mondo davanti all'utente (`xr-ui/VRSunPanel.jsx`, slider `VRSlider.jsx`), aperto dal bottone sole del polso. Puntatori ammessi in `xr-ui/pointers.js` (PointerFilterContext): menu del polso = dito destro o raggio controller (mai le dita della mano sinistra), pannelli nella stanza = anche raggio della mano. Cursore del raggio ridotto in tabletop (`xr/xrStore.js`).
 
+## Post-it (note)
+- Dati: `store/slices/notesSlice.js` (`notes.items`: `{ id, objectId, p, n, text, author: { name, color } }`; `objectId` null = superficie della stanza, coordinate della Board; altrimenti spazio locale (geometria non scalata) dell'oggetto). Salvati nell'ambiente: Y.Map "notes" sincronizzata come gli oggetti (`bindInstances` in `sync/roomSync.js`). Autore = nome del dispositivo e colore di presenza (`getSelfUser()` in `presence.js`); per ora chiunque nella stanza modifica/elimina qualsiasi nota. Eliminando un oggetto si eliminano le sue note.
+- Scena: `components/scene/notes/Notes.jsx` — `BoardNotes` (dentro la Board: note sulla stanza + modalità di posizionamento desktop) e `NotePin` (quadrato di carta del colore dell'autore, label col nome all'hover, click = editor). Le note su un oggetto sono figlie dell'oggetto in `SingleObject.jsx` (lo seguono, anche nei drag remoti) con scala annullata. Le note non sono mai appoggi per gli oggetti (`userData.isNote`, escluse in `surfaceDrag.js`). Superfici che accettano note: mesh degli oggetti (`userData.objectId`) e stanza (`userData.isRoom` in `Room.jsx`).
+- UI desktop: bottone post-it nella barra destra (pill della griglia) → modalità posizionamento (cursore a croce, Esc annulla; la pressione non seleziona/orbita) → click su muro/pavimento/oggetto → editor `components/ui/note-modal/` (Ctrl/Cmd+Enter salva, Esc/sfondo annulla, Elimina con conferma).
+- VR: le note si vedono (con label all'hover) ma per ora non si aprono né si creano: prossimo passo.
+
 ## Convenzioni
 
 - **Componenti funzionali React** con JSX (nessun TypeScript, solo JSDoc implicito).

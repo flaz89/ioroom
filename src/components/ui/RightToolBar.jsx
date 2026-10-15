@@ -17,6 +17,9 @@ export default function RightToolBar() {
     const closePanel = useStore(state => state.closePanel);
 
     const toggleGrid = useStore(state => state.toggleGrid);
+    // post-it placing mode: the next press on a surface sticks a note there (scene/notes/Notes.jsx)
+    const isPlacingNote = useStore(state => state.notes.placing);
+    const setPlacingNote = useStore(state => state.setPlacingNote);
     const selectedObject = useStore(state => state.objects.selectedId);
     const removeSelectedObject = useStore(state => state.removeObject);
     const settings = useStore(state => state.settings);
@@ -77,6 +80,7 @@ export default function RightToolBar() {
                         onToggle={toggleRotationSnap}
                         onPick={setRotationSnapStep}
                     />
+                    <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>
                 </div>
 
                 <div className='objects-selection'>

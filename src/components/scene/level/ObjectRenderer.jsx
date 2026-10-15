@@ -7,6 +7,7 @@ import SingleObject from "./SingleObject";
 export default function ObjectRenderer({ isTabletop }) {
 
     const instances = useStore((state) => state.objects.instances)
+    const notes = useStore((state) => state.notes.items)
     
     const { mode } = useXR();
     const isVR = mode === "immersive-vr";
@@ -19,6 +20,8 @@ export default function ObjectRenderer({ isTabletop }) {
             return <SingleObject
                 key={obj.id}
                 data={obj}
+                // post-it notes stuck on this object (they move with it)
+                notes={notes.filter((note) => note.objectId === obj.id)}
                 showPivot={isFlatscreen}
                 // flatscreen: no rotation from a mouse ray; tabletop: pieces stay upright (yaw only)
                 pointerRotation={isFlatscreen ? 'none' : isTabletop ? 'yaw' : 'free'}

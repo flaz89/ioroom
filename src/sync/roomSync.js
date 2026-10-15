@@ -14,6 +14,7 @@ import { bindSun } from './sunSync';
 * how the store already updates objects (immutable copies, transform committed on release).
 * - local -> room: a store subscription writes the instances whose reference changed, deletes removed ids;
 * - room -> local: remote changes replace objects.instances (selection is cleared if its object is gone).
+* Post-it notes (store notes.items, see store/slices/notesSlice.js): same model, Y.Map "notes" (bindInstances).
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
 *
@@ -73,10 +74,51 @@ export function getRoomId() {
     return new URL(window.location.href).searchParams.get('room');
 }
 
+/*
+* Keeps a store list of plain instances ({ id, ... }, replaced immutably on every edit) identical to the
+* Y.Map `yMap` (id -> instance, last writer wins per instance). `select(state)` reads the list,
+* `replaceAll(list)` writes the room's list into the store. Returns the unbind function.
+*/
+function bindInstances(doc, yMap, select, replaceAll) {
+    let applyingRemote = false; // true while remote state is written into the store (no echo back)
+
+    // local -> room: only what changed (instances are immutable, so a new reference = an edit)
+    const push = (list, previous) => {
+        const previousRefs = new Set(previous);
+        const ids = new Set(list.map((item) => item.id));
+        doc.transact(() => {
+            for (const item of list) if (!previousRefs.has(item)) yMap.set(item.id, item);
+            for (const item of previous) if (!ids.has(item.id)) yMap.delete(item.id);
+        }, LOCAL);
+    };
+
+    // What this device already has joins the room (new room: it seeds it; existing room: it merges in)
+    push(select(useStore.getState()), []);
+
+    const unsubscribe = useStore.subscribe((state, previousState) => {
+        const list = select(state);
+        const previous = select(previousState);
+        if (!applyingRemote && list !== previous) push(list, previous);
+    });
+
+    // room -> local
+    const pull = (event) => {
+        if (event.transaction.origin === LOCAL) return;
+        applyingRemote = true;
+        replaceAll(Array.from(yMap.values()));
+        applyingRemote = false;
+    };
+    yMap.observe(pull);
+
+    return () => {
+        yMap.unobserve(pull);
+        unsubscribe();
+    };
+}
+
 // Connects this device to `room`; returns the disconnect function
 export function connectRoom(room) {
     const doc = new Y.Doc();
-    const yObjects = doc.getMap('objects');
     const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY });
 
     // Status for the UI; a room that does not exist stops the reconnection attempts
@@ -89,35 +131,10 @@ export function connectRoom(room) {
         provider.disconnect();
         setRoomStatus('not-found');
     });
-    let applyingRemote = false; // true while remote state is written into the store (no echo back)
-
-    // local -> room: only what changed (instances are immutable, so a new reference = an edit)
-    const push = (instances, previous) => {
-        const previousRefs = new Set(previous);
-        const ids = new Set(instances.map((object) => object.id));
-        doc.transact(() => {
-            for (const object of instances) if (!previousRefs.has(object)) yObjects.set(object.id, object);
-            for (const object of previous) if (!ids.has(object.id)) yObjects.delete(object.id);
-        }, LOCAL);
-    };
-
-    // Objects already in the scene join the room (new room: they seed it; existing room: they merge in)
-    push(useStore.getState().objects.instances, []);
-
-    const unsubscribe = useStore.subscribe((state, previousState) => {
-        if (applyingRemote || state.objects.instances === previousState.objects.instances) return;
-        push(state.objects.instances, previousState.objects.instances);
-    });
-
-    // room -> local
-    const pull = (event) => {
-        if (event.transaction.origin === LOCAL) return;
-        applyingRemote = true;
-        useStore.getState().setInstances(Array.from(yObjects.values()));
-        applyingRemote = false;
-    };
-    yObjects.observe(pull);
-
+    const unbindObjects = bindInstances(doc, doc.getMap('objects'),
+        (state) => state.objects.instances, (list) => useStore.getState().setInstances(list));
+    const unbindNotes = bindInstances(doc, doc.getMap('notes'),
+        (state) => state.notes.items, (list) => useStore.getState().setNotes(list));
     const unbindAwareness = bindAwareness(provider.awareness);
     const unbindSun = bindSun(doc, provider);
 
@@ -125,8 +142,8 @@ export function connectRoom(room) {
         setRoomStatus('local');
         unbindAwareness();
         unbindSun();
-        yObjects.unobserve(pull);
-        unsubscribe();
+        unbindObjects();
+        unbindNotes();
         provider.destroy();
         doc.destroy();
     };

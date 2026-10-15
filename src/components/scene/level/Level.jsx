@@ -12,6 +12,7 @@ import { useStore } from "../../../store/appStore";
 import Light from "../../light/Light";
 import { CameraHeadingTracker } from "../sun/CameraHeadingTracker";
 import CompassLetters from "../sun/CompassLetters";
+import BoardNotes from "../notes/Notes";
 
 export default function Level() {
 
@@ -37,6 +38,8 @@ export default function Level() {
                 <CameraHeadingTracker />
                 <CompassLetters />
                 <ObjectRenderer isTabletop={isTabletop} />
+                {/* post-it notes on room surfaces + desktop placing mode (notes on objects: SingleObject) */}
+                <BoardNotes />
                 {/* shared rooms: other people's pointers (and this device's, published) */}
                 <RemotePointers />
                 {/* shared rooms: headset users (and this headset, published) */}

@@ -110,7 +110,8 @@ export const createObjectsSlice = (set) => ({
         })
     },
 
-    // REMOVE --------------------------- delete object with specific id from main array
+    // REMOVE --------------------------- delete object with specific id from main array,
+    // together with the post-it notes stuck on it (store/slices/notesSlice.js)
     removeObject: (id) => {
         set((state) => ({
             objects: {
@@ -118,6 +119,10 @@ export const createObjectsSlice = (set) => ({
                 instances: state.objects.instances.filter(obj => obj.id !== id),
                 selectedId: state.objects.selectedId === id ? null : state.objects.selectedId,
                 deleteArmed: false
+            },
+            notes: {
+                ...state.notes,
+                items: state.notes.items.filter((note) => note.objectId !== id)
             }
         }))
     }

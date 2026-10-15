@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
 import RoomNotice from './components/ui/room-notice/RoomNotice';
 import CompassBar from './components/ui/compass/CompassBar';
+import NoteModal from './components/ui/note-modal/NoteModal';
 
 
 /* 
@@ -35,6 +36,7 @@ export default function App() {
           <PerfPanel/>
           <CompassBar/>
           <RoomNotice/>
+          <NoteModal/>
         </div>
         
       </div>

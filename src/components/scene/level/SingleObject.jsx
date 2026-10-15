@@ -8,6 +8,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { endLivePose, holdObject, isLockedByOther, publishLivePose, releaseObject, remotePoses, useObjectLock, useSelfColor } from "../../../sync/presence";
 import { useHandle } from "@react-three/handle";
 import { useStore } from "../../../store/appStore";
+import { NotePin } from "../notes/Notes";
 
 function renderGeometry(type) {
   switch(type) {
@@ -111,9 +112,10 @@ function nearGrabYaw(grab, pointerQuaternion) {
 *
 *   group (targetRef)  <- owns the transform saved in the store; moved by grab/drag
 *   └─ PivotControls   <- flatscreen gizmo; its inner matrix is a delta, reset to identity on commit
-*      └─ mesh (meshRef) <- click to select, press + drag (mouse) / grip (controller) / pinch (hand) to grab
+*      ├─ mesh (meshRef) <- click to select, press + drag (mouse) / grip (controller) / pinch (hand) to grab
+*      └─ NotePin...     <- post-it notes stuck on the object (object local space, see scene/notes/Notes.jsx)
 */
-export default function SingleObject({ data, showPivot, pointerRotation, nearGrabFootprint }) {
+export default function SingleObject({ data, notes, showPivot, pointerRotation, nearGrabFootprint }) {
 
     const targetRef = useRef();
     const meshRef = useRef();
@@ -399,6 +401,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
             >
                 <mesh
                     ref={meshRef}
+                    userData={{ objectId: data.id }} // post-it placing: which object a note sticks on
                     castShadow
                     receiveShadow
                     onClick={handleClick}
@@ -415,6 +418,7 @@ export default function SingleObject({ data, showPivot, pointerRotation, nearGra
                         ? <SelectionOutline color={lockColor} thickness={3} />
                         : isSelected && <SelectionOutline color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
                 </mesh>
+                {notes.map((note) => <NotePin key={note.id} note={note} objectScale={data.scale} />)}
             </PivotControls>
         </group>
         {/* where the object is / will land while it is moved (sibling: lives in board space) */}

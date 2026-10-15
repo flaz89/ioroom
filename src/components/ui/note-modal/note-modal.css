@@ -1,0 +1,86 @@
+/* Post-it editor (NoteModal.jsx): centered modal over a dimmed backdrop, same glass style as "My environments" */
+.note-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.45);
+    pointer-events: all;
+}
+
+.note-modal {
+    width: min(360px, calc(100vw - 32px));
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.note-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.note-title { opacity: .7; }
+
+.note-author {
+    display: flex;
+    align-items: center;
+    gap: .4em;
+    font-weight: 600;
+}
+
+.note-dot {
+    width: .8em;
+    height: .8em;
+    border-radius: 50%;
+}
+
+.note-text {
+    resize: vertical;
+    padding: .5em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    color: white;
+    font: inherit;
+    font-size: 1.1em; /* >= 16px on phones: no zoom on focus */
+}
+
+.note-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .4em;
+}
+
+.note-actions button {
+    padding: .35em .8em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+}
+
+.note-actions button:disabled { opacity: .5; cursor: default; }
+.note-actions button:not(:disabled):active { scale: .97; }
+.note-actions .danger { margin-right: auto; color: #ffb0b0; }
+
+/* Primary action: same orange as the other panels' main buttons */
+.note-actions .primary {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.85) 0%, rgba(255, 140, 0, 0.85) 70%);
+    font-weight: 600;
+}

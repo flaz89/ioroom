@@ -224,6 +224,11 @@ export function useObjectLock(id) {
 
 // USERS ------------------------------------------------------------------------------------------
 
+// This device's { name, color }: the shared one in a room, else the device name in post-it yellow
+export function getSelfUser() {
+    return awareness?.getLocalState()?.user ?? { name: deviceName(), color: USER_COLORS[4] };
+}
+
 // React: this device's presence color, or null without a room
 export function useSelfColor() {
     return useSyncExternalStore(subscribe, () => roomUsers.find((user) => user.isSelf)?.color ?? null);

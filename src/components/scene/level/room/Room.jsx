@@ -2,6 +2,9 @@
 // Every wall casts AND receives shadows: the sun can come from any side (sun light: components/light/Light.jsx).
 const WALL_USER_DATA = { surface: 'wall' };
 
+// Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
+const ROOM_USER_DATA = { isRoom: true };
+
 export default function Room({sizes}) {
 
     const [x, z] = sizes;
@@ -10,7 +13,7 @@ export default function Room({sizes}) {
 
 
     return(
-        <group>
+        <group userData={ROOM_USER_DATA}>
             {/* ------------- FLOOR ------------------ */}
             <mesh
                 rotation={[-Math.PI / 2, 0, 0]} 
