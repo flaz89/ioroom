@@ -27,6 +27,7 @@ const PULSE = 0.05;                // core "breathing" amplitude (fraction of it
 const TEXTURE_PIXELS = 256;        // canvas resolution of each layer
 const TAG_SIZE = [0.88, 0.22];     // author tag sprite [width, height] (same 4:1 aspect as TAG_PIXELS)
 const TAG_PIXELS = [512, 128];     // canvas resolution of the tag
+const TABLETOP_BOOST = 2;          // notes this much bigger on the tabletop model (easier to aim at with a ray)
 const NOTE_USER_DATA = { isNote: true }; // skipped by placing and by surfaceDrag.js (never a support)
 
 const _forward = new THREE.Vector3(0, 0, 1); // planeGeometry faces +Z
@@ -58,16 +59,18 @@ export default function BoardNotes() {
 export function NotePin({ note, objectScale }) {
     const [isHovered, setIsHovered] = useState(false);
     const openNote = useStore((state) => state.openNote);
+    // tabletop exists only in XR sessions (back to 'life' when they end)
+    const boost = useStore((state) => state.view.mode === 'tabletop') ? TABLETOP_BOOST : 1;
 
     const { scale, quaternion } = useMemo(() => {
         const s = objectScale ?? [1, 1, 1];
         // geometry normal -> normal of the scaled surface (normals scale by the inverse)
         const normal = new THREE.Vector3(note.n[0] / s[0], note.n[1] / s[1], note.n[2] / s[2]).normalize();
         return {
-            scale: [1 / s[0], 1 / s[1], 1 / s[2]],
+            scale: [boost / s[0], boost / s[1], boost / s[2]],
             quaternion: new THREE.Quaternion().setFromUnitVectors(_forward, normal)
         };
-    }, [note.n, objectScale]);
+    }, [note.n, objectScale, boost]);
 
     // opens the editor: DOM modal on desktop/mobile (ui/note-modal/), VRNotePanel in XR
     const handleClick = (event) => {
@@ -195,12 +198,15 @@ function drawCore(ctx, c, color) {
 /*
 * Author tag in HUD style: a sprite anchored at its bottom left corner (= `position`, the marker edge),
 * drawn as a leader line rising from there + a dark bar with a colored accent and the name in capitals.
+* Drawn like a game HUD waypoint: no depth test, so the camera-facing sprite never cuts into the wall it
+* stands on (and stays readable behind objects). renderOrder -2: first among the transparent things, so
+* in-VR panels, menus and the markers themselves draw over it.
 */
 function NoteTag({ name, color, position }) {
     const texture = useCanvasTexture(TAG_PIXELS[0], TAG_PIXELS[1], (ctx, w, h) => drawTag(ctx, w, h, name, color), [name, color]);
     return (
-        <sprite position={position} center={[0, 0]} scale={[TAG_SIZE[0], TAG_SIZE[1], 1]} raycast={noRaycast} renderOrder={4}>
-            <spriteMaterial map={texture} transparent depthWrite={false} toneMapped={false} />
+        <sprite position={position} center={[0, 0]} scale={[TAG_SIZE[0], TAG_SIZE[1], 1]} raycast={noRaycast} renderOrder={-2}>
+            <spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} toneMapped={false} />
         </sprite>
     );
 }

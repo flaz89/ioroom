@@ -13,11 +13,14 @@ import { placeInFrontOfUser } from './layout';
 * Shown in XR while a note is open (click on a note marker) or being written (draft).
 * Placed once in front of the user, like the sun panel (VRSunPanel.jsx).
 *
-* Typing: the Quest system keyboard (Meta "System Keyboard in WebXR", Quest Browser 26.1+). "Type"
-* focuses a hidden DOM text field: the keyboard appears and its `value` arrives through `input` events.
-* Limitation of that keyboard: every time it opens, the first key press replaces the whole text.
+* Typing: the Quest system keyboard (Meta "System Keyboard in WebXR", Quest Browser 26.1+). A press on
+* the text box focuses a hidden DOM text field: the keyboard appears and its `value` arrives through
+* `input` events. That keyboard starts a new editing session every time it opens (its first key press
+* replaces the field's whole value), so the field only holds what is typed in this session and it is
+* APPENDED to the text the note had when the keyboard opened. Backspace erases the new text only;
+* "Clear" empties the note to rewrite it.
 * Without keyboard support (session.isSystemKeyboardSupported false) notes can be read and deleted only.
-* Rows: header (author, X) · text box · buttons (Delete [existing notes] · Type · Save).
+* Rows: header (author, X) · text box · buttons (Delete [existing notes] · Clear · Save).
 * Calibration knobs in meters: tune on the headset.
 */
 const DISTANCE = 0.45;          // in front of the eyes (horizontal)
@@ -32,6 +35,7 @@ const BUTTON = [0.09, 0.032];
 const PIXELS_PER_METER = 3000;
 const MAX_LENGTH = 500;         // same limit as the desktop editor
 const MAX_LINES = 7;
+const TEXT_BOX = { x: PAD, top: HEADER_H, height: TEXT_H - 0.01 }; // meters, from the panel's top left
 
 export default function VRNotePanel() {
     const draft = useStore((state) => state.notes.draft);
@@ -60,13 +64,13 @@ function NoteEditorPanel({ note }) {
     // Hidden DOM field for the system keyboard: in the DOM (required), fixed at the top left corner so
     // typing never scrolls the page; removed when the panel closes (also when the session ends)
     const fieldRef = useRef(null);
+    const baseRef = useRef(''); // the note's text when the keyboard opened; typed text is appended to it
     useEffect(() => {
         const field = document.createElement('input');
         field.type = 'text';
-        field.maxLength = MAX_LENGTH;
         field.setAttribute('aria-hidden', 'true');
         Object.assign(field.style, { position: 'fixed', top: '0', left: '0', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
-        field.addEventListener('input', () => setText(field.value));
+        field.addEventListener('input', () => setText((baseRef.current + field.value).slice(0, MAX_LENGTH)));
         field.addEventListener('focus', () => setIsTyping(true));
         field.addEventListener('blur', () => setIsTyping(false)); // keyboard dismissed (Done, hide, click outside)
         document.body.appendChild(field);
@@ -74,10 +78,18 @@ function NoteEditorPanel({ note }) {
         return () => field.remove();
     }, []);
 
+    // press on the text box: open the keyboard, appending to the current text (a space in between)
     const type = () => {
+        if (!canType) return;
+        baseRef.current = text === '' || /\s$/.test(text) ? text : `${text} `;
         const field = fieldRef.current;
-        field.value = text;
+        field.value = '';
         field.focus();
+    };
+    const clear = () => {
+        setText('');
+        baseRef.current = '';
+        fieldRef.current.value = '';
     };
     const save = () => { if (canSave) saveNote(text.trim()); };
     const remove = () => {
@@ -99,7 +111,7 @@ function NoteEditorPanel({ note }) {
         ctx.textBaseline = 'middle';
         ctx.fillText(`${author.name.toUpperCase()}${note == null ? ' · NEW NOTE' : ''}`, px(PAD + 0.022), px(HEADER_H / 2 + 0.005));
         // text box
-        const box = { x: px(PAD), y: px(HEADER_H), w: w - px(PAD) * 2, h: px(TEXT_H - 0.01) };
+        const box = { x: px(TEXT_BOX.x), y: px(TEXT_BOX.top), w: w - px(TEXT_BOX.x) * 2, h: px(TEXT_BOX.height) };
         ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.fillRect(box.x, box.y, box.w, box.h);
         ctx.strokeStyle = isTyping ? author.color : 'rgba(255, 255, 255, 0.2)';
@@ -110,7 +122,7 @@ function NoteEditorPanel({ note }) {
         ctx.textBaseline = 'middle';
         const empty = text === '';
         ctx.fillStyle = empty ? 'rgba(255, 255, 255, 0.45)' : '#ffffff';
-        const placeholder = canType ? 'Press "Type" to write…' : 'Keyboard not available on this device';
+        const placeholder = canType ? 'Tap here to write…' : 'Keyboard not available on this device';
         wrapLines(ctx, empty ? placeholder : text, box.w - px(0.016), MAX_LINES).forEach((line, index) => {
             ctx.fillText(line, box.x + px(0.008), box.y + lineHeight * (index + 0.5));
         });
@@ -128,12 +140,22 @@ function NoteEditorPanel({ note }) {
                 <meshBasicMaterial map={background} transparent toneMapped={false} />
             </mesh>
             <VRButton label="X" size={[0.026, 0.026]} onClick={closeNote} position={[WIDTH / 2 - PAD - 0.006, top - HEADER_H / 2 - 0.002, 0.001]} />
+            {/* text box hit area (drawn by the background texture): a press opens the keyboard */}
+            <mesh
+                position={[0, top - TEXT_BOX.top - TEXT_BOX.height / 2, 0.0005]}
+                pointerEventsType={acceptsPanelPointer}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => { event.stopPropagation(); type(); }}
+            >
+                <planeGeometry args={[WIDTH - TEXT_BOX.x * 2, TEXT_BOX.height]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
 
             <group position={[0, buttonsY, 0.001]}>
                 {note != null && (
                     <VRButton label={confirmDelete ? 'Confirm?' : 'Delete'} size={BUTTON} onClick={remove} position={[-WIDTH / 2 + PAD + BUTTON[0] / 2, 0, 0]} />
                 )}
-                {canType && <VRButton label="Type" size={BUTTON} active={isTyping} onClick={type} position={[WIDTH / 2 - PAD - BUTTON[0] * 1.5 - 0.008, 0, 0]} />}
+                {canType && text !== '' && <VRButton label="Clear" size={BUTTON} onClick={clear} position={[WIDTH / 2 - PAD - BUTTON[0] * 1.5 - 0.008, 0, 0]} />}
                 {canSave && <VRButton label="Save" size={BUTTON} active onClick={save} position={[WIDTH / 2 - PAD - BUTTON[0] / 2, 0, 0]} />}
             </group>
         </group>
