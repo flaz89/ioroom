@@ -41,7 +41,8 @@ export default function MaterialCreateModal({ onClose }) {
     useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
     const pickFile = (key, file) => setFiles((current) => ({ ...current, [key]: file }));
-    const size = Number(tileSize);
+    // Decimal comma or point: "1,5" and "1.5" both mean 1.5 m (a text field, so no browser-locale surprises)
+    const size = Number(tileSize.trim().replace(',', '.'));
     const canCreate = !busy && name.trim() !== '' && files.color != null && size >= 0.05 && size <= 20;
 
     const create = async (event) => {
@@ -90,7 +91,7 @@ export default function MaterialCreateModal({ onClose }) {
                     </label>
                     <label>
                         <span>Real size (m)</span>
-                        <input type="number" min={0.05} max={20} step={0.05} value={tileSize} onChange={(event) => setTileSize(event.target.value)} />
+                        <input type="text" inputMode="decimal" value={tileSize} onChange={(event) => setTileSize(event.target.value)} placeholder="e.g. 1,5" />
                     </label>
                 </div>
                 <span className="material-create-help">Real size = width of one texture tile in the room (e.g. 2 m of parquet).</span>
