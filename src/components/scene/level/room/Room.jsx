@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import SurfaceMesh from './SurfaceMesh';
-import { boxFaces, floorGeometry, mergeFaces, spherecastFaces } from './roomGeometry';
+import { boxFaces, floorGeometry, mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
 
@@ -22,6 +22,33 @@ const VERTICAL_FACES = ['px', 'nx', 'pz', 'nz'];
 * Vertical wall faces cast AND receive shadows (the sun can come from any side, Light.jsx); horizontal
 * faces (floor, wall tops) only receive them.
 */
+/*
+* VR material drag (xr-ui/VRMaterialsPanel.jsx): the store's materialDrag carries the pointerId of the
+* ray that picked the ball. The room follows THAT pointer over its faces (preview) and applies the
+* material on its pointerup. Desktop drags have no pointerId: they go through MaterialDropTarget.jsx.
+*/
+function vrDragOf(event) {
+    const drag = useStore.getState().materialDrag;
+    return drag?.pointerId != null && drag.pointerId === event.pointerId ? drag : null;
+}
+const faceOf = (event) => (event.object.userData.faceRanges ? surfaceIdAt(event.object.userData.faceRanges, event.faceIndex) : null);
+function onDragMove(event) {
+    const drag = vrDragOf(event);
+    if (drag != null) useStore.getState().setMaterialDrag({ ...drag, surfaceId: faceOf(event) });
+}
+function onDragLeave(event) {
+    const drag = vrDragOf(event);
+    if (drag != null) useStore.getState().setMaterialDrag({ ...drag, surfaceId: null });
+}
+function onDragDrop(event) {
+    const drag = vrDragOf(event);
+    if (drag == null) return;
+    event.stopPropagation();
+    const surfaceId = faceOf(event);
+    if (surfaceId != null) useStore.getState().setSurfaceMaterial(surfaceId, drag.materialId);
+    useStore.getState().setMaterialDrag(null);
+}
+
 // Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
 const ROOM_USER_DATA = { isRoom: true };
 
@@ -78,7 +105,7 @@ export default function Room({ sizes }) {
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA}>
+        <group userData={ROOM_USER_DATA} onPointerMove={onDragMove} onPointerLeave={onDragLeave} onPointerUp={onDragDrop}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh

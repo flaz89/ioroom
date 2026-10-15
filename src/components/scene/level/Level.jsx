@@ -9,6 +9,7 @@ import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import VRNotePanel from "../xr-ui/VRNotePanel";
+import VRMaterialsPanel from "../xr-ui/VRMaterialsPanel";
 import { useStore } from "../../../store/appStore";
 import Light from "../../light/Light";
 import { CameraHeadingTracker } from "../sun/CameraHeadingTracker";
@@ -25,6 +26,7 @@ export default function Level() {
     // Tabletop (miniature) view exists only inside XR sessions
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
     const isSunPanelOpen = useStore((state) => state.openPanel === 'sun');
+    const isMaterialsPanelOpen = useStore((state) => state.openPanel === 'materials');
 
     return(
         <>
@@ -54,6 +56,8 @@ export default function Level() {
             {isXR && <WristMenu />}
             {/* VR || AR: sun settings panel, opened from the wrist menu; world space, in front of the user */}
             {isXR && isSunPanelOpen && <VRSunPanel />}
+            {/* VR || AR: materials panel (wrist button), drag a ball with the ray onto a floor/wall face */}
+            {isXR && isMaterialsPanelOpen && <VRMaterialsPanel />}
             {/* VR || AR: post-it editor (open note or new one), world space, in front of the user */}
             {isXR && <VRNotePanel />}
             {/* VR || AR: left hand open -> fist deletes the selected object */}

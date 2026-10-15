@@ -119,8 +119,9 @@ export function NotePin({ note, objectScale }) {
 * `phase` desyncs the animation of different notes.
 *
 * TOUCH (XR): a fingertip pressing the card also touches the wall right behind it (pmndrs sphere
-* pointers measure the distance to bounding boxes, a tie at 0). pointerEventsOrder 1 makes the card win
-* such ties, so the touch reaches it (same trick as the gizmo in SingleObject.jsx).
+* pointers measure the distance to bounding boxes, a near-tie). pointerEventsOrder 1 makes the card win,
+* so the touch reaches it (same trick as the gizmo in SingleObject.jsx; for the fingertip pointer the
+* order is applied by the custom sort in xr/xrStore.js, pmndrs' sphere pointers ignore it otherwise).
 */
 function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
     const rootRef = useRef();

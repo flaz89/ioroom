@@ -15,10 +15,27 @@ import { useStore } from '../store/appStore';
 const CURSOR_SIZE = 0.1;
 const TABLETOP_CURSOR_SIZE = 0.015;
 
+/*
+* Sorting of the fingertip (touch) pointer's hits. pmndrs' sphere intersector ignores pointerEventsOrder
+* (it sorts by distance only), so a post-it card a few millimeters off a wall (less than a millimeter on
+* the tabletop model) lost the touch to the wall, which comes first in the scene. This restores the
+* documented rule for touch too: higher pointerEventsOrder (on the object or its nearest ancestor that
+* sets one) wins, then the nearest hit. Return < 0 when i1 must win.
+*/
+function pointerEventsOrderOf(object) {
+    for (let o = object; o != null; o = o.parent) if (o.pointerEventsOrder != null) return o.pointerEventsOrder;
+    return 0;
+}
+function sortByOrderThenDistance(i1, _order1, i2) {
+    const order1 = pointerEventsOrderOf(i1.object);
+    const order2 = pointerEventsOrderOf(i2.object);
+    return order1 !== order2 ? order2 - order1 : i1.distance - i2.distance;
+}
+
 const handOptions = (cursorSize) => ({
     // Poking a button with the index finger lasts longer than pmndrs' default 300 ms click window
     // (press -> release), which made touch presses never fire onClick.
-    touchPointer: { clickThresholdMs: 1500 },
+    touchPointer: { clickThresholdMs: 1500, customSort: sortByOrderThenDistance },
     rayPointer: { cursorModel: { size: cursorSize } }
 });
 const controllerOptions = (cursorSize) => ({ rayPointer: { cursorModel: { size: cursorSize } } });

@@ -71,6 +71,7 @@ export default function WristMenu() {
     const togglePanel = useStore((state) => state.togglePanel);
     const togglePerf = () => togglePanel('perf');
     const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
+    const isMaterialsOpen = useStore((state) => state.openPanel === 'materials'); // VRMaterialsPanel (same)
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)
     const isPlacingNote = useStore((state) => state.notes.placing);
     const setPlacingNote = useStore((state) => state.setPlacingNote);
@@ -110,6 +111,7 @@ export default function WristMenu() {
                         <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
                         <VRButton svg={svg.sun} active={isSunOpen} onClick={() => togglePanel('sun')} position={[STEP_X, 0, 0]} />
                         <VRButton icon={tabletopIcon} active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
+                        <VRButton svg={svg.materials} active={isMaterialsOpen} onClick={() => togglePanel('materials')} position={[STEP_X, BUTTON_STEP, 0]} />
                         <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
                         <VRButton svg={svg.note} active={isPlacingNote} onClick={() => setPlacingNote(!isPlacingNote)} position={[STEP_X, BUTTON_STEP * 2, 0]} />
                         {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
