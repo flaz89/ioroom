@@ -1,4 +1,4 @@
-import { SYNC_HOST, adminToken } from './roomSync';
+import { API_ORIGIN, adminToken } from './roomSync';
 
 /*
 * Client of the "My environments" API of the sync server (server/src/index.js, /api/rooms).
@@ -7,8 +7,7 @@ import { SYNC_HOST, adminToken } from './roomSync';
 * message is meant for the UI.
 */
 
-// Same host as the WebSocket; plain http only for a local wrangler dev server
-const API = `${/^(localhost|127\.)/.test(SYNC_HOST ?? '') ? 'http' : 'https'}://${SYNC_HOST}/api/rooms`;
+const API = `${API_ORIGIN}/api/rooms`;
 
 async function request(path = '', method = 'GET', body) {
     const response = await fetch(API + path, {

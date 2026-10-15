@@ -3,7 +3,10 @@ import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
 import { useStore } from '../../../store/appStore';
 import { usePanelInViewport } from '../usePanelInViewport';
-import { listMaterials } from '../../../materials/library';
+import { useMaterialList } from '../../../materials/library';
+import { deleteMaterial } from '../../../materials/materialsApi';
+import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
+import MaterialCreateModal from './MaterialCreateModal';
 import { pickSurfaceAt } from '../../scene/level/room/surfacePicker';
 import './materials-panel.css';
 
@@ -20,7 +23,11 @@ const GROUPS = [
 * applies it (store `surfaces`, shared with the room). Any material can go on any surface.
 * Pointer events (not HTML drag & drop), so the same gesture works with mouse, pen and touch.
 * Which surface is under the pointer: surfacePicker.js (answered by the scene, MaterialDropTarget.jsx).
+* OWNER (admin token; later pro accounts): "+" uploads a new material (MaterialCreateModal.jsx), "×" on a
+* material (any but Plain) deletes it from the library (second press confirms). Surfaces using a deleted
+* material turn plain.
 */
+const canManage = Boolean(SYNC_HOST) && isAdmin;
 export default function MaterialsPanel() {
     // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
     const isOpen = useStore((state) => state.openPanel === 'materials');
@@ -28,7 +35,23 @@ export default function MaterialsPanel() {
     const panelRef = useRef();
     usePanelInViewport(panelRef, isOpen);
     const [drag, setDrag] = useState(null); // { material, x, y } while a ball is dragged (ghost ball)
-    const materials = listMaterials();
+    const materials = useMaterialList();
+    const [isCreating, setIsCreating] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(null); // id waiting for the confirming press
+    const [deleteError, setDeleteError] = useState(null);
+
+    const remove = async (material) => {
+        if (confirmDelete !== material.id) return setConfirmDelete(material.id);
+        setConfirmDelete(null);
+        setDeleteError(null);
+        try {
+            await deleteMaterial(material.id);
+            const { libraryMaterials, setLibraryMaterials } = useStore.getState();
+            setLibraryMaterials(libraryMaterials.filter((item) => item.id !== material.id));
+        } catch (error) {
+            setDeleteError(error.message);
+        }
+    };
 
     // Drag in progress: follow the pointer on the whole window, preview / apply on the surface below it
     useEffect(() => {
@@ -68,7 +91,13 @@ export default function MaterialsPanel() {
             <CircleButton svg={svg.materials} onClick={() => togglePanel('materials')} isActive={isOpen} title="Materials" />
             {isOpen && (
                 <div className="materials-panel" ref={panelRef}>
-                    <span className="materials-title">Materials</span>
+                    <div className="materials-header">
+                        <span className="materials-title">Materials</span>
+                        {canManage && (
+                            <button className="materials-add" onClick={() => setIsCreating(true)} title="New material" aria-label="New material">+</button>
+                        )}
+                    </div>
+                    {deleteError && <span className="materials-error" role="alert">{deleteError}</span>}
                     <span className="materials-hint">Drag a material onto a wall or the floor</span>
                     {GROUPS.map((group) => (
                         <div key={group.title} className="materials-group">
@@ -83,6 +112,16 @@ export default function MaterialsPanel() {
                                     >
                                         <MaterialBall material={material} />
                                         <span className="materials-name">{material.name}</span>
+                                        {canManage && material.maps != null && (
+                                            <span
+                                                className={confirmDelete === material.id ? 'materials-delete is-confirm' : 'materials-delete'}
+                                                role="button"
+                                                title={confirmDelete === material.id ? 'Press again to delete' : 'Delete material'}
+                                                // own press: never starts a drag
+                                                onPointerDown={(event) => event.stopPropagation()}
+                                                onClick={(event) => { event.stopPropagation(); remove(material); }}
+                                            >{confirmDelete === material.id ? '?' : '×'}</span>
+                                        )}
                                     </button>
                                 ))}
                             </div>
@@ -90,6 +129,7 @@ export default function MaterialsPanel() {
                     ))}
                 </div>
             )}
+            {isCreating && <MaterialCreateModal onClose={() => setIsCreating(false)} />}
             {/* ghost ball following the pointer while dragging */}
             {drag != null && (
                 <div className="materials-ghost" style={{ left: drag.x, top: drag.y }}>

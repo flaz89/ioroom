@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Texture staging for scripts/seed-materials.mjs (the library lives in R2)
+scripts/.textures

@@ -29,6 +29,9 @@ import { bindFieldMap } from './fieldMapSync';
 // Worker host without protocol, e.g. "ioroom-sync.<account>.workers.dev" (localhost:8787 = wrangler dev).
 // Unset = no sync: the app works locally as before.
 export const SYNC_HOST = import.meta.env.VITE_SYNC_HOST;
+// Origin of the server's HTTP API and files (same host as the WebSocket; plain http only for a local
+// wrangler dev server). Used by roomsApi.js and materials/materialsApi.js.
+export const API_ORIGIN = `${/^(localhost|127\.)/.test(SYNC_HOST ?? '') ? 'http' : 'https'}://${SYNC_HOST}`;
 const PARTY = 'rooms'; // kebab-case of the Rooms Durable Object binding (server/wrangler.jsonc)
 const LOCAL = Symbol('local'); // transaction origin of this device's own edits
 const ROOM_NOT_FOUND = 4004;   // close code of the server for rooms that do not exist (and cannot be created)

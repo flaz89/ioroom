@@ -9,6 +9,7 @@ import { createSunSlice } from "./slices/sunSlice";
 import { createPanelSlice } from "./slices/panelSlice";
 import { createNotesSlice } from "./slices/notesSlice";
 import { createSurfacesSlice } from "./slices/surfacesSlice";
+import { createMaterialLibrarySlice } from "./slices/materialLibrarySlice";
 
 // main store
 export const useStore = create((set, get) => ({
@@ -21,5 +22,6 @@ export const useStore = create((set, get) => ({
     ...createSunSlice(set, get),
     ...createPanelSlice(set, get),
     ...createNotesSlice(set, get),
-    ...createSurfacesSlice(set, get)
+    ...createSurfacesSlice(set, get),
+    ...createMaterialLibrarySlice(set, get)
 }))

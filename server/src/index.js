@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { getServerByName, routePartykitRequest } from 'partyserver';
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
+import { handleMaterials } from './materials.js';
 
 /*
 * ioroom shared room = one saved environment (level).
@@ -22,6 +23,8 @@ import * as Y from 'yjs';
 *   POST   /api/rooms/:id/duplicate   { name? } -> new room with a copy of the scene
 *   DELETE /api/rooms/:id             -> deletes the room and its saved scene (connected clients get 4004)
 * The list lives in the RoomRegistry Durable Object (rooms cannot be enumerated otherwise).
+*
+* MATERIAL LIBRARY API (/api/materials, /files/materials/...): see materials.js (R2 storage).
 */
 const STORAGE_KEY = 'document';
 const CREATED_KEY = 'created';     // set when the owner creates the room
@@ -137,6 +140,10 @@ const CORS = {
 const json = (body, status = 200) => Response.json(body, { status, headers: CORS });
 const error = (message, status) => json({ error: message }, status);
 
+// Whether the request carries the owner's token
+const isOwner = (request, env) => Boolean(env.ADMIN_TOKEN)
+    && request.headers.get('Authorization')?.replace(/^Bearer /, '') === env.ADMIN_TOKEN;
+
 // Name from the request body: trimmed and capped; `fallback` when missing or blank
 async function readName(request, fallback) {
     const body = await request.json().catch(() => ({}));
@@ -150,8 +157,7 @@ async function handleApi(request, env) {
     if (!match) return null;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
 
-    const token = request.headers.get('Authorization')?.replace(/^Bearer /, '');
-    if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return error('Unauthorized', 401);
+    if (!isOwner(request, env)) return error('Unauthorized', 401);
 
     const [, id, duplicate] = match;
     const rooms = registry(env);
@@ -189,9 +195,11 @@ async function handleApi(request, env) {
 }
 
 export default {
-    // /api/rooms -> owner API; /parties/:party/:room -> the matching room; anything else is not served
+    // /api/rooms -> owner API; /api/materials, /files/materials -> material library (materials.js);
+    // /parties/:party/:room -> the matching room; anything else is not served
     async fetch(request, env) {
         return (await handleApi(request, env))
+            ?? (await handleMaterials(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
             ?? (await routePartykitRequest(request, env))
             ?? new Response('Not Found', { status: 404 });
     }

@@ -1,0 +1,83 @@
+/* New material form (MaterialCreateModal.jsx): centered modal over a dimmed backdrop, same glass style as the other modals */
+.material-create-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.45);
+    pointer-events: all;
+}
+
+.material-create {
+    width: min(360px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: .9em;
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.material-create-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.material-create-title { font-weight: 600; }
+
+.material-create label {
+    display: flex;
+    flex-direction: column;
+    gap: .25em;
+}
+.material-create-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5em;
+}
+
+.material-create input:not([type="file"]),
+.material-create select {
+    padding: .4em .5em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font: inherit;
+    font-size: 1.1em; /* >= 16px on phones: no zoom on focus */
+}
+.material-create-file input { font: inherit; color: rgba(255, 255, 255, 0.85); }
+.material-create-help { opacity: .65; margin-top: -.3em; }
+.material-create-error { color: #ff8a8a; }
+
+.material-create-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: .4em;
+}
+.material-create-actions button {
+    padding: .4em .9em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+}
+.material-create-actions button:disabled { opacity: .5; cursor: default; }
+.material-create-actions .primary {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.85) 0%, rgba(255, 140, 0, 0.85) 70%);
+    font-weight: 600;
+}

@@ -14,6 +14,11 @@
       { "name": "RoomRegistry", "class_name": "RoomRegistry" }
     ]
   },
+  // Material library (uploaded textures + their list), see src/materials.js.
+  // Create once: npx wrangler r2 bucket create ioroom-materials
+  "r2_buckets": [
+    { "binding": "MATERIALS", "bucket_name": "ioroom-materials" }
+  ],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RoomServer"] },
     // v2: wipe every room created before access control (deleting a class destroys all its objects'

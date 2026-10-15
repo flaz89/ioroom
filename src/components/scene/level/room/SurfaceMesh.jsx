@@ -2,11 +2,14 @@ import { Suspense } from 'react';
 import { MeshStandardMaterial, RepeatWrapping, SRGBColorSpace } from 'three';
 import { useTexture } from '@react-three/drei';
 import { useStore } from '../../../../store/appStore';
-import { PLAIN_ID, findMaterial } from '../../../../materials/library';
+import { PLAIN_ID, useMaterial } from '../../../../materials/library';
 
 const DROP_TINT = '#ff9a1a';    // selection orange: the face a dragged material would land on
 const DROP_TINT_STRENGTH = 0.18;
 const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing angles
+// material.maps keys; orm = packed R ambient occlusion / G roughness / B metalness (glTF layout, which is
+// how three.js reads aoMap / roughnessMap / metalnessMap); `roughness` only on records made before ORM
+const TEXTURE_MAPS = ['color', 'normal', 'orm', 'roughness'];
 
 /*
 * One room face: a mesh with the material saved for `surfaceId` (store `surfaces`), or the plain `color`.
@@ -23,7 +26,7 @@ const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing a
 export default function SurfaceMesh({ surfaceId, color, ...meshProps }) {
     const savedId = useStore((state) => state.surfaces[surfaceId] ?? PLAIN_ID);
     const previewId = useStore((state) => (state.materialDrag?.surfaceId === surfaceId ? state.materialDrag.materialId : null));
-    const material = findMaterial(previewId ?? savedId);
+    const material = useMaterial(previewId ?? savedId);
     const tinted = previewId != null;
     const plain = <mesh {...meshProps} material={plainMaterial(color, tinted)} />;
     if (material.maps == null) return plain;
@@ -34,8 +37,11 @@ export default function SurfaceMesh({ surfaceId, color, ...meshProps }) {
     );
 }
 
+// Loads the material's maps (color always; normal / orm / roughness when the material has them)
 function TexturedMesh({ material, tinted, meshProps }) {
-    const textures = useTexture([material.maps.color, material.maps.normal, material.maps.roughness]);
+    const names = TEXTURE_MAPS.filter((name) => material.maps[name]);
+    const loaded = useTexture(names.map((name) => material.maps[name]));
+    const textures = Object.fromEntries(names.map((name, index) => [name, loaded[index]]));
     return <mesh {...meshProps} material={texturedMaterial(material, textures, tinted)} />;
 }
 
@@ -52,18 +58,29 @@ function plainMaterial(color, tinted) {
     return materials.get(key);
 }
 
-function texturedMaterial(material, [map, normalMap, roughnessMap], tinted) {
+// textures: { color, normal?, orm?, roughness? } (loaded, drei cache)
+function texturedMaterial(material, textures, tinted) {
     const key = `${material.id}|${tinted}`;
     if (!materials.has(key)) {
         // drei's cached textures, configured in place: every user of this set wants the same tiling
-        for (const texture of [map, normalMap, roughnessMap]) {
+        for (const texture of Object.values(textures)) {
             texture.wrapS = texture.wrapT = RepeatWrapping;
             texture.repeat.set(1 / material.tileSize, 1 / material.tileSize); // UVs are meters
             texture.anisotropy = ANISOTROPY;
             texture.needsUpdate = true;
         }
-        map.colorSpace = SRGBColorSpace; // color map; normal/roughness stay linear data
-        materials.set(key, new MeshStandardMaterial({ map, normalMap, roughnessMap, ...tint(tinted) }));
+        textures.color.colorSpace = SRGBColorSpace; // color map; normal/roughness stay linear data
+        const orm = textures.orm ?? null;
+        materials.set(key, new MeshStandardMaterial({
+            map: textures.color,
+            normalMap: textures.normal ?? null,
+            // one ORM texture feeds three slots (one GPU texture): AO darkens crevices under indirect light
+            aoMap: orm,
+            roughnessMap: orm ?? textures.roughness ?? null,
+            metalnessMap: orm,
+            metalness: orm ? 1 : 0, // with a metalness map, the map (B channel) decides
+            ...tint(tinted)
+        }));
     }
     return materials.get(key);
 }

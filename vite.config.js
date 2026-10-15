@@ -11,5 +11,9 @@ export default defineConfig({
   server: {
         host: true,
         open: true,
-    }
+    },
+  // WebAssembly WebP encoder (materials/imageToWebp.js): loads its .wasm itself, must not be pre-bundled
+  optimizeDeps: {
+    exclude: ['@jsquash/webp']
+  }
 })
