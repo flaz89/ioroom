@@ -2,7 +2,8 @@
 // Every face must point outwards and carry UVs = its position in meters along the face axes.
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { boxFaces, floorGeometry } from './roomGeometry.js';
+import { boxFaces, floorGeometry, mergeFaces, surfaceIdAt } from './roomGeometry.js';
+import { Mesh, Raycaster } from 'three';
 
 const close = (a, b) => Math.abs(a - b) < 1e-6;
 const faces = boxFaces([1, 2, 3], [0.2, 2.7, 6]);
@@ -21,4 +22,13 @@ assert.ok(close(new Vector3().fromBufferAttribute(faces.px.attributes.position, 
 const floor = floorGeometry(6, 6);
 const uv = floor.attributes.uv, pos = floor.attributes.position;
 assert.ok(close(uv.getX(1) - uv.getX(0), pos.getX(1) - pos.getX(0)));
+// merging: one geometry, and every triangle still maps to its face
+const merged = mergeFaces([{ geometry: floor, surfaceId: 'floor' }, { geometry: faces.px, surfaceId: 'wall:inner' }]);
+assert.equal(merged.geometry.index.count, floor.index.count + faces.px.index.count);
+assert.equal(surfaceIdAt(merged.faceRanges, 0), 'floor');
+assert.equal(surfaceIdAt(merged.faceRanges, 2), 'wall:inner');
+assert.equal(surfaceIdAt(merged.faceRanges, 99), null);
+// a ray onto the merged wall face reports a triangle of that face
+const hit = new Raycaster(new Vector3(3, 2, 3), new Vector3(-1, 0, 0)).intersectObject(new Mesh(merged.geometry))[0];
+assert.equal(surfaceIdAt(merged.faceRanges, hit.faceIndex), 'wall:inner');
 console.log('roomGeometry: ok');

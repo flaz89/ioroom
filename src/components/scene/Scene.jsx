@@ -28,19 +28,6 @@ async function createWebGPURenderer(props) {
     return renderer;
 }
 
-/*
-* EXPERIMENT (?xr=multiview, see xrStore.js): XR on WebGPURenderer with its WebGL2 backend instead of
-* WebGLRenderer. Only this renderer implements OVR_multiview2 in three r186: both eyes in one pass,
-* about half the draw calls. Components pick their node-material paths (gl.isWebGPURenderer).
-*/
-async function createMultiviewRenderer(props) {
-    const renderer = new WebGPURenderer({ ...props, antialias: true, forceWebGL: true, multiview: true });
-    await renderer.init();
-    return renderer;
-}
-
-const RENDERER_FACTORIES = { webgpu: createWebGPURenderer, 'webgl-multiview': createMultiviewRenderer };
-
 export default function Scene({xrStore}) {
 
     // "webgpu" on flatscreen when supported, "webgl" during XR sessions (see src/xr/xrStore.js)
@@ -57,7 +44,7 @@ export default function Scene({xrStore}) {
         <div className="scene">
             <Canvas 
                 key={backend} // a new backend needs a new canvas: a canvas can't switch context type
-                gl={RENDERER_FACTORIES[backend]} // undefined = R3F's default WebGLRenderer
+                gl={backend === 'webgpu' ? createWebGPURenderer : undefined}
                 onCreated={() => setReadyBackend(backend)}
                 camera={{
                     position: [4,3,7],

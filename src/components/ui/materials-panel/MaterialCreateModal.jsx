@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
 import { createMaterial } from '../../../materials/materialsApi';
-import { COLOR_MAX_SIZE, ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
+import { ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
 import './material-create.css';
 
 // Maps the form asks for. The ORM data comes either from one ready-made ARM/ORM image (e.g. Poly Haven
@@ -21,7 +21,7 @@ const SEPARATE_MAPS = [
 /*
 * New material form (owner only, opened by the "+" of the materials panel): name, category, real size
 * of one texture tile (meters) and the maps. In the browser (materials/imageToWebp.js) images are
-* downscaled (color / normal up to 2K, ORM 1K) and converted to WebP; the ORM map is either uploaded
+* downscaled to 1K and converted to WebP; the ORM map is either uploaded
 * ready-made (ARM) or packed from separate AO / roughness / metallic images (one GPU texture instead of
 * three); then uploaded (materials/materialsApi.js ->
 * server/src/materials.js, R2). The new material joins the library right away (store
@@ -52,9 +52,9 @@ export default function MaterialCreateModal({ onClose }) {
         setError(null);
         try {
             const converted = {
-                color: await imageToWebp(files.color, { maxSize: COLOR_MAX_SIZE[category], quality: 0.85 }),
+                color: await imageToWebp(files.color, { quality: 0.85 }),
                 // normal maps carry data, not color: a higher quality keeps them smooth
-                normal: files.normal ? await imageToWebp(files.normal, { maxSize: COLOR_MAX_SIZE[category], quality: 0.9 }) : null,
+                normal: files.normal ? await imageToWebp(files.normal, { quality: 0.9 }) : null,
                 orm: files.arm
                     ? await imageToWebp(files.arm, { maxSize: ORM_MAX_SIZE, quality: 0.9 })
                     : await packOrm(files)
@@ -95,7 +95,7 @@ export default function MaterialCreateModal({ onClose }) {
                     </label>
                 </div>
                 <span className="material-create-help">Real size = width of one texture tile in the room (e.g. 2 m of parquet).</span>
-                <span className="material-create-help">Maps: upload the best you have (2K recommended). Color and normal are kept up to 2K for walls (seen up close) and 1K for floors; the ARM map at 1K.</span>
+                <span className="material-create-help">Maps: upload the best you have (2K recommended). Everything is resized to 1K.</span>
 
                 {[...MAIN_MAPS, ARM_MAP].map((map) => <FileField key={map.key} map={map} onPick={pickFile} />)}
                 <fieldset className="material-create-group" disabled={files.arm != null}>

@@ -1,7 +1,6 @@
 /*
 * Texture preparation for uploads (owner, browser side):
-* - imageToWebp: downscales to fit `maxSize` and encodes WebP. Color and normal maps go up to 2K for
-*   walls and 1K for floors (COLOR_MAX_SIZE). Chrome / Firefox / Edge encode natively; browsers that cannot (Safari) use @jsquash/webp
+* - imageToWebp: downscales to fit `maxSize` (COLOR_MAX_SIZE for color and normal maps) and encodes WebP. Chrome / Firefox / Edge encode natively; browsers that cannot (Safari) use @jsquash/webp
 *   (Google's libwebp compiled to WebAssembly), loaded on demand only here.
 * - packOrm: packs grayscale ambient occlusion / roughness / metalness images into one ORM image
 *   (R / G / B, like glTF; three.js reads aoMap.r, roughnessMap.g, metalnessMap.b), then WebP. 1K is
@@ -10,9 +9,9 @@
 *   Missing maps get neutral values: AO 1 (none), roughness 1 (matte), metalness 0.
 * Both resolve with a WebP Blob.
 */
-// Color and normal maps, by category: walls are looked at from up close (in VR the 2K detail shows at
-// arm's length), floors from standing height (1K is indistinguishable there, measured on Quest)
-export const COLOR_MAX_SIZE = { wall: 2048, floor: 1024 };
+// Color and normal maps. 1K for now: on Quest 2K only shows on walls seen up close, not worth the
+// memory yet (raise per category, e.g. walls 2048, when the quality presets arrive)
+export const COLOR_MAX_SIZE = 1024;
 export const ORM_MAX_SIZE = 1024;
 
 // 2D context of a new canvas of width × height
@@ -47,7 +46,7 @@ async function encodeWebp(ctx, quality) {
     return new Blob([buffer], { type: 'image/webp' });
 }
 
-export async function imageToWebp(file, { maxSize = COLOR_MAX_SIZE.wall, quality = 0.85 } = {}) {
+export async function imageToWebp(file, { maxSize = COLOR_MAX_SIZE, quality = 0.85 } = {}) {
     const bitmap = await createImageBitmap(file);
     const ctx = drawToCanvas(bitmap, ...fitSize(bitmap.width, bitmap.height, maxSize));
     bitmap.close();

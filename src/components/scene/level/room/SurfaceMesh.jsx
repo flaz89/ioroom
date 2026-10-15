@@ -1,8 +1,7 @@
 import { Suspense } from 'react';
 import { MeshStandardMaterial, RepeatWrapping, SRGBColorSpace } from 'three';
 import { useTexture } from '@react-three/drei';
-import { useStore } from '../../../../store/appStore';
-import { PLAIN_ID, useMaterial } from '../../../../materials/library';
+import { useMaterial } from '../../../../materials/library';
 
 const DROP_TINT = '#ff9a1a';    // selection orange: the face a dragged material would land on
 const DROP_TINT_STRENGTH = 0.18;
@@ -12,22 +11,19 @@ const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing a
 const TEXTURE_MAPS = ['color', 'normal', 'orm', 'roughness'];
 
 /*
-* One room face: a mesh with the material saved for `surfaceId` (store `surfaces`), or the plain `color`.
-* While a material is dragged over this face (store `materialDrag`, ui/materials-panel/) it previews that
-* material with an orange tint. While a texture set loads, the plain material shows. Other props
-* (geometry, userData, shadows) go to the mesh.
+* One batch of room faces sharing a material (Room.jsx merges them into one geometry: one draw call):
+* the material `materialId` (or the plain `color`), with an orange tint when `tinted` (a material
+* dragged from the materials panel is previewed there). While a texture set loads, the plain material
+* shows. Other props (geometry, userData, shadows) go to the mesh.
 *
 * EFFICIENCY: the room geometry has world-space UVs in meters (roomGeometry.js), so every face uses the
 * same texture repeat (1 / tileSize). One shared MeshStandardMaterial per material (and per tint) serves
-* every face that uses it: textures are loaded once (drei cache) and never cloned, shaders and uniforms
+* every batch that uses it: textures are loaded once (drei cache) and never cloned, shaders and uniforms
 * are shared. The shared material is set through the mesh `material` prop (not as a JSX child), so React
 * never owns, detaches or disposes it. Built-in MeshStandardMaterial only: WebGPU and WebGL (XR).
 */
-export default function SurfaceMesh({ surfaceId, color, ...meshProps }) {
-    const savedId = useStore((state) => state.surfaces[surfaceId] ?? PLAIN_ID);
-    const previewId = useStore((state) => (state.materialDrag?.surfaceId === surfaceId ? state.materialDrag.materialId : null));
-    const material = useMaterial(previewId ?? savedId);
-    const tinted = previewId != null;
+export default function SurfaceMesh({ materialId, tinted, color, ...meshProps }) {
+    const material = useMaterial(materialId);
     const plain = <mesh {...meshProps} material={plainMaterial(color, tinted)} />;
     if (material.maps == null) return plain;
     return (
@@ -37,7 +33,6 @@ export default function SurfaceMesh({ surfaceId, color, ...meshProps }) {
     );
 }
 
-// Loads the material's maps (color always; normal / orm / roughness when the material has them)
 function TexturedMesh({ material, tinted, meshProps }) {
     const names = TEXTURE_MAPS.filter((name) => material.maps[name]);
     const loaded = useTexture(names.map((name) => material.maps[name]));

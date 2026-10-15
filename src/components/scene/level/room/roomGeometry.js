@@ -1,4 +1,5 @@
 import { PlaneGeometry } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /*
 * Geometry of the room surfaces, with WORLD-SPACE UVs ("box mapping" baked on the CPU).
@@ -59,4 +60,26 @@ export function boxFaces(center, size) {
 export function floorGeometry(x, z) {
     const geometry = new PlaneGeometry(x, z).rotateX(-Math.PI / 2);
     return planarUVs(geometry, 'py');
+}
+
+/*
+* DRAW CALL BATCHING: merges faces that share a material into one geometry (one draw call, one shadow
+* draw call), keeping track of which triangles belong to which face, so picking still knows the face.
+* faces: [{ geometry, surfaceId }] (indexed geometries with the same attributes, e.g. from boxFaces).
+* Returns { geometry, faceRanges: [{ start, end, surfaceId }] } (triangle index ranges, end excluded).
+*/
+export function mergeFaces(faces) {
+    const faceRanges = [];
+    let start = 0;
+    for (const face of faces) {
+        const triangles = face.geometry.index.count / 3;
+        faceRanges.push({ start, end: start + triangles, surfaceId: face.surfaceId });
+        start += triangles;
+    }
+    return { geometry: mergeGeometries(faces.map((face) => face.geometry)), faceRanges };
+}
+
+// Surface id of the triangle `faceIndex` (raycast hit.faceIndex) of a merged geometry; null if outside
+export function surfaceIdAt(faceRanges, faceIndex) {
+    return faceRanges.find((range) => faceIndex >= range.start && faceIndex < range.end)?.surfaceId ?? null;
 }

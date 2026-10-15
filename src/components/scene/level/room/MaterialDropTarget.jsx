@@ -2,14 +2,15 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { setSurfacePicker } from './surfacePicker';
+import { surfaceIdAt } from './roomGeometry';
 
 const _ndc = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
 
 /*
 * Scene side of material drag & drop (desktop/mobile, mounted inside the Board): registers the picker
-* of surfacePicker.js. A screen point maps to the room surface under it (meshes with userData.surfaceId,
-* Room.jsx) only if the canvas itself is there (not a panel on top of it) and no object stands in front
+* of surfacePicker.js. A screen point maps to the room face under it (merged room meshes carry
+* userData.faceRanges: triangle -> face id, Room.jsx) only if the canvas itself is there (not a panel on top of it) and no object stands in front
 * (object meshes: userData.objectId). Notes, gizmos and invisible helpers are looked through.
 */
 export default function MaterialDropTarget() {
@@ -27,7 +28,7 @@ export default function MaterialDropTarget() {
             for (const hit of _raycaster.intersectObject(board, true)) {
                 const object = hit.object;
                 if (!object.isMesh || hit.face == null || !object.visible || object.isLineSegments2 || object.userData.isNote) continue;
-                if (object.userData.surfaceId != null) return object.userData.surfaceId;
+                if (object.userData.faceRanges != null) return surfaceIdAt(object.userData.faceRanges, hit.faceIndex);
                 if (object.userData.objectId != null) return null; // an object in front of the surface
             }
             return null;
