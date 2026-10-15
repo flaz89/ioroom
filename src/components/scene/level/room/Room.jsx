@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import SurfaceMesh from './SurfaceMesh';
-import { boxFaces, floorGeometry, mergeFaces } from './roomGeometry';
+import { boxFaces, floorGeometry, mergeFaces, spherecastFaces } from './roomGeometry';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
 
@@ -17,17 +17,13 @@ const VERTICAL_FACES = ['px', 'nx', 'pz', 'nz'];
 * userData of the merged meshes (one per batch, see Room):
 * - faceRanges: triangle ranges -> face id (roomGeometry.js surfaceIdAt; MaterialDropTarget.jsx);
 * - surface: 'wall' on vertical batches -> surfaceDrag.js: objects placed on walls turn into the room.
+* XR sphere pointers (touch, grab: e.g. grabbing the floor to move/turn the tabletop board) test each face
+* separately through the meshes' `spherecast` (roomGeometry.js spherecastFaces), not the batch's whole box.
 * Vertical wall faces cast AND receive shadows (the sun can come from any side, Light.jsx); horizontal
 * faces (floor, wall tops) only receive them.
 */
 // Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
 const ROOM_USER_DATA = { isRoom: true };
-/*
-* XR touch/grab pointers test a mesh's BOUNDING BOX, not its triangles: a batch merging three walls has a
-* box as big as the room, so hands would always "touch" it and that contact beats the ray (nothing works).
-* The room only takes rays (and the mouse).
-*/
-const ROOM_POINTER_TYPES = { deny: ['touch', 'grab'] };
 
 /*
 * The fixed test room: floor, invisible ceiling, three walls (left, right, back). Every face has its own
@@ -76,13 +72,13 @@ export default function Room({ sizes }) {
         }
         return [...groups.values()].map((group) => {
             const { geometry, faceRanges } = mergeFaces(group.faces);
-            return { ...group, geometry, userData: { faceRanges, ...(group.vertical ? { surface: 'wall' } : {}) } };
+            return { ...group, geometry, spherecast: spherecastFaces(faceRanges), userData: { faceRanges, ...(group.vertical ? { surface: 'wall' } : {}) } };
         });
     }, [faces, surfaces, drag]);
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA} pointerEventsType={ROOM_POINTER_TYPES}>
+        <group userData={ROOM_USER_DATA}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh
@@ -92,6 +88,7 @@ export default function Room({ sizes }) {
                     color={batch.color}
                     geometry={batch.geometry}
                     userData={batch.userData}
+                    spherecast={batch.spherecast}
                     castShadow={batch.vertical}
                     receiveShadow
                 />

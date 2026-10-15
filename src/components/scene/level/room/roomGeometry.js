@@ -1,4 +1,4 @@
-import { PlaneGeometry } from 'three';
+import { Matrix4, PlaneGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /*
@@ -66,14 +66,22 @@ export function floorGeometry(x, z) {
 * DRAW CALL BATCHING: merges faces that share a material into one geometry (one draw call, one shadow
 * draw call), keeping track of which triangles belong to which face, so picking still knows the face.
 * faces: [{ geometry, surfaceId }] (indexed geometries with the same attributes, e.g. from boxFaces).
-* Returns { geometry, faceRanges: [{ start, end, surfaceId }] } (triangle index ranges, end excluded).
+* Returns { geometry, faceRanges: [{ start, end, surfaceId, box, normal }] }: triangle index ranges (end
+* excluded), plus each face's local bounding box and normal (for spherecastFaces).
 */
 export function mergeFaces(faces) {
     const faceRanges = [];
     let start = 0;
     for (const face of faces) {
         const triangles = face.geometry.index.count / 3;
-        faceRanges.push({ start, end: start + triangles, surfaceId: face.surfaceId });
+        face.geometry.computeBoundingBox();
+        faceRanges.push({
+            start,
+            end: start + triangles,
+            surfaceId: face.surfaceId,
+            box: face.geometry.boundingBox.clone(),
+            normal: new Vector3().fromBufferAttribute(face.geometry.attributes.normal, 0)
+        });
         start += triangles;
     }
     return { geometry: mergeGeometries(faces.map((face) => face.geometry)), faceRanges };
@@ -82,4 +90,39 @@ export function mergeFaces(faces) {
 // Surface id of the triangle `faceIndex` (raycast hit.faceIndex) of a merged geometry; null if outside
 export function surfaceIdAt(faceRanges, faceIndex) {
     return faceRanges.find((range) => faceIndex >= range.start && faceIndex < range.end)?.surfaceId ?? null;
+}
+
+/*
+* Sphere pointers (XR touch + grab, @pmndrs/pointer-events) test a mesh against its whole BOUNDING BOX
+* unless the mesh has a `spherecast(sphere, target)` method. A merged batch spanning several walls has a
+* box as big as the room: hands would always be "touching" it and that contact beats the ray. This
+* returns that method for a merged mesh: the sphere is tested against EACH FACE's box (as when every face
+* was its own mesh) and the nearest touched face is pushed as the intersection (faceIndex = its first
+* triangle, so surfaceIdAt works on it too). Called as a method: `this` = the mesh.
+*/
+const _inverse = new Matrix4();
+const _local = new Vector3();
+const _point = new Vector3();
+
+export function spherecastFaces(faceRanges) {
+    return function spherecast(sphere, target) {
+        _inverse.copy(this.matrixWorld).invert();
+        _local.copy(sphere.center).applyMatrix4(_inverse);
+        let best = null;
+        for (const range of faceRanges) {
+            range.box.clampPoint(_local, _point).applyMatrix4(this.matrixWorld); // nearest point, world
+            const distanceSq = _point.distanceToSquared(sphere.center);
+            if (distanceSq > sphere.radius * sphere.radius || (best != null && distanceSq >= best.distanceSq)) continue;
+            best = { distanceSq, point: _point.clone(), range };
+        }
+        if (best == null) return;
+        target.push({
+            distance: Math.sqrt(best.distanceSq),
+            point: best.point,
+            object: this,
+            faceIndex: best.range.start,
+            face: { a: 0, b: 0, c: 0, materialIndex: 0, normal: best.range.normal.clone() },
+            normal: best.range.normal.clone()
+        });
+    };
 }

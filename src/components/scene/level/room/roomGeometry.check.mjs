@@ -2,8 +2,8 @@
 // Every face must point outwards and carry UVs = its position in meters along the face axes.
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
-import { boxFaces, floorGeometry, mergeFaces, surfaceIdAt } from './roomGeometry.js';
-import { Mesh, Raycaster } from 'three';
+import { boxFaces, floorGeometry, mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry.js';
+import { Mesh, Raycaster, Sphere } from 'three';
 
 const close = (a, b) => Math.abs(a - b) < 1e-6;
 const faces = boxFaces([1, 2, 3], [0.2, 2.7, 6]);
@@ -31,4 +31,18 @@ assert.equal(surfaceIdAt(merged.faceRanges, 99), null);
 // a ray onto the merged wall face reports a triangle of that face
 const hit = new Raycaster(new Vector3(3, 2, 3), new Vector3(-1, 0, 0)).intersectObject(new Mesh(merged.geometry))[0];
 assert.equal(surfaceIdAt(merged.faceRanges, hit.faceIndex), 'wall:inner');
+
+// sphere pointers: per-face boxes, not the merged box (two walls 6 m apart: the middle touches nothing)
+{
+    const left = boxFaces([-3, 1, 0], [0.2, 2, 6]).px, right = boxFaces([3, 1, 0], [0.2, 2, 6]).nx;
+    const walls = mergeFaces([{ geometry: left, surfaceId: 'left' }, { geometry: right, surfaceId: 'right' }]);
+    const mesh = new Mesh(walls.geometry);
+    mesh.updateMatrixWorld();
+    const cast = (x) => { const hits = []; spherecastFaces(walls.faceRanges).call(mesh, new Sphere(new Vector3(x, 1, 0), 0.05), hits); return hits; };
+    assert.equal(cast(0).length, 0);
+    const hit = cast(2.88);
+    assert.equal(hit.length, 1);
+    assert.equal(surfaceIdAt(walls.faceRanges, hit[0].faceIndex), 'right');
+    assert.ok(close(hit[0].point.x, 2.9) && close(hit[0].distance, 0.02));
+}
 console.log('roomGeometry: ok');
