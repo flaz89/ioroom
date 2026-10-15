@@ -93,3 +93,35 @@
 }
 .materials-ghost .material-ball { width: 44px; height: 44px; }
 body:has(.materials-ghost) { cursor: grabbing; }
+
+/* ------------------- MOBILE ----------------------
+   Docked low, between the two side toolbars and just above the "+" button, with smaller balls: the
+   upper half of the screen stays free as the drop area for the dragged materials.
+   left/right = .ui-container padding (10px) + toolbar padding (10px) + pill (~56px) + gap;
+   bottom = clears the "+" button (ui.css). Calibration knobs: tune on the phone. */
+@media (max-width: 767px) {
+    .ui .materials-panel {
+        position: fixed;
+        left: 84px;
+        right: 84px;
+        top: auto;
+        bottom: 84px;
+        width: auto;
+        max-height: 42vh;
+        overflow-y: auto;
+        transform: none;
+        padding: .6em;
+        gap: .4em;
+        font-size: .7em;
+        box-sizing: border-box;
+    }
+    .ui .materials-hint { display: none; }
+    .ui .materials-group { gap: .25em; }
+    .ui .materials-balls {
+        grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+        gap: .2em;
+    }
+    .ui .materials-item { padding: .2em 0; gap: .2em; }
+    .ui .materials-item .material-ball { width: 34px; height: 34px; }
+    .ui .materials-name { font-size: .9em; }
+}

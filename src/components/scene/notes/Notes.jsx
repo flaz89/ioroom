@@ -9,22 +9,24 @@ import { useCanvasTexture } from '../xr-ui/useCanvasTexture';
 * Post-it notes in the scene (data and rules: store/slices/notesSlice.js).
 * - BoardNotes (inside the Board): notes stuck on room surfaces, plus the placing mode (desktop/mobile:
 *   NotePlacer, press on the canvas; XR: XRNotePlacer, controller trigger / hand pinch with the ray).
-* - NotePin: one note, a round HUD marker in its author's color just off the surface (three canvas-drawn
-*   layers: static frame, slowly turning arcs, counter-turning breathing core) with an always visible
-*   HUD tag (leader line from the marker edge + author's name); hover speeds the marker up and enlarges
-*   it; click opens the editor (ui/note-modal/).
+* - NotePin: one note, a square HUD card in its author's color just off the surface (three canvas-drawn
+*   layers: a glass card tinted with the author's color with the "NOTE" title and decorative text lines,
+*   glowing corner brackets that breathe, a scan line sweeping down the card; the note text is never
+*   drawn on it: the card is a static texture per color) with an always visible HUD tag (leader line from the
+*   card corner + author's name); hover enlarges it and speeds it up; click / finger touch opens the
+*   editor (ui/note-modal/ on desktop, xr-ui/VRNotePanel.jsx in XR).
 *   Notes stuck on an object are rendered by SingleObject.jsx inside the object, so they follow it.
 * Calibration knobs in board meters (real size at 1:1, scaled down with the tabletop model).
 */
-const MARKER_SIZE = 0.22;          // marker diameter
+const MARKER_SIZE = 0.22;          // side of the square card
 const MARKER_OFFSET = 0.004;       // distance of the first layer from the surface (no z-fighting)
 const LAYER_GAP = 0.001;           // distance between the marker layers
-const RING_SPEED = 0.4;            // rad/s of the dashed ring (the core turns the other way, faster)
-const CORE_SPEED = 0.9;            // rad/s of the core
-const HOVER_SPEED = 3;             // rotation speed multiplier while hovered
-const HOVER_SCALE = 1.15;          // marker scale while hovered
-const PULSE = 0.05;                // core "breathing" amplitude (fraction of its size)
-const TEXTURE_PIXELS = 256;        // canvas resolution of each layer
+const BRACKET_PULSE = 0.035;       // corner brackets "breathing" amplitude (fraction of the card size)
+const SCAN_PERIOD = 2.6;           // seconds for the scan line to sweep the card
+const HOVER_SPEED = 2.5;           // animation speed multiplier while hovered
+const HOVER_SCALE = 1.12;          // marker scale while hovered
+const TEXTURE_PIXELS = 256;        // canvas resolution of the card and brackets layers
+const CARD_LINES = 7;              // decorative text lines drawn on the card
 const TAG_SIZE = [0.88, 0.22];     // author tag sprite [width, height] (same 4:1 aspect as TAG_PIXELS)
 const TAG_PIXELS = [512, 128];     // canvas resolution of the tag
 const TABLETOP_BOOST = 2;          // notes this much bigger on the tabletop model (easier to aim at with a ray)
@@ -90,11 +92,11 @@ export function NotePin({ note, objectScale }) {
                     onPointerEnter={() => setIsHovered(true)}
                     onPointerLeave={() => setIsHovered(false)}
                 />
-                {/* tag anchored on the marker's upper right edge (45°), always facing the viewer */}
+                {/* tag anchored on the card's upper right corner, always facing the viewer */}
                 <NoteTag
                     name={note.author.name}
                     color={note.author.color}
-                    position={[MARKER_SIZE * 0.35, MARKER_SIZE * 0.35, MARKER_OFFSET + 3 * LAYER_GAP]}
+                    position={[MARKER_SIZE * 0.48, MARKER_SIZE * 0.48, MARKER_OFFSET + 3 * LAYER_GAP]}
                 />
             </group>
         </group>
@@ -102,39 +104,49 @@ export function NotePin({ note, objectScale }) {
 }
 
 /*
-* Round HUD marker, in the XY plane facing +Z. Three canvas-textured discs (WebGL and WebGPU: built-in
-* materials only): the static frame catches the pointer, the ring and the core are animated.
-* `phase` desyncs the breathing of different notes.
+* Square HUD card, in the XY plane facing +Z (WebGL and WebGPU: built-in materials only):
+* - card (catches the pointer): glass tinted with the author's color, bright outline, "NOTE" title,
+*   decorative text lines (a reference, not the note's text: one static texture per color);
+* - corner brackets: glowing, breathing outwards;
+* - scan line: a soft bar of the author's color sweeping down the card.
+* `phase` desyncs the animation of different notes.
+*
+* TOUCH (XR): a fingertip pressing the card also touches the wall right behind it (pmndrs sphere
+* pointers measure the distance to bounding boxes, a tie at 0). pointerEventsOrder 1 makes the card win
+* such ties, so the touch reaches it (same trick as the gizmo in SingleObject.jsx).
 */
 function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
     const rootRef = useRef();
-    const ringRef = useRef();
-    const coreRef = useRef();
-    const frame = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawFrame(ctx, w / 2, color), [color]);
-    const ring = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawRing(ctx, w / 2, color), [color]);
-    const core = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawCore(ctx, w / 2, color), [color]);
+    const bracketsRef = useRef();
+    const scanRef = useRef();
+    const timeRef = useRef(phase); // animation clock, runs faster while hovered
+    const card = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawCard(ctx, w, color), [color]);
+    const brackets = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawBrackets(ctx, w, color), [color]);
+    const scan = useCanvasTexture(TEXTURE_PIXELS, 16, (ctx, w, h) => drawScanLine(ctx, w, h, color), [color]);
 
-    useFrame((state, delta) => {
-        const speed = isHovered ? HOVER_SPEED : 1;
-        ringRef.current.rotation.z += delta * RING_SPEED * speed;
-        coreRef.current.rotation.z -= delta * CORE_SPEED * speed;
-        coreRef.current.scale.setScalar(1 + PULSE * Math.sin(state.clock.elapsedTime * 2.5 + phase));
+    useFrame((_state, delta) => {
+        const time = (timeRef.current += delta * (isHovered ? HOVER_SPEED : 1));
+        bracketsRef.current.scale.setScalar(1 + BRACKET_PULSE * (0.5 + 0.5 * Math.sin(time * 2.4)));
+        // scan line: top to bottom of the content area, fading in and out at the ends
+        const progress = (time / SCAN_PERIOD) % 1;
+        scanRef.current.position.y = MARKER_SIZE * (0.22 - 0.62 * progress);
+        scanRef.current.material.opacity = Math.sin(progress * Math.PI);
         rootRef.current.scale.setScalar(THREE.MathUtils.damp(rootRef.current.scale.x, isHovered ? HOVER_SCALE : 1, 12, delta));
     });
 
     return (
         <group ref={rootRef}>
-            <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} {...pointerHandlers}>
-                <circleGeometry args={[MARKER_SIZE / 2, 48]} />
-                <MarkerMaterial map={frame} />
-            </mesh>
-            <mesh ref={ringRef} position={[0, 0, MARKER_OFFSET + LAYER_GAP]} raycast={noRaycast} renderOrder={2}>
+            <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} pointerEventsOrder={1} {...pointerHandlers}>
                 <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
-                <MarkerMaterial map={ring} />
+                <MarkerMaterial map={card} />
             </mesh>
-            <mesh ref={coreRef} position={[0, 0, MARKER_OFFSET + 2 * LAYER_GAP]} raycast={noRaycast} renderOrder={3}>
+            <mesh ref={scanRef} position={[0, 0, MARKER_OFFSET + LAYER_GAP]} raycast={noRaycast} renderOrder={2}>
+                <planeGeometry args={[MARKER_SIZE * 0.84, MARKER_SIZE * 0.06]} />
+                <MarkerMaterial map={scan} />
+            </mesh>
+            <mesh ref={bracketsRef} position={[0, 0, MARKER_OFFSET + 2 * LAYER_GAP]} raycast={noRaycast} renderOrder={3}>
                 <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
-                <MarkerMaterial map={core} />
+                <MarkerMaterial map={brackets} />
             </mesh>
         </group>
     );
@@ -145,54 +157,81 @@ function MarkerMaterial({ map }) {
     return <meshBasicMaterial map={map} transparent depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />;
 }
 
-// Canvas helpers: `c` = canvas center (= radius available), angles in radians
-function arc(ctx, c, radius, from, to, width, style) {
+// Rounded rectangle path (canvas)
+function roundedRect(ctx, x, y, width, height, radius) {
     ctx.beginPath();
-    ctx.arc(c, c, radius, from, to);
-    ctx.lineWidth = width;
-    ctx.strokeStyle = style;
-    ctx.stroke();
-}
-function radial(ctx, c, angle, inner, outer, width, style) {
-    ctx.beginPath();
-    ctx.moveTo(c + Math.cos(angle) * inner, c + Math.sin(angle) * inner);
-    ctx.lineTo(c + Math.cos(angle) * outer, c + Math.sin(angle) * outer);
-    ctx.lineWidth = width;
-    ctx.strokeStyle = style;
-    ctx.stroke();
+    ctx.roundRect(x, y, width, height, radius);
 }
 
-// Static frame: glass disc tinted with the author's color, thick colored ring, thin white ring, notches
-function drawFrame(ctx, c, color) {
-    ctx.beginPath();
-    ctx.arc(c, c, c * 0.94, 0, TAU);
-    ctx.fillStyle = 'rgba(10, 16, 32, 0.45)';
-    ctx.fill();
-    ctx.globalAlpha = 0.3;
+// Card: glassmorphism in the author's color (translucent tint, light sheen from the top left, bright
+// outline), "NOTE" title and decorative dashed text lines like a HUD readout
+function drawCard(ctx, size, color) {
+    const inset = size * 0.07;
+    const inner = size - inset * 2;
+    roundedRect(ctx, inset, inset, inner, inner, size * 0.1);
+    ctx.globalAlpha = 0.42;
     ctx.fillStyle = color;
     ctx.fill();
+    const sheen = ctx.createLinearGradient(inset, inset, size - inset, size - inset);
+    sheen.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    sheen.addColorStop(0.55, 'rgba(255, 255, 255, 0.06)');
+    sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.globalAlpha = 1;
-    arc(ctx, c, c * 0.9, 0, TAU, 10, color);
-    arc(ctx, c, c * 0.8, 0, TAU, 2, 'rgba(255, 255, 255, 0.8)');
-    for (let i = 0; i < 4; i++) radial(ctx, c, i * TAU / 4, c * 0.78, c, 8, color);
-}
-
-// Turning ring: three thick arcs in the author's color
-function drawRing(ctx, c, color) {
-    for (let i = 0; i < 3; i++) arc(ctx, c, c * 0.64, i * TAU / 3, i * TAU / 3 + 1.4, 16, color);
-}
-
-// Counter-turning core: broken white ring around a solid colored dot
-function drawCore(ctx, c, color) {
-    for (let i = 0; i < 2; i++) arc(ctx, c, c * 0.38, i * Math.PI + 0.3, i * Math.PI + 2.6, 5, '#ffffff');
-    ctx.beginPath();
-    ctx.arc(c, c, c * 0.2, 0, TAU);
-    ctx.fillStyle = color;
+    ctx.fillStyle = sheen;
     ctx.fill();
-    ctx.beginPath();
-    ctx.arc(c, c, c * 0.06, 0, TAU);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.stroke();
+    // title
     ctx.fillStyle = '#ffffff';
-    ctx.fill();
+    ctx.font = `700 ${size * 0.1}px "SUSE Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NOTE', size / 2, inset + size * 0.11);
+    // decorative lines: two dashes of pseudo-random length per line
+    const left = inset + size * 0.08;
+    const width = inner - size * 0.16;
+    const top = inset + size * 0.22;
+    const lineHeight = (inner - size * 0.3) / CARD_LINES;
+    ctx.globalAlpha = 0.85;
+    for (let i = 0; i < CARD_LINES; i++) {
+        const y = top + lineHeight * (i + 0.5);
+        const split = width * (0.3 + 0.4 * ((i * 37) % 10) / 10);
+        ctx.fillRect(left, y - 3, split - 10, 6);
+        ctx.fillRect(left + split, y - 3, (width - split) * (0.5 + 0.5 * ((i * 53) % 7) / 7), 6);
+    }
+    ctx.globalAlpha = 1;
+}
+
+// Corner brackets: thick glowing L shapes with rounded corners
+function drawBrackets(ctx, size, color) {
+    const inset = size * 0.05;
+    const arm = size * 0.2;
+    const radius = size * 0.1;
+    ctx.lineWidth = size * 0.035;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = size * 0.05;
+    const corners = [[inset, inset, 1, 1], [size - inset, inset, -1, 1], [inset, size - inset, 1, -1], [size - inset, size - inset, -1, -1]];
+    for (const [x, y, dx, dy] of corners) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + dy * arm);
+        ctx.arcTo(x, y, x + dx * radius, y, radius);
+        ctx.lineTo(x + dx * arm, y);
+        ctx.stroke();
+    }
+}
+
+// Scan line: horizontal bar of the author's color, bright in the middle, fading to the sides
+function drawScanLine(ctx, width, height, color) {
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    gradient.addColorStop(0.5, color);
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, height * 0.35, width, height * 0.3);
 }
 
 /*
