@@ -48,7 +48,7 @@
 .bill-empty, .bill-meta { opacity: .7; }
 
 /* the table scrolls (both ways on phones); the header and the totals stay visible */
-.bill-table-wrap { flex-shrink: 1; min-height: 0; overflow: auto; }
+.bill-table-wrap { overflow-x: auto; }
 .bill-table { width: 100%; border-collapse: collapse; }
 .bill-table th, .bill-table td {
     padding: .45em .5em;
@@ -71,26 +71,8 @@
 }
 .bill-grand { font-size: 1.15em; color: #ffb733; }
 
-/* Print / Save as PDF: only the bill, dark text on white */
-@media print {
-    body * { visibility: hidden; }
-    .bill-panel, .bill-panel * { visibility: visible; }
-    .bill-backdrop { position: static; background: none; }
-    .bill-panel {
-        position: absolute;
-        inset: 0 auto auto 0;
-        width: 100%;
-        max-height: none;
-        border: none;
-        box-shadow: none;
-        background: white;
-        backdrop-filter: none;
-        color: black;
-    }
-    .bill-table-wrap { overflow: visible; }
-    .bill-actions { display: none; }
-    .bill-grand, .bill-link { color: black; }
-    .bill-table th, .bill-table td { border-color: #ccc; }
-}
+/* table + totals + notes: scrolls as a whole when the modal is short */
+.bill-printable { min-height: 0; flex-shrink: 1; overflow: auto; display: flex; flex-direction: column; gap: .7em; }
+.bill-printable > * { flex-shrink: 0; }
 /* phones: the material column keeps a readable width, the numbers scroll sideways */
 .bill-table td:first-child { min-width: 10em; }

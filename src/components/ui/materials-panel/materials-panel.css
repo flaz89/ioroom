@@ -224,8 +224,9 @@
 .material-card {
     position: absolute;
     left: calc(100% + 12px);
-    top: 0;
-    width: 260px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: min(440px, calc(100vw - 360px));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -238,7 +239,8 @@
 /* the color map tiled 2×2: shows how the pattern repeats */
 .material-card-preview {
     position: relative;
-    height: 220px;
+    aspect-ratio: 1;
+    max-height: calc(100vh - 220px);
     background-size: 50% 50%;
     background-repeat: repeat;
 }
