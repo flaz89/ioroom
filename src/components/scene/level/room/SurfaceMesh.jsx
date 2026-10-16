@@ -1,14 +1,11 @@
 import { Suspense } from 'react';
 import { MeshStandardMaterial, RepeatWrapping, SRGBColorSpace } from 'three';
 import { useTexture } from '@react-three/drei';
-import { useMaterial } from '../../../../materials/library';
+import { TEXTURE_MAPS, useMaterial } from '../../../../materials/library';
 
 const DROP_TINT = '#ff9a1a';    // selection orange: the face a dragged material would land on
 const DROP_TINT_STRENGTH = 0.18;
 const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing angles
-// material.maps keys; orm = packed R ambient occlusion / G roughness / B metalness (glTF layout, which is
-// how three.js reads aoMap / roughnessMap / metalnessMap); `roughness` only on records made before ORM
-const TEXTURE_MAPS = ['color', 'normal', 'orm', 'roughness'];
 
 /*
 * One batch of room faces sharing a material (Room.jsx merges them into one geometry: one draw call):

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RepeatWrapping, SRGBColorSpace, TextureLoader } from 'three';
+import { ImageBitmapLoader, RepeatWrapping, SRGBColorSpace, Texture } from 'three';
 import { MATERIAL_KINDS, kindOf } from '../../../materials/grouping';
 import { DEFAULT_VAT, formatEuro, priceBreakdown } from '../../../materials/pricing';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
@@ -8,30 +8,42 @@ import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 * VR material card (VRMaterialsPanel.jsx: a ray resting on a ball opens it beside the panel), like the
 * desktop card (ui/materials-panel/MaterialCard.jsx): the color map LARGE, tiled 2×2, then name, kind,
 * code and net price €/m² + VAT. Not interactive (rays pass through it). Placed by the parent.
-* The texture is loaded on its own (not drei's cached one, whose tiling belongs to the room surfaces)
-* and disposed when the card closes: one 1K texture at a time.
+* The texture is loaded on its own (not drei's cached one, whose tiling belongs to the room surfaces),
+* decoded off the main thread, and disposed when the card closes: one 1K texture at a time.
 */
 export const CARD_WIDTH = 0.24;      // meters
 const INFO_HEIGHT = 0.07;
 const PIXELS_PER_METER = 4000;
 const noRaycast = () => null;
 
+/*
+* The color map as a texture, decoded OFF the main thread (ImageBitmapLoader: createImageBitmap) so
+* opening / switching the card does not freeze a frame; only the GPU upload remains. ImageBitmaps ignore
+* texture.flipY, so the bitmap is flipped while decoding.
+*/
+const bitmapLoader = new ImageBitmapLoader().setOptions({ imageOrientation: 'flipY' });
+bitmapLoader.setCrossOrigin('anonymous');
+
 function useColorMap(url) {
     const [texture, setTexture] = useState(null);
     useEffect(() => {
         let alive = true;
         let loaded = null;
-        new TextureLoader().load(url, (result) => {
-            loaded = result;
-            if (!alive) { result.dispose(); return; }
-            result.colorSpace = SRGBColorSpace;
-            result.wrapS = result.wrapT = RepeatWrapping;
-            result.repeat.set(2, 2);
-            setTexture(result);
+        bitmapLoader.load(url, (bitmap) => {
+            if (!alive) { bitmap.close(); return; }
+            loaded = new Texture(bitmap);
+            loaded.colorSpace = SRGBColorSpace;
+            loaded.wrapS = loaded.wrapT = RepeatWrapping;
+            loaded.repeat.set(2, 2);
+            loaded.needsUpdate = true;
+            setTexture(loaded);
         });
         return () => {
             alive = false;
-            loaded?.dispose();
+            if (loaded) {
+                loaded.dispose();
+                loaded.image.close();
+            }
             setTexture(null);
         };
     }, [url]);

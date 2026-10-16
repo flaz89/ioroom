@@ -9,6 +9,7 @@ import { endLivePose, holdObject, isLockedByOther, publishLivePose, releaseObjec
 import { useHandle } from "@react-three/handle";
 import { useStore } from "../../../store/appStore";
 import { NotePin } from "../notes/Notes";
+import { meshSpherecast } from "../controls/meshSpherecast";
 import { setCursorGrabbing, setCursorHover } from "../sceneCursor";
 
 function renderGeometry(type) {
@@ -416,6 +417,8 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
                 <mesh
                     ref={meshRef}
                     userData={{ objectId: data.id }} // post-it placing: which object a note sticks on
+                    // XR touch/grab: distance to the real surface, not the bounding box (notes on curved objects)
+                    spherecast={meshSpherecast}
                     castShadow
                     receiveShadow
                     onClick={handleClick}

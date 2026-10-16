@@ -1,3 +1,4 @@
+import { useTexture } from '@react-three/drei';
 import { useStore } from '../store/appStore';
 
 /*
@@ -28,4 +29,18 @@ export const useMaterial = (id) => useStore((state) => findIn(state.libraryMater
 export function useMaterialList() {
     const library = useStore((state) => state.libraryMaterials);
     return [PLAIN, ...library];
+}
+
+// material.maps keys; orm = packed R ambient occlusion / G roughness / B metalness (glTF layout, which is
+// how three.js reads aoMap / roughnessMap / metalnessMap); `roughness` only on records made before ORM
+export const TEXTURE_MAPS = ['color', 'normal', 'orm', 'roughness'];
+
+/*
+* Starts loading a material's textures (drei cache, the one SurfaceMesh.jsx reads) before they are
+* needed: called when a drag starts in the materials panels, so they are decoded while the ball travels
+* to the wall instead of when the preview first shows on a face (a hitch in VR).
+*/
+export function preloadMaterialTextures(material) {
+    if (material?.maps == null) return;
+    useTexture.preload(TEXTURE_MAPS.filter((name) => material.maps[name]).map((name) => material.maps[name]));
 }

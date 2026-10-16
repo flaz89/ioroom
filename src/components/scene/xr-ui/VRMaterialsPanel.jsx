@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
-import { useMaterialList } from '../../../materials/library';
+import { preloadMaterialTextures, useMaterialList } from '../../../materials/library';
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
@@ -46,9 +46,11 @@ const TITLE_H = 0.04;
 const WIDTH = COLUMNS * CELL_W + PAD * 2;
 const PIXELS_PER_METER = 4000;
 const THUMB_PIXELS = 128;    // thumbnails of the color maps
-const ACTIVE = 'rgba(255, 150, 40, 0.95)';
+const ACTIVE = '#ff9628'; // dragged ball ring
 const CARD_OPEN_MS = 1000;   // ray resting on a ball -> its card (VRMaterialCard.jsx)
+const CARD_SWITCH_MS = 350;  // card open, resting on another ball -> switch (hand rays jitter across balls)
 const CARD_CLOSE_MS = 300;   // after leaving the balls
+const HOVER_RING = '#ffffff';
 
 // Small thumbnails of the color maps: id -> canvas (CORS image, so the panel canvas stays usable as a texture)
 function useThumbnails(materials) {
@@ -145,6 +147,12 @@ export default function VRMaterialsPanel() {
         ctx.textBaseline = 'middle';
         ctx.fillText('Materials', 0, h / 2);
     }, []);
+    /*
+    * The grid canvas (~1000 px) is redrawn and re-uploaded to the GPU ONLY when the balls on screen or
+    * their thumbnails change: a redraw is a visible hitch on the Quest. Hover and drag highlights are
+    * separate ring meshes (below), and `materials` (a new array every render) is keyed by its ids.
+    */
+    const ballsKey = materials.map((material) => material.id).join('|');
     const grid = useCanvasTexture(Math.round(gridW * PIXELS_PER_METER), Math.round(gridH * PIXELS_PER_METER), (ctx, w) => {
         const cell = w / COLUMNS; // pixels (cells are CELL_W x CELL_H meters)
         const cellH = cell * (CELL_H / CELL_W);
@@ -154,15 +162,21 @@ export default function VRMaterialsPanel() {
         materials.forEach((material, index) => {
             const x = (index % COLUMNS + 0.5) * cell;
             const y = Math.floor(index / COLUMNS) * cellH + radius + cell * 0.08;
-            const outline = drag?.materialId === material.id ? ACTIVE : hovered === index ? 'rgba(255, 255, 255, 0.8)' : null;
-            drawBall(ctx, x, y, radius, thumbnails[material.id], outline);
+            drawBall(ctx, x, y, radius, thumbnails[material.id], null);
             ctx.fillStyle = '#ffffff';
             ctx.font = `500 ${Math.round(cell * 0.13)}px "SUSE Mono", monospace`;
             const fit = (cell * 0.92) / ctx.measureText(material.name).width;
             if (fit < 1) ctx.font = `500 ${Math.round(cell * 0.13 * fit)}px "SUSE Mono", monospace`;
             ctx.fillText(material.name, x, y + radius + cell * 0.13);
         });
-    }, [materials, thumbnails, hovered, drag?.materialId, rows]);
+    }, [ballsKey, thumbnails, rows]);
+    // Center of ball `index` in panel space (same layout as the canvas: cells CELL_W x CELL_H)
+    const ballCenter = (index) => [
+        -gridW / 2 + (index % COLUMNS + 0.5) * CELL_W,
+        gridTop - Math.floor(index / COLUMNS) * CELL_H - BALL / 2 - CELL_W * 0.08,
+        0.002
+    ];
+    const draggedIndex = materials.findIndex((material) => material.id === drag?.materialId);
 
     // Ball under a hit on the grid (uv: 0..1 left to right, bottom to top); null between/after the balls
     const ballAt = (uv) => {
@@ -176,6 +190,7 @@ export default function VRMaterialsPanel() {
         if (event.pointerType !== 'ray') return; // only a ray can then reach the walls
         const index = ballAt(event.uv);
         if (index == null) return;
+        preloadMaterialTextures(materials[index]);
         useStore.getState().setMaterialDrag({ materialId: materials[index].id, surfaceId: null, pointerId: event.pointerId });
     };
 
@@ -196,7 +211,9 @@ export default function VRMaterialsPanel() {
     }, [session, isDragging]);
     /*
     * Material card: a pointer resting CARD_OPEN_MS on a ball opens its card beside the panel; moving to
-    * another ball switches at once; it closes CARD_CLOSE_MS after leaving the balls, and while dragging.
+    * another ball switches once it rests there CARD_SWITCH_MS; it closes CARD_CLOSE_MS after leaving the
+    * balls, and while dragging. Every hover change restarts the timer, so a jittering hand ray that
+    * crosses ball borders never makes the card flip (each flip loaded a texture: no image, stutter).
     */
     const hoveredMaterial = hovered != null ? materials[hovered] : null;
     const hoveredId = hoveredMaterial?.maps != null ? hoveredMaterial.id : null; // Plain: no card
@@ -207,7 +224,7 @@ export default function VRMaterialsPanel() {
     }, [cardId]);
     useEffect(() => {
         const next = isDragging ? null : hoveredId;
-        const delay = next == null ? CARD_CLOSE_MS : cardOpen.current ? 0 : CARD_OPEN_MS;
+        const delay = next == null ? CARD_CLOSE_MS : cardOpen.current ? CARD_SWITCH_MS : CARD_OPEN_MS;
         const timer = setTimeout(() => setCardId(next), isDragging ? 0 : delay);
         return () => clearTimeout(timer);
     }, [hoveredId, isDragging]);
@@ -255,6 +272,20 @@ export default function VRMaterialsPanel() {
                 <planeGeometry args={[gridW, gridH]} />
                 <meshBasicMaterial map={grid} transparent depthWrite={false} toneMapped={false} />
             </mesh>
+
+            {/* Highlights: hovered ball (white ring), dragged ball (orange ring) */}
+            {hovered != null && hovered !== draggedIndex && (
+                <mesh position={ballCenter(hovered)} raycast={() => null}>
+                    <ringGeometry args={[BALL / 2 + 0.0008, BALL / 2 + 0.0025, 48]} />
+                    <meshBasicMaterial color={HOVER_RING} transparent opacity={0.8} toneMapped={false} />
+                </mesh>
+            )}
+            {draggedIndex >= 0 && (
+                <mesh position={ballCenter(draggedIndex)} raycast={() => null}>
+                    <ringGeometry args={[BALL / 2 + 0.0008, BALL / 2 + 0.003, 48]} />
+                    <meshBasicMaterial color={ACTIVE} toneMapped={false} />
+                </mesh>
+            )}
 
             {/* Material card, to the right of the panel, top-aligned */}
             {cardMaterial?.maps != null && (

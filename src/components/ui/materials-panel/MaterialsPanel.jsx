@@ -3,7 +3,7 @@ import CircleButton from '../circle-button/CircleButton';
 import { svg } from '../../../utils/svg-logos';
 import { useStore } from '../../../store/appStore';
 import { usePanelInViewport } from '../usePanelInViewport';
-import { useMaterialList } from '../../../materials/library';
+import { preloadMaterialTextures, useMaterialList } from '../../../materials/library';
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { deleteMaterial } from '../../../materials/materialsApi';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
@@ -115,6 +115,7 @@ export default function MaterialsPanel() {
         event.preventDefault(); // no text selection / native image drag
         clearTimeout(cardTimer.current);
         setCard(null);
+        preloadMaterialTextures(material);
         // touch: release the implicit capture, so the pointer events follow the finger over the canvas
         event.currentTarget.releasePointerCapture?.(event.pointerId);
         setDrag({ material, x: event.clientX, y: event.clientY });
