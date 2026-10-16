@@ -1,6 +1,5 @@
 import { useXR } from "@react-three/xr";
 import Room from "./room/Room";
-import { ROOM_SIZES } from "./room/roomLayout";
 import Board from "./Board";
 import ObjectRenderer from "./ObjectRenderer";
 import WristMenu from "../xr-ui/WristMenu";
@@ -38,7 +37,7 @@ export default function Level() {
 
             {/* ----------- ROOM + OBJECTS ---------------- */}
             {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}
-            <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room sizes={ROOM_SIZES}/>}>
+            <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room />}>
                 {/* Sun + ambient: inside the board, so light, sun arc and shadows follow the tabletop model */}
                 <Light />
                 {/* Compass: view direction in board space (compass bars), N/E/S/W on the floor around the room */}

@@ -5,7 +5,8 @@ import { useStore } from '../../../store/appStore';
 import { PLAIN_ID } from '../../../materials/library';
 import { billOfQuantities } from '../../../materials/billOfQuantities';
 import { formatEuro } from '../../../materials/pricing';
-import { ROOM_SIZES, surfaceAreas, surfaceLabel } from '../../scene/level/room/roomLayout';
+import { surfaceAreas, surfaceLabel } from '../../scene/level/room/roomLayout';
+import { activeLevel } from '../../../plan/planModel';
 import './bill-panel.css';
 
 const formatNumber = (value) => value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,7 +64,8 @@ export default function BillPanel() {
     const surfaces = useStore((state) => state.surfaces);
     const snapshots = useStore((state) => state.priceSnapshots);
     const library = useStore((state) => state.libraryMaterials);
-    const areas = useMemo(() => surfaceAreas(ROOM_SIZES), []);
+    const level = useStore((state) => activeLevel(state.plan));
+    const areas = useMemo(() => surfaceAreas(level), [level]);
     const printableRef = useRef(); // table + totals (+ notes, left out of the print)
     const bill = useMemo(
         () => (isOpen ? billOfQuantities({ surfaces, areas, snapshots, library, plainId: PLAIN_ID }) : null),
@@ -107,7 +109,7 @@ export default function BillPanel() {
                                                     <span className="bill-name">{row.name}</span>
                                                     {row.code && <span className="bill-meta"> · {row.code}</span>}
                                                     {row.url && <a className="bill-link" href={row.url} target="_blank" rel="noopener noreferrer"> ↗</a>}
-                                                    <span className="bill-faces">{row.faces.map((face) => surfaceLabel(face.surfaceId)).join(', ')}</span>
+                                                    <span className="bill-faces">{row.faces.map((face) => surfaceLabel(face.surfaceId, level)).join(', ')}</span>
                                                 </td>
                                                 <td className="num">{formatNumber(row.area)}</td>
                                                 <td className="num">{row.waste ? `${row.waste}%` : '–'}</td>

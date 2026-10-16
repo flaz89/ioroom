@@ -21,6 +21,8 @@ import { bindFieldMap } from './fieldMapSync';
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
 * Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
 * Prices frozen in the project (store priceSnapshots, bill of quantities): Y.Map "prices", one key per material.
+* Floor plan (store plan: levels with walls and floors, plan/planModel.js): Y.Map "plan" (fieldMapSync.js,
+* key "levels"); a room without one is seeded with the local (default) plan.
 *
 * ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
 * (opened once with ?admin=<token>, then kept in localStorage), used by the "My environments" API of the
@@ -152,6 +154,11 @@ export function connectRoom(room) {
         write: (patch) => useStore.getState().setSurfaces(patch)
     });
 
+    const unbindPlan = bindFieldMap(doc, provider, {
+        name: 'plan',
+        read: (state) => state.plan,
+        write: (patch) => useStore.getState().setPlan(patch)
+    });
     const unbindPrices = bindFieldMap(doc, provider, {
         name: 'prices',
         read: (state) => state.priceSnapshots,
@@ -161,6 +168,7 @@ export function connectRoom(room) {
     return () => {
         setRoomStatus('local');
         unbindPrices();
+        unbindPlan();
         unbindAwareness();
         unbindSun();
         unbindSurfaces();

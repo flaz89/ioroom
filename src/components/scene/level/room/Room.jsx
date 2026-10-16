@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from 'react';
 import SurfaceMesh from './SurfaceMesh';
 import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
-import { WALL_HEIGHT, roomFaces } from './roomLayout';
+import { polygonGeometry, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
+import { activeLevel } from '../../../../plan/planModel';
 
 /*
 * Face ids (surfaceId): the key a face's material is saved under (store `surfaces`) and what the
@@ -48,19 +49,22 @@ function onDragDrop(event) {
 const ROOM_USER_DATA = { isRoom: true };
 
 /*
-* The fixed test room: floor, invisible ceiling, three walls (left, right, back). Every face has its own
+* The room of a plan level (plan/planModel.js, store `plan`): floors, walls and an invisible ceiling,
+* built by roomLayout.js (the default plan is the 6 x 6 m test room). Every face has its own
 * material (world-space UVs: roomGeometry.js), but faces are RENDERED in batches: all the faces sharing
 * the same material, plain color, preview tint and orientation (vertical / horizontal) are merged into
 * one mesh, so the room costs one draw call (plus one shadow draw call) per batch instead of one per
 * face. Batches are rebuilt when a material changes (or a dragged material previews on a face): a few
 * hundred vertices, cheap.
-* ponytail: walls are fixed boxes around a [x, z] room; rooms from plans will describe walls as data.
 */
-export default function Room({ sizes }) {
-    const [x, z] = sizes;
+export default function Room() {
+    const level = useStore((state) => activeLevel(state.plan));
 
-    // Every face of the room (roomLayout.js: also measured by the bill of quantities), built once per room size
-    const faces = useMemo(() => roomFaces([x, z]), [x, z]);
+    // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
+    const faces = useMemo(() => roomFaces(level), [level]);
+    // Ceiling: the floor polygons at wall height, facing down (no ceiling material yet: not drawn)
+    const ceilings = useMemo(() => level.floors.map((floor) => polygonGeometry(floor.points, level.wallHeight, true)), [level]);
+    useEffect(() => () => ceilings.forEach((geometry) => geometry.dispose()), [ceilings]);
     useEffect(() => () => faces.forEach((face) => face.geometry.dispose()), [faces]);
 
     // Material of each face: saved, or previewed while a material is dragged over it
@@ -103,9 +107,7 @@ export default function Room({ sizes }) {
 
             {/* ------------- CEILING (invisible) ------------------ */}
             {/* Not rendered: only a surface for placing objects (lamps) with surfaceDrag. Faces down. */}
-            <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, WALL_HEIGHT, 0]} visible={false}>
-                <planeGeometry args={[x, z]} />
-            </mesh>
+            {ceilings.map((geometry) => <mesh key={geometry.uuid} geometry={geometry} visible={false} />)}
         </group>
     );
 }
