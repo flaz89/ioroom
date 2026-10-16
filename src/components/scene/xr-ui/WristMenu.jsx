@@ -75,6 +75,11 @@ export default function WristMenu() {
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)
     const isPlacingNote = useStore((state) => state.notes.placing);
     const setPlacingNote = useStore((state) => state.setPlacingNote);
+    // ruler: on = selects place measure points (scene/measure/Measures.jsx); "free" = no axis lock
+    const isMeasuring = useStore((state) => state.measures.active);
+    const isMeasureFree = useStore((state) => state.measures.free);
+    const setMeasuring = useStore((state) => state.setMeasuring);
+    const setMeasureFree = useStore((state) => state.setMeasureFree);
     const isTabletop = useStore((state) => state.view.mode === 'tabletop');
     const toggleTabletop = useStore((state) => state.toggleTabletop);
     const { gridSnap, gridSnapStep, rotationSnap, rotationSnapStep } = useStore((state) => state.settings);
@@ -120,6 +125,9 @@ export default function WristMenu() {
                         <VRButton svg={svg.materials} active={isMaterialsOpen} onClick={() => togglePanel('materials')} position={[STEP_X, BUTTON_STEP, 0]} />
                         <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
                         <VRButton svg={svg.note} active={isPlacingNote} onClick={() => setPlacingNote(!isPlacingNote)} position={[STEP_X, BUTTON_STEP * 2, 0]} />
+                        <VRButton svg={svg.ruler} active={isMeasuring} onClick={() => setMeasuring(!isMeasuring)} position={[STEP_X * 2, BUTTON_STEP * 2, 0]} />
+                        {/* ruler on: free direction instead of the axis lock (the desktop Shift) */}
+                        {isMeasuring && <VRButton label="Free" active={isMeasureFree} onClick={() => setMeasureFree(!isMeasureFree)} position={[STEP_X * 2, BUTTON_STEP * 3, 0]} />}
                         {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
                         <VRButton svg={svg.gridSnap} active={gridSnap} onClick={toggleGridSnap} position={[0, BUTTON_STEP * 3, 0]} />
                         <VRButton label={`${gridSnapStep}cm`} active={gridSnap} onClick={() => setGridSnapStep(nextStep(GRID_SNAP_STEPS, gridSnapStep))} position={[STEP_X, BUTTON_STEP * 3, 0]} />

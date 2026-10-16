@@ -9,7 +9,7 @@ import VRButton from './VRButton';
 import VRGrabBar from './VRGrabBar';
 import VRMaterialCard, { CARD_WIDTH } from './VRMaterialCard';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
-import { placeInFrontOfUser } from './layout';
+import { VR_PANEL, placeInFrontOfUser } from './layout';
 
 /*
 * In-VR materials panel (store openPanel 'materials', opened from the wrist menu): the material library
@@ -253,7 +253,7 @@ export default function VRMaterialsPanel() {
         <PointerFilterContext.Provider value={acceptsPanelPointer}>
         <group ref={groupRef}>
             {/* Background: catches presses so they never reach the scene behind the panel */}
-            <mesh position-z={-0.001} renderOrder={-1} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <mesh position-z={-0.001} renderOrder={-1} userData={VR_PANEL} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
                 <planeGeometry args={[WIDTH, height]} />
                 <meshBasicMaterial map={background} transparent toneMapped={false} />
             </mesh>

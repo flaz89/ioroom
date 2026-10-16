@@ -1,0 +1,27 @@
+/* Ruler (Measures.jsx) */
+body.measuring canvas { cursor: crosshair; }
+
+/* actions of a selected measure, under its label (drei Html) */
+.measure-actions {
+    display: flex;
+    gap: .3em;
+    transform: translateY(2.2em);
+    pointer-events: auto;
+    font-family: "SUSE Mono", monospace;
+    font-size: 12px;
+}
+.measure-actions button {
+    padding: .3em .7em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: rgba(10, 16, 32, 0.85);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.measure-actions button.primary {
+    border-color: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.9) 0%, rgba(255, 140, 0, 0.9) 70%);
+    font-weight: 600;
+}

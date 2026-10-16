@@ -6,7 +6,7 @@ import { getSelfUser } from '../../../sync/presence';
 import { drawPanel, useCanvasTexture, wrapLines } from './useCanvasTexture';
 import VRButton from './VRButton';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
-import { placeInFrontOfUser } from './layout';
+import { VR_PANEL, placeInFrontOfUser } from './layout';
 import VRGrabBar from './VRGrabBar';
 
 /*
@@ -136,7 +136,7 @@ function NoteEditorPanel({ note }) {
         <PointerFilterContext.Provider value={acceptsPanelPointer}>
         <group ref={groupRef}>
             {/* catches presses so they never reach the scene behind the panel; drawn before the buttons */}
-            <mesh position-z={-0.001} renderOrder={-1} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <mesh position-z={-0.001} renderOrder={-1} userData={VR_PANEL} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
                 <planeGeometry args={[WIDTH, HEIGHT]} />
                 <meshBasicMaterial map={background} transparent toneMapped={false} />
             </mesh>

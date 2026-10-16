@@ -19,6 +19,9 @@ export default function RightToolBar() {
     const toggleGrid = useStore(state => state.toggleGrid);
     // post-it placing mode: the next press on a surface sticks a note there (scene/notes/Notes.jsx)
     const isPlacingNote = useStore(state => state.notes.placing);
+    // ruler mode: clicks place measure points (scene/measure/Measures.jsx)
+    const isMeasuring = useStore(state => state.measures.active);
+    const setMeasuring = useStore(state => state.setMeasuring);
     const setPlacingNote = useStore(state => state.setPlacingNote);
     const selectedObject = useStore(state => state.objects.selectedId);
     const removeSelectedObject = useStore(state => state.removeObject);
@@ -80,6 +83,7 @@ export default function RightToolBar() {
                         onToggle={toggleRotationSnap}
                         onPick={setRotationSnapStep}
                     />
+                    <CircleButton svg={svg.ruler} onClick={() => setMeasuring(!isMeasuring)} isActive={isMeasuring} title={isMeasuring ? "Click two points to measure (Esc to stop)" : "Measure"}/>
                     <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>
                 </div>
 

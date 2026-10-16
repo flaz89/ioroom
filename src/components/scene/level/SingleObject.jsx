@@ -10,6 +10,7 @@ import { useHandle } from "@react-three/handle";
 import { useStore } from "../../../store/appStore";
 import { NotePin } from "../notes/Notes";
 import { meshSpherecast } from "../controls/meshSpherecast";
+import { objectMeshes } from "./objectMeshes";
 import { setCursorGrabbing, setCursorHover } from "../sceneCursor";
 
 function renderGeometry(type) {
@@ -170,6 +171,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     const handleClick = (event) => {
         event.stopPropagation();
         if (useStore.getState().notes.placing) return; // the press sticks a post-it note (scene/notes/Notes.jsx)
+        if (useStore.getState().measures.active) return; // the click places a ruler point (scene/measure/Measures.jsx)
         selectObject(data.id);
     };
 
@@ -229,7 +231,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     useHandle(targetRef, {
         handle: meshRef,
         // post-it placing mode (scene/notes/Notes.jsx): the press sticks a note, it never grabs
-        filter: () => !useStore.getState().notes.placing,
+        filter: () => !useStore.getState().notes.placing && !useStore.getState().measures.active,
         translate: true,
         rotate: HANDLE_ROTATE[pointerRotation],
         scale: false,
@@ -295,6 +297,12 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
 
     // Unmounted while held (deleted, room left): release the lock
     useEffect(() => () => releaseObject(data.id), [data.id]);
+    // ruler measures anchored on this object follow its live mesh (objectMeshes.js)
+    useEffect(() => {
+        const mesh = meshRef.current;
+        objectMeshes.set(data.id, mesh);
+        return () => { if (objectMeshes.get(data.id) === mesh) objectMeshes.delete(data.id); };
+    }, [data.id]);
 
     /*
     * LIVE SYNC (shared rooms, see sync/presence.js):

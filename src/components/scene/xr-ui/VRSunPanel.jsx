@@ -9,7 +9,7 @@ import VRButton from './VRButton';
 import VRSlider from './VRSlider';
 import VRCompassBar from './VRCompassBar';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
-import { placeInFrontOfUser } from './layout';
+import { VR_PANEL, placeInFrontOfUser } from './layout';
 import VRGrabBar from './VRGrabBar';
 
 /*
@@ -84,7 +84,7 @@ export default function VRSunPanel() {
         <group ref={groupRef}>
             {/* Background: catches presses so they never reach the scene behind the panel.
                 renderOrder -1: drawn before the (transparent) texts and controls on top of it */}
-            <mesh position-z={-0.001} renderOrder={-1} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            <mesh position-z={-0.001} renderOrder={-1} userData={VR_PANEL} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
                 <planeGeometry args={[WIDTH, height]} />
                 <meshBasicMaterial map={background} transparent toneMapped={false} />
             </mesh>

@@ -72,6 +72,12 @@ export const svg = {
         <circle cx="7" cy="13.5" r="1.3" fill="currentColor"/>
     </svg>,
 
+    // ruler with tick marks (measuring tool)
+    ruler: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2.2" y="7.2" width="15.6" height="5.6" rx="1.2" transform="rotate(-35 10 10)" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M6.3 10.9l-.9-1.3M8.6 9.3l-1.4-2M10.9 7.7l-.9-1.3M13.2 6.1l-1.4-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" transform="translate(.6 1.8)"/>
+    </svg>,
+
     // receipt with a zig-zag bottom (bill of quantities)
     bill: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4.5 2.5h11v15l-1.8-1.3-1.9 1.3-1.8-1.3-1.9 1.3-1.8-1.3-1.8 1.3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

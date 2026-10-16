@@ -25,6 +25,7 @@ export const createNotesSlice = (set) => ({
     // PLACING MODE: on = the next click on a surface opens a new note there (closes the toolbar panels)
     setPlacingNote: (placing) => set((state) => ({
         notes: { ...state.notes, placing },
+        measures: placing ? { ...state.measures, active: false, start: null } : state.measures, // one mode at a time
         openPanel: placing ? null : state.openPanel
     })),
 

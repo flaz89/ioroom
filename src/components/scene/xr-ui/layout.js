@@ -1,5 +1,11 @@
 import { Vector3 } from 'three';
 
+/*
+* userData of the background of every in-VR world panel (sun, materials, notes, measure): tools that read
+* the session's select event directly (the ruler) ignore selects aimed at a panel (pressing its buttons).
+*/
+export const VR_PANEL = { vrPanel: true };
+
 // Shared sizes for the in-VR UI, in meters
 export const BUTTON_SIZE = [0.026, 0.026]; // wrist menu buttons [width, height] (square: icons, short values)
 

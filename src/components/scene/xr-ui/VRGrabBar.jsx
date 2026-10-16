@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Quaternion, Vector3 } from 'three';
 import { useThree } from '@react-three/fiber';
+import { VR_PANEL } from './layout';
 
 /*
 * Grab bar under an in-VR panel, like the windows of the Quest: grab it (pinch with the hand ray or the
@@ -74,6 +75,7 @@ export default function VRGrabBar({ targetRef, y }) {
     return (
         <group position={[0, y, 0.001]}>
             <mesh
+                userData={VR_PANEL}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={end}

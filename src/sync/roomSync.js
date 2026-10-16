@@ -16,6 +16,7 @@ import { bindFieldMap } from './fieldMapSync';
 * - local -> room: a store subscription writes the instances whose reference changed, deletes removed ids;
 * - room -> local: remote changes replace objects.instances (selection is cleared if its object is gone).
 * Post-it notes (store notes.items, see store/slices/notesSlice.js): same model, Y.Map "notes" (bindInstances).
+* Saved ruler measures (store measures.items, see store/slices/measuresSlice.js): same, Y.Map "measures".
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
 * Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
@@ -141,6 +142,8 @@ export function connectRoom(room) {
         (state) => state.objects.instances, (list) => useStore.getState().setInstances(list));
     const unbindNotes = bindInstances(doc, doc.getMap('notes'),
         (state) => state.notes.items, (list) => useStore.getState().setNotes(list));
+    const unbindMeasures = bindInstances(doc, doc.getMap('measures'),
+        (state) => state.measures.items, (list) => useStore.getState().setMeasureItems(list));
     const unbindAwareness = bindAwareness(provider.awareness);
     const unbindSun = bindSun(doc, provider);
     const unbindSurfaces = bindFieldMap(doc, provider, {
@@ -163,6 +166,7 @@ export function connectRoom(room) {
         unbindSurfaces();
         unbindObjects();
         unbindNotes();
+        unbindMeasures();
         provider.destroy();
         doc.destroy();
     };
