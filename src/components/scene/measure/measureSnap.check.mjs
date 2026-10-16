@@ -38,5 +38,9 @@ console.log('measureSnap: ok');
     lock = lockToAxis(start, eye, toward(new Vector3(0.05, 2.6, 0)), new Vector3(0.1, 2.7, -0.08));
     assert.equal(lock.axis, 'y');
     assert.ok(Math.abs(lock.point.y - 2.7) < 1e-9 && lock.point.x === 0);
+    // pointing anywhere on a wall (plane x = 3) along X: the measure ends on the wall
+    lock = lockToAxis(start, eye, toward(new Vector3(3, 0.4, 0.3)), null, { point: new Vector3(3, 0.4, 0.3), normal: new Vector3(-1, 0, 0) });
+    assert.equal(lock.axis, 'x');
+    assert.ok(Math.abs(lock.point.x - 3) < 1e-9 && lock.point.y === 0 && lock.point.z === 0, `${lock.point.toArray()}`);
     console.log('measureSnap axis lock: ok');
 }

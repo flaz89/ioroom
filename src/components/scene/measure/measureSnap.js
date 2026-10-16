@@ -57,9 +57,13 @@ export function formatLength(meters) {
 * three axes through the first point `start` (board space: the room's axes, also on a rotated tabletop).
 * - The axis is the one whose line passes closest to the pointer ray, measured as an angle from the
 *   viewer (distance between ray and axis line / distance along the ray): what "looks" closest on screen.
-* - Where along it: a snapped corner / edge under the pointer (`snapped`, may be null) gives the exact
-*   length (its projection on the axis: e.g. the exact height of a wall top corner); otherwise the
-*   point of the axis line closest to the pointer ray.
+* - Where along it, first match wins:
+*   1. a snapped corner / edge under the pointer (`snapped`): its projection on the axis (e.g. the exact
+*      height of a wall top corner);
+*   2. the SURFACE under the pointer (`plane`: { point, normal }): where the axis meets its plane, when
+*      the axis is not nearly parallel to it (e.g. pointing anywhere on the opposite wall measures right
+*      up to that wall);
+*   3. the point of the axis line closest to the pointer ray.
 * All vectors in board space; rayDirection normalized. Returns { point: Vector3, axis: 'x' | 'y' | 'z' }.
 */
 export const AXES = { x: new Vector3(1, 0, 0), y: new Vector3(0, 1, 0), z: new Vector3(0, 0, 1) };
@@ -78,13 +82,21 @@ function rayToLine(o, d, s, a) {
     return { tLine, angle: _onRay.distanceTo(onLine) / tRay };
 }
 
-export function lockToAxis(start, rayOrigin, rayDirection, snapped = null) {
+const MIN_PLANE_ANGLE = 0.25; // |cos| between axis and plane normal: below it the axis grazes the plane
+
+export function lockToAxis(start, rayOrigin, rayDirection, snapped = null, plane = null) {
     let best = null;
     for (const [axis, direction] of Object.entries(AXES)) {
         const hit = rayToLine(rayOrigin, rayDirection, start, direction);
         if (hit != null && (best == null || hit.angle < best.angle)) best = { axis, direction, ...hit };
     }
     if (best == null) return { point: start.clone(), axis: 'y' };
-    const t = snapped != null ? _w.subVectors(snapped, start).dot(best.direction) : best.tLine;
+    let t = best.tLine;
+    if (snapped != null) {
+        t = _w.subVectors(snapped, start).dot(best.direction);
+    } else if (plane != null) {
+        const facing = best.direction.dot(plane.normal);
+        if (Math.abs(facing) > MIN_PLANE_ANGLE) t = _w.subVectors(plane.point, start).dot(plane.normal) / facing;
+    }
     return { point: best.direction.clone().multiplyScalar(t).add(start), axis: best.axis };
 }

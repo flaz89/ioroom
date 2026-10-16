@@ -104,7 +104,8 @@ export default function BoardMeasures() {
 /*
 * What a ruler ray hits first among walls / floor (inside userData.isRoom) and objects (userData.objectId),
 * or a measure label (userData.measureId). Notes, outlines, gizmos and helpers are looked through.
-* Returns { measureId } | { point (board space, array), kind, mesh (the object hit, or null) } | null.
+* Returns { measureId } | { point (board space, array), kind, mesh (the object hit, or null),
+* normal (of the surface hit, board space, Vector3) } | null.
 */
 function rulerHit(raycaster, board, camera) {
     for (const hit of raycaster.intersectObject(board, true)) {
@@ -114,7 +115,9 @@ function rulerHit(raycaster, board, camera) {
         if (object.userData.objectId == null && !isInRoom(object)) continue;
         const threshold = SNAP_SCREEN * camera.getWorldPosition(new THREE.Vector3()).distanceTo(hit.point);
         const snap = snapPoint(object, hit.point, threshold);
-        return { point: board.worldToLocal(snap.point).toArray(), kind: snap.kind, mesh: object.userData.objectId != null ? object : null };
+        const normal = hit.face.normal.clone().transformDirection(object.matrixWorld)
+            .transformDirection(_boardInverse.copy(board.matrixWorld).invert());
+        return { point: board.worldToLocal(snap.point).toArray(), kind: snap.kind, mesh: object.userData.objectId != null ? object : null, normal };
     }
     return null;
 }
@@ -135,8 +138,34 @@ function rulerPoint(raycaster, board, root, camera, free) {
     const origin = board.worldToLocal(raycaster.ray.origin.clone());
     const direction = raycaster.ray.direction.clone().transformDirection(_boardInverse.copy(board.matrixWorld).invert());
     const snapped = hit.kind === 'vertex' || hit.kind === 'edge' ? new THREE.Vector3(...hit.point) : null;
-    const lock = lockToAxis(resolveEnd(start, root, new THREE.Vector3()), origin, direction, snapped);
+    // the surface under the ray: the axis can end where it meets it (e.g. on the opposite wall)
+    const plane = snapped == null ? { point: new THREE.Vector3(...hit.point), normal: hit.normal } : null;
+    const lock = lockToAxis(resolveEnd(start, root, new THREE.Vector3()), origin, direction, snapped, plane);
     return { end: makeEnd(lock.point.toArray(), snapped ? hit.mesh : null, board), kind: snapped ? hit.kind : 'surface', axis: lock.axis };
+}
+
+/*
+* XR: the measure label a ray aims at, or null. Not three's sprite raycast (unreliable for screen-sized
+* sprites with the XR camera): a label counts as aimed at when the ray passes within half its on-screen
+* width (a constant screen fraction, so LABEL_SIZE[0] / 2 x its distance from the eyes) of its center;
+* the nearest one along the ray wins. Labels are drawn over everything, so they win over surfaces.
+*/
+const _toLabel = new THREE.Vector3(), _labelPosition = new THREE.Vector3(), _eye = new THREE.Vector3();
+function labelUnderRay(ray, root, camera) {
+    camera.getWorldPosition(_eye);
+    let best = null;
+    root.traverse((object) => {
+        const measureId = object.userData.measureId;
+        if (measureId == null) return;
+        object.getWorldPosition(_labelPosition);
+        _toLabel.subVectors(_labelPosition, ray.origin);
+        const along = _toLabel.dot(ray.direction);
+        if (along <= 0) return;
+        const off = _toLabel.addScaledVector(ray.direction, -along).length();
+        if (off > (LABEL_SIZE[0] / 2) * _labelPosition.distanceTo(_eye)) return;
+        if (best == null || along < best.along) best = { measureId, along };
+    });
+    return best?.measureId ?? null;
 }
 
 // Second click / select: select a label, or place the first point, or finish the measure
@@ -275,23 +304,26 @@ function XRMeasurePlacer({ rootRef, boost }) {
         return rulerPoint(_raycaster, board, rootRef.current, camera, useStore.getState().measures.free);
     };
 
+    /*
+    * Selects: always listened to in XR, so a measure label can be selected (its actions panel opens)
+    * with the ruler off too; with the ruler on, a select elsewhere places a point.
+    */
     useEffect(() => {
-        if (!active || session == null) return undefined;
+        if (session == null) return undefined;
         const select = (event) => {
-            if (useStore.getState().view.handMenuVisible) return;
-            sourceRef.current = event.inputSource;
-            const hit = cast(event.frame, event.inputSource);
+            if (useStore.getState().view.handMenuVisible || rootRef.current == null) return;
+            if (!aim(event.frame, event.inputSource)) return;
             // a select aimed at a VR panel (its buttons, grab bar) is for the panel, not the ruler
             if (_raycaster.intersectObjects(getThree().scene.children, true).some((item) => item.object.userData.vrPanel)) return;
-            placeRulerPoint(hit);
+            const labelId = labelUnderRay(_raycaster.ray, rootRef.current, camera);
+            if (labelId != null) return useStore.getState().selectMeasure(labelId);
+            if (!useStore.getState().measures.active) return;
+            sourceRef.current = event.inputSource;
+            placeRulerPoint(cast(event.frame, event.inputSource));
         };
         session.addEventListener('select', select);
-        return () => {
-            session.removeEventListener('select', select);
-            setHover(null);
-            hoverKey.current = '';
-        };
-    }, [active, session]); // eslint-disable-line react-hooks/exhaustive-deps -- cast/aim read refs and the store
+        return () => session.removeEventListener('select', select);
+    }, [session]); // eslint-disable-line react-hooks/exhaustive-deps -- aim/cast read refs and the store
 
     useFrame((_state, _delta, frame) => {
         if (!active || frame == null || session == null) return;
