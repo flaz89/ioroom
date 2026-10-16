@@ -7,6 +7,7 @@ import { drawPanel, useCanvasTexture, wrapLines } from './useCanvasTexture';
 import VRButton from './VRButton';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
 import { placeInFrontOfUser } from './layout';
+import VRGrabBar from './VRGrabBar';
 
 /*
 * In-VR post-it editor (store/slices/notesSlice.js; desktop counterpart: ui/note-modal/NoteModal.jsx).
@@ -158,6 +159,8 @@ function NoteEditorPanel({ note }) {
                 {canType && text !== '' && <VRButton label="Clear" size={BUTTON} onClick={clear} position={[WIDTH / 2 - PAD - BUTTON[0] * 1.5 - 0.008, 0, 0]} />}
                 {canSave && <VRButton label="Save" size={BUTTON} active onClick={save} position={[WIDTH / 2 - PAD - BUTTON[0] / 2, 0, 0]} />}
             </group>
+            {/* grab bar: move the panel around (Quest-window style) */}
+            <VRGrabBar targetRef={groupRef} y={-HEIGHT / 2 - 0.022} />
         </group>
         </PointerFilterContext.Provider>
     );

@@ -10,6 +10,7 @@ import VRSlider from './VRSlider';
 import VRCompassBar from './VRCompassBar';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
 import { placeInFrontOfUser } from './layout';
+import VRGrabBar from './VRGrabBar';
 
 /*
 * In-VR sun panel (store openPanel 'sun', opened from the wrist menu): the same settings as the desktop
@@ -116,6 +117,8 @@ export default function VRSunPanel() {
                         onChange={(northDeg) => setSun({ northDeg })} width={innerWidth} position={[0, y, 0.001]} />
                 );
             })}
+            {/* grab bar: move the panel around (Quest-window style) */}
+            <VRGrabBar targetRef={groupRef} y={-height / 2 - 0.022} />
         </group>
         </PointerFilterContext.Provider>
     );

@@ -104,8 +104,12 @@ export default function WristMenu() {
     return (
         <XRSpace space={gripSpace}>
             <group ref={menuRef} position={MENU_POSITION} rotation={MENU_ROTATION}>
-                {/* Unmounted (not just hidden) so hidden buttons can never receive pointer events */}
-                {isVisible && (
+                {/*
+                * Always mounted (created when the session starts): mounting it the first time the wrist
+                * turned built every button's canvas texture in that frame, a visible hitch. Hidden, it
+                * is not drawn and pointerEvents="none" (inherited by every button) keeps it unpressable.
+                */}
+                <group visible={isVisible} pointerEvents={isVisible ? undefined : 'none'}>
                     <PointerFilterContext.Provider value={acceptsWristPointer}>
                         {/* Buttons stacked along the menu's local +Y (the palm becomes the control board) */}
                         <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
@@ -122,7 +126,7 @@ export default function WristMenu() {
                         {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </PointerFilterContext.Provider>
-                )}
+                </group>
 
             </group>
         </XRSpace>

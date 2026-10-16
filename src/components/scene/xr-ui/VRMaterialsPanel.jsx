@@ -6,6 +6,7 @@ import { preloadMaterialTextures, useMaterialList } from '../../../materials/lib
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
+import VRGrabBar from './VRGrabBar';
 import VRMaterialCard, { CARD_WIDTH } from './VRMaterialCard';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
 import { placeInFrontOfUser } from './layout';
@@ -315,6 +316,8 @@ export default function VRMaterialsPanel() {
                     <VRButton label=">" size={[0.03, 0.026]} onClick={() => setPage(page + 1)} position={[0.05, 0, 0]} />
                 </group>
             )}
+            {/* grab bar: move the panel (and its card) around (Quest-window style) */}
+            <VRGrabBar targetRef={groupRef} y={-height / 2 - 0.022} />
         </group>
         </PointerFilterContext.Provider>
     );
