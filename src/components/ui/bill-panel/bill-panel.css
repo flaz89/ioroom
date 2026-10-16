@@ -1,0 +1,96 @@
+/* Bill of quantities (BillPanel.jsx): centered modal over a dimmed backdrop, same glass style as the other modals */
+.bill-control { display: flex; }
+
+.bill-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.45);
+    pointer-events: all;
+}
+
+.bill-panel {
+    width: min(680px, calc(100vw - 32px));
+    max-height: 80vh;
+    padding: .9em;
+    display: flex;
+    flex-direction: column;
+    gap: .7em;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+.bill-panel > * { flex-shrink: 0; }
+
+.bill-header { display: flex; align-items: center; justify-content: space-between; }
+.bill-title { font-weight: 600; font-size: 1.1em; }
+.bill-actions { display: flex; gap: .4em; }
+.bill-actions button {
+    padding: .35em .7em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    font: inherit;
+    cursor: pointer;
+}
+.bill-actions button:disabled { opacity: .5; cursor: default; }
+
+.bill-empty, .bill-meta { opacity: .7; }
+
+/* the table scrolls (both ways on phones); the header and the totals stay visible */
+.bill-table-wrap { flex-shrink: 1; min-height: 0; overflow: auto; }
+.bill-table { width: 100%; border-collapse: collapse; }
+.bill-table th, .bill-table td {
+    padding: .45em .5em;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.bill-table th { font-weight: 500; opacity: .7; white-space: nowrap; }
+.bill-table .num { text-align: right; white-space: nowrap; }
+.bill-name { font-weight: 600; }
+.bill-faces { display: block; margin-top: .2em; font-size: .9em; opacity: .65; }
+.bill-link { color: #ffb733; text-decoration: none; }
+
+.bill-totals {
+    align-self: flex-end;
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: .3em 1.2em;
+    text-align: right;
+}
+.bill-grand { font-size: 1.15em; color: #ffb733; }
+
+/* Print / Save as PDF: only the bill, dark text on white */
+@media print {
+    body * { visibility: hidden; }
+    .bill-panel, .bill-panel * { visibility: visible; }
+    .bill-backdrop { position: static; background: none; }
+    .bill-panel {
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        max-height: none;
+        border: none;
+        box-shadow: none;
+        background: white;
+        backdrop-filter: none;
+        color: black;
+    }
+    .bill-table-wrap { overflow: visible; }
+    .bill-actions { display: none; }
+    .bill-grand, .bill-link { color: black; }
+    .bill-table th, .bill-table td { border-color: #ccc; }
+}
+/* phones: the material column keeps a readable width, the numbers scroll sideways */
+.bill-table td:first-child { min-width: 10em; }

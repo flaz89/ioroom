@@ -67,9 +67,9 @@ export default function WristMenu() {
     const [isCatalogOpen, setIsCatalogOpen] = useState(false);
     const getThree = useThree((state) => state.get);
 
-    const isPerfVisible = useStore((state) => state.openPanel === 'perf');
+    const isPerfVisible = useStore((state) => state.perfOpen);
     const togglePanel = useStore((state) => state.togglePanel);
-    const togglePerf = () => togglePanel('perf');
+    const togglePerf = useStore((state) => state.togglePerf);
     const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
     const isMaterialsOpen = useStore((state) => state.openPanel === 'materials'); // VRMaterialsPanel (same)
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)

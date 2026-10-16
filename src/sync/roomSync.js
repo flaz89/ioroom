@@ -19,6 +19,7 @@ import { bindFieldMap } from './fieldMapSync';
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
 * Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
+* Prices frozen in the project (store priceSnapshots, bill of quantities): Y.Map "prices", one key per material.
 *
 * ACCESS (development phase): only the owner creates rooms. The owner's devices hold the admin token
 * (opened once with ?admin=<token>, then kept in localStorage), used by the "My environments" API of the
@@ -148,8 +149,15 @@ export function connectRoom(room) {
         write: (patch) => useStore.getState().setSurfaces(patch)
     });
 
+    const unbindPrices = bindFieldMap(doc, provider, {
+        name: 'prices',
+        read: (state) => state.priceSnapshots,
+        write: (patch) => useStore.getState().setPriceSnapshots(patch)
+    });
+
     return () => {
         setRoomStatus('local');
+        unbindPrices();
         unbindAwareness();
         unbindSun();
         unbindSurfaces();

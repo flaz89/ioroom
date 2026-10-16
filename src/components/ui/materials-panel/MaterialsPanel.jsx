@@ -8,6 +8,7 @@ import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materia
 import { deleteMaterial } from '../../../materials/materialsApi';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import MaterialCreateModal from './MaterialCreateModal';
+import MaterialCard from './MaterialCard';
 import { pickSurfaceAt } from '../../scene/level/room/surfacePicker';
 import { setCursorGrabbing } from '../../scene/sceneCursor';
 import './materials-panel.css';
@@ -22,12 +23,15 @@ import './materials-panel.css';
 * applies it (store `surfaces`, shared with the room). Any material can go on any surface.
 * Pointer events (not HTML drag & drop), so the same gesture works with mouse, pen and touch.
 * Which surface is under the pointer: surfacePicker.js (answered by the scene, MaterialDropTarget.jsx).
+* Holding the mouse on a ball opens its card (big texture, price, manufacturer link): MaterialCard.jsx.
 * OWNER (admin token; later pro accounts): "+" uploads a new material (MaterialCreateModal.jsx), "✎" edits
 * its name / category / kind / real size (same modal), "×" on a
 * material (any but Plain) deletes it from the library (second press confirms). Surfaces using a deleted
 * material turn plain.
 */
 const canManage = Boolean(SYNC_HOST) && isAdmin;
+const CARD_DELAY_MS = 800;
+const CARD_CLOSE_MS = 250;
 export default function MaterialsPanel() {
     // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
     const isOpen = useStore((state) => state.openPanel === 'materials');
@@ -35,6 +39,25 @@ export default function MaterialsPanel() {
     const panelRef = useRef();
     usePanelInViewport(panelRef, isOpen);
     const [drag, setDrag] = useState(null); // { material, x, y } while a ball is dragged (ghost ball)
+    /*
+    * Material card (MaterialCard.jsx): the mouse resting on a ball for CARD_DELAY_MS opens it next to the
+    * panel; it stays while the mouse is on that ball or on the card (to click the link) and closes
+    * CARD_CLOSE_MS after leaving both. Mouse only (touch and pen drag the balls), never during a drag.
+    */
+    const [card, setCard] = useState(null); // material shown in the card
+    const cardTimer = useRef(null);
+    const hoverBall = (event, material) => {
+        clearTimeout(cardTimer.current);
+        if (event.pointerType !== 'mouse' || material.maps == null) return closeCardSoon();
+        if (card?.id === material.id) return;
+        cardTimer.current = setTimeout(() => setCard(material), card ? 0 : CARD_DELAY_MS); // already open: switch at once
+    };
+    const keepCard = () => clearTimeout(cardTimer.current);
+    const closeCardSoon = () => {
+        clearTimeout(cardTimer.current);
+        cardTimer.current = setTimeout(() => setCard(null), CARD_CLOSE_MS);
+    };
+    useEffect(() => () => clearTimeout(cardTimer.current), []);
     const materials = useMaterialList();
     const [isCreating, setIsCreating] = useState(false);
     const [editing, setEditing] = useState(null); // material record in the edit modal
@@ -90,6 +113,8 @@ export default function MaterialsPanel() {
 
     const startDrag = (event, material) => {
         event.preventDefault(); // no text selection / native image drag
+        clearTimeout(cardTimer.current);
+        setCard(null);
         // touch: release the implicit capture, so the pointer events follow the finger over the canvas
         event.currentTarget.releasePointerCapture?.(event.pointerId);
         setDrag({ material, x: event.clientX, y: event.clientY });
@@ -100,6 +125,7 @@ export default function MaterialsPanel() {
             <CircleButton svg={svg.materials} onClick={() => togglePanel('materials')} isActive={isOpen} title="Materials" />
             {isOpen && (
                 <div className="materials-panel" ref={panelRef}>
+                    {card != null && drag == null && <MaterialCard material={card} onPointerEnter={keepCard} onPointerLeave={closeCardSoon} />}
                     <div className="materials-header">
                         <span className="materials-title">Materials</span>
                         {canManage && (
@@ -131,6 +157,8 @@ export default function MaterialsPanel() {
                                         className="materials-item"
                                         title={material.name}
                                         onPointerDown={(event) => startDrag(event, material)}
+                                        onPointerEnter={(event) => drag == null && hoverBall(event, material)}
+                                        onPointerLeave={closeCardSoon}
                                     >
                                         <MaterialBall material={material} />
                                         <span className="materials-name">{material.name}</span>

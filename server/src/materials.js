@@ -9,12 +9,16 @@
 *                                     color (file, required), normal / orm (files, optional),
 *                                     id (optional: keeps a known id, e.g. when migrating materials)
 *                                     -> record     owner only (Authorization: Bearer <ADMIN_TOKEN>)
-*   PATCH  /api/materials/:id         JSON { name, category, kind, tileSize } (any subset)
+*                                     product card (all optional): price (net €/m², VAT excluded), vatRate
+*                                     (%), waste (% extra material to buy, e.g. tiles), code (manufacturer
+*                                     product code), url (manufacturer page, http/https)
+*   PATCH  /api/materials/:id         JSON { name, category, kind, tileSize, price, vatRate, waste, code,
+*                                     url } (any subset; null clears an optional field)
 *                                     -> record     owner only: edits the fields, never the maps
 *   DELETE /api/materials/:id         -> 204        owner only: removes the record and its files
 *   GET    /files/materials/:id/:file -> the texture file (public, immutable, cached for a year)
 *
-* Record: { id, name, category, kind, tileSize, maps: { color, normal?, orm? } (R2 keys), createdAt }.
+* Record: { id, name, category, kind, tileSize, price, vatRate, waste, code, url, maps: { color, normal?, orm? } (R2 keys), createdAt }.
 * orm = packed map like glTF: R ambient occlusion, G roughness, B metalness (records uploaded before ORM
 * may have `roughness` instead: the client reads both).
 * Files are converted to WebP (1K) and packed by the browser before the upload; the server only checks
@@ -68,6 +72,18 @@ function readFields(raw, partial = false) {
             return { error: `Real size must be between ${TILE_SIZE_RANGE[0]} and ${TILE_SIZE_RANGE[1]} m` };
         }
     }
+    // Product card: optional numbers in a range, or null
+    for (const [key, max] of [['price', 1e6], ['vatRate', 100], ['waste', 100]]) {
+        if (!has(key)) continue;
+        if (raw[key] == null || raw[key] === '') { fields[key] = null; continue; }
+        fields[key] = Number(raw[key]);
+        if (!(fields[key] >= 0 && fields[key] <= max)) return { error: `Invalid ${key}` };
+    }
+    if (has('code')) fields.code = raw.code ? String(raw.code).trim().slice(0, 60) : null;
+    if (has('url')) {
+        fields.url = raw.url ? String(raw.url).trim().slice(0, 500) : null;
+        if (fields.url != null && !/^https?:\/\/\S+$/i.test(fields.url)) return { error: 'The link must start with http:// or https://' };
+    }
     return { fields };
 }
 
@@ -75,9 +91,9 @@ function readFields(raw, partial = false) {
 async function readUpload(request) {
     const form = await request.formData().catch(() => null);
     if (!form) return { error: 'Expected a multipart form' };
-    const { fields, error } = readFields({
-        name: form.get('name'), category: form.get('category'), kind: form.get('kind'), tileSize: form.get('tileSize')
-    });
+    const { fields, error } = readFields(Object.fromEntries(
+        ['name', 'category', 'kind', 'tileSize', 'price', 'vatRate', 'waste', 'code', 'url'].map((key) => [key, form.get(key)])
+    ));
     if (error) return { error };
     const files = {};
     for (const map of MAPS) {

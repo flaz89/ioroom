@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
 import { createMaterial, updateMaterial } from '../../../materials/materialsApi';
 import { MATERIAL_CATEGORIES, MATERIAL_KINDS, kindOf } from '../../../materials/grouping';
+import { DEFAULT_VAT, formatDecimal, parseDecimal } from '../../../materials/pricing';
 import { ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
 import './material-create.css';
 
@@ -32,6 +33,8 @@ const SEPARATE_MAPS = [
 * without the maps (they never change; to replace them, upload a new material). Saved with
 * updateMaterial (PATCH): surfaces using it update right away (new tile size, panel group).
 * initialCategory: preselected category of a new material (the panel's current tab).
+* PRODUCT CARD (optional, both modes): net price €/m² (VAT excluded), VAT %, waste %, manufacturer code
+* and link (materials/pricing.js). They feed the material card and the bill of quantities.
 */
 export default function MaterialCreateModal({ material = null, initialCategory = 'wall', onClose }) {
     const isEdit = material != null;
@@ -40,6 +43,12 @@ export default function MaterialCreateModal({ material = null, initialCategory =
     const [kind, setKind] = useState(material ? kindOf(material) : 'other');
     // shown with a decimal comma, like the user would type it
     const [tileSize, setTileSize] = useState(material ? String(material.tileSize).replace('.', ',') : '1');
+    // product card: text fields (decimal comma or point), parsed on save
+    const [price, setPrice] = useState(formatDecimal(material?.price));
+    const [vatRate, setVatRate] = useState(formatDecimal(material?.vatRate ?? DEFAULT_VAT));
+    const [waste, setWaste] = useState(formatDecimal(material?.waste ?? 0));
+    const [code, setCode] = useState(material?.code ?? '');
+    const [url, setUrl] = useState(material?.url ?? '');
     const [files, setFiles] = useState({});
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
@@ -51,7 +60,11 @@ export default function MaterialCreateModal({ material = null, initialCategory =
     const pickFile = (key, file) => setFiles((current) => ({ ...current, [key]: file }));
     // Decimal comma or point: "1,5" and "1.5" both mean 1.5 m (a text field, so no browser-locale surprises)
     const size = Number(tileSize.trim().replace(',', '.'));
-    const canCreate = !busy && name.trim() !== '' && (isEdit || files.color != null) && size >= 0.05 && size <= 20;
+    const card = { price: parseDecimal(price), vatRate: parseDecimal(vatRate), waste: parseDecimal(waste) };
+    const cardValid = Object.values(card).every((value) => value == null || value >= 0)
+        && (card.vatRate ?? 0) <= 100 && (card.waste ?? 0) <= 100
+        && (url.trim() === '' || /^https?:\/\/\S+$/i.test(url.trim()));
+    const canCreate = !busy && name.trim() !== '' && (isEdit || files.color != null) && size >= 0.05 && size <= 20 && cardValid;
 
     const create = async (event) => {
         event.preventDefault();
@@ -59,7 +72,7 @@ export default function MaterialCreateModal({ material = null, initialCategory =
         setBusy(true);
         setError(null);
         try {
-            const fields = { name: name.trim(), category, kind, tileSize: size };
+            const fields = { name: name.trim(), category, kind, tileSize: size, ...card, code: code.trim() || null, url: url.trim() || null };
             const { libraryMaterials, setLibraryMaterials } = useStore.getState();
             if (isEdit) {
                 const updated = await updateMaterial(material.id, fields);
@@ -118,6 +131,32 @@ export default function MaterialCreateModal({ material = null, initialCategory =
                     </label>
                 </div>
                 <span className="material-create-help">Real size = width of one texture tile in the room (e.g. 2 m of parquet).</span>
+                <fieldset className="material-create-group">
+                    <legend>Product card · optional</legend>
+                    <div className="material-create-row three">
+                        <label>
+                            <span>Price €/m² (net)</span>
+                            <input type="text" inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="e.g. 45,50" />
+                        </label>
+                        <label>
+                            <span>VAT %</span>
+                            <input type="text" inputMode="decimal" value={vatRate} onChange={(event) => setVatRate(event.target.value)} />
+                        </label>
+                        <label>
+                            <span>Waste %</span>
+                            <input type="text" inputMode="decimal" value={waste} onChange={(event) => setWaste(event.target.value)} />
+                        </label>
+                    </div>
+                    <label>
+                        <span>Product code</span>
+                        <input value={code} maxLength={60} onChange={(event) => setCode(event.target.value)} />
+                    </label>
+                    <label>
+                        <span>Manufacturer link</span>
+                        <input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://…" />
+                    </label>
+                    <span className="material-create-help">Waste = extra material to buy for cuts and breakage (e.g. 10% for tiles).</span>
+                </fieldset>
                 {!isEdit && (<>
                     <span className="material-create-help">Maps: upload the best you have (2K recommended). Everything is resized to 1K.</span>
                     {[...MAIN_MAPS, ARM_MAP].map((map) => <FileField key={map.key} map={map} onPick={pickFile} />)}

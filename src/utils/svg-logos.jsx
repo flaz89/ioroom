@@ -72,6 +72,12 @@ export const svg = {
         <circle cx="7" cy="13.5" r="1.3" fill="currentColor"/>
     </svg>,
 
+    // receipt with a zig-zag bottom (bill of quantities)
+    bill: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4.5 2.5h11v15l-1.8-1.3-1.9 1.3-1.8-1.3-1.9 1.3-1.8-1.3-1.8 1.3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <path d="M7.5 6.5h5M7.5 9.5h5M7.5 12.5h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+
     // post-it with a folded corner (notes placing mode)
     note: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M3.5 3.5h13v8.5l-4.5 4.5H3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

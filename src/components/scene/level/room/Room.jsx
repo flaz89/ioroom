@@ -1,14 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import SurfaceMesh from './SurfaceMesh';
-import { boxFaces, floorGeometry, mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
+import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
+import { WALL_HEIGHT, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
-
-const WALL_HEIGHT = 2.7;
-const WALL_THICKNESS = 0.15;
-const FLOOR_COLOR = '#d4d4d4'; // plain material colors
-const WALL_COLOR = '#ffffff';
-const VERTICAL_FACES = ['px', 'nx', 'pz', 'nz'];
 
 /*
 * Face ids (surfaceId): the key a face's material is saved under (store `surfaces`) and what the
@@ -64,23 +59,8 @@ const ROOM_USER_DATA = { isRoom: true };
 export default function Room({ sizes }) {
     const [x, z] = sizes;
 
-    // Every face of the room: { key, geometry, surfaceId, vertical, color }, built once per room size
-    const faces = useMemo(() => {
-        const h = WALL_HEIGHT, t = WALL_THICKNESS;
-        const wall = (id, center, size, inner, outer) => Object.entries(boxFaces(center, size)).map(([face, geometry]) => ({
-            key: `${id}-${face}`,
-            geometry,
-            surfaceId: `${id}:${face === inner ? 'inner' : face === outer ? 'outer' : 'edge'}`,
-            vertical: VERTICAL_FACES.includes(face),
-            color: WALL_COLOR
-        }));
-        return [
-            { key: 'floor', geometry: floorGeometry(x, z), surfaceId: 'floor', vertical: false, color: FLOOR_COLOR },
-            ...wall('wall-left', [-(x + t) / 2, h / 2, 0], [t, h, z], 'px', 'nx'),
-            ...wall('wall-right', [(x + t) / 2, h / 2, 0], [t, h, z], 'nx', 'px'),
-            ...wall('wall-back', [0, h / 2, -(z + t) / 2], [x + 2 * t, h, t], 'pz', 'nz')
-        ];
-    }, [x, z]);
+    // Every face of the room (roomLayout.js: also measured by the bill of quantities), built once per room size
+    const faces = useMemo(() => roomFaces([x, z]), [x, z]);
     useEffect(() => () => faces.forEach((face) => face.geometry.dispose()), [faces]);
 
     // Material of each face: saved, or previewed while a material is dragged over it

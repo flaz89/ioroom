@@ -65,6 +65,11 @@ const patch = (body, headers = { ...ownerOnly, 'Content-Type': 'application/json
 assert.equal((await patch({ kind: 'wood' }, { 'Content-Type': 'application/json' })).status, 401);
 assert.equal((await patch({ category: 'roof' })).status, 400);
 assert.equal((await patch({ kind: 'Wood!' })).status, 400);
+assert.equal((await patch({ url: 'javascript:alert(1)' })).status, 400);
+assert.equal((await patch({ price: -1 })).status, 400);
+const card = await (await patch({ price: 45.5, vatRate: 22, waste: 10, code: 'AB-1', url: 'https://example.com/oak' })).json();
+assert.equal(card.price, 45.5); assert.equal(card.url, 'https://example.com/oak');
+assert.equal((await (await patch({ price: null })).json()).price, null);
 const edited = await (await patch({ kind: 'wood', tileSize: 2 })).json();
 assert.equal(edited.kind, 'wood'); assert.equal(edited.tileSize, 2); assert.equal(edited.name, 'Test'); assert.deepEqual(edited.maps, mat.maps);
 assert.equal((await fetch(`${M}/${mat.id}`, { method: 'DELETE', headers: ownerOnly })).status, 204);

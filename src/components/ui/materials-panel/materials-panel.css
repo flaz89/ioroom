@@ -219,3 +219,47 @@
     text-align: center;
     cursor: pointer;
 }
+
+/* Material card (MaterialCard.jsx): to the right of the panel, same glass style */
+.material-card {
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 0;
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+}
+/* the color map tiled 2×2: shows how the pattern repeats */
+.material-card-preview {
+    position: relative;
+    height: 220px;
+    background-size: 50% 50%;
+    background-repeat: repeat;
+}
+.material-card-scale {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    padding: .15em .5em;
+    border-radius: 999px;
+    background: rgba(16, 20, 48, 0.8);
+    font-size: .85em;
+}
+.material-card-body {
+    padding: .7em .8em .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .35em;
+}
+.material-card-name { font-weight: 600; font-size: 1.1em; }
+.material-card-meta { opacity: .7; }
+.material-card-price { display: flex; flex-direction: column; gap: .15em; }
+.material-card-link { color: #ffb733; text-decoration: none; }
+.material-card-link:hover { text-decoration: underline; }
+@media (max-width: 767px) { .material-card { display: none; } }
