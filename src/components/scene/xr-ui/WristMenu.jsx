@@ -108,8 +108,10 @@ export default function WristMenu() {
                 * Always mounted (created when the session starts): mounting it the first time the wrist
                 * turned built every button's canvas texture in that frame, a visible hitch. Hidden, it
                 * is not drawn and pointerEvents="none" (inherited by every button) keeps it unpressable.
+                * Visible: explicitly 'listener' (the pmndrs default); `undefined` is ignored by R3F and the
+                * group would stay 'none' (the menu could not be pressed at all).
                 */}
-                <group visible={isVisible} pointerEvents={isVisible ? undefined : 'none'}>
+                <group visible={isVisible} pointerEvents={isVisible ? 'listener' : 'none'}>
                     <PointerFilterContext.Provider value={acceptsWristPointer}>
                         {/* Buttons stacked along the menu's local +Y (the palm becomes the control board) */}
                         <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
