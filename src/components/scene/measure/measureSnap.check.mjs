@@ -44,3 +44,19 @@ console.log('measureSnap: ok');
     assert.ok(Math.abs(lock.point.x - 3) < 1e-9 && lock.point.y === 0 && lock.point.z === 0, `${lock.point.toArray()}`);
     console.log('measureSnap axis lock: ok');
 }
+
+// Snap to existing measures (ray based)
+{
+    const { snapToSegments } = await import('./measureSnap.js');
+    const { Ray } = await import('three');
+    const segments = [{ a: new Vector3(0, 1, 0), b: new Vector3(2, 1, 0) }];
+    const eye = new Vector3(1, 1, 5);
+    const ray = (x, y, z) => new Ray(eye.clone(), new Vector3(x, y, z).sub(eye).normalize());
+    let snap = snapToSegments(ray(2.02, 1.01, 0), segments, 0.02); // near the end b
+    assert.equal(snap.kind, 'vertex'); assert.equal(snap.endpoint, 'b');
+    snap = snapToSegments(ray(1.3, 1.02, 0), segments, 0.02);      // near the middle of the line
+    assert.equal(snap.kind, 'edge');
+    assert.ok(Math.abs(snap.point.y - 1) < 1e-9 && Math.abs(snap.point.x - 1.3) < 0.01, `${snap.point.toArray()}`);
+    assert.equal(snapToSegments(ray(1, 1.5, 0), segments, 0.02), null); // far from it
+    console.log('measureSnap measures: ok');
+}

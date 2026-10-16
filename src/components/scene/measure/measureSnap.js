@@ -100,3 +100,34 @@ export function lockToAxis(start, rayOrigin, rayDirection, snapped = null, plane
     }
     return { point: best.direction.clone().multiplyScalar(t).add(start), axis: best.axis };
 }
+
+/*
+* Snap to the EXISTING MEASURES: their end points first, then any point of their lines. Measures often
+* float in the air (no surface under them), so this works on the pointer RAY: a candidate counts when the
+* ray passes within `maxAngle` of it as seen from the ray origin (perpendicular distance / distance along
+* the ray: the same screen-space feel as the surface snap).
+* segments: [{ a: Vector3, b: Vector3 }] (same space as the ray). Returns { point: Vector3, kind:
+* 'vertex' | 'edge', index (segment), endpoint: 'a' | 'b' | null } or null.
+*/
+const _onSegment = new Vector3(), _onRayPoint = new Vector3();
+
+export function snapToSegments(ray, segments, maxAngle) {
+    let vertex = null, edge = null;
+    segments.forEach(({ a, b }, index) => {
+        for (const [name, end] of [['a', a], ['b', b]]) {
+            const along = _onRayPoint.subVectors(end, ray.origin).dot(ray.direction);
+            if (along <= 0) continue;
+            const angle = ray.distanceToPoint(end) / along;
+            if (angle < maxAngle && (vertex == null || angle < vertex.angle)) vertex = { point: end.clone(), kind: 'vertex', index, endpoint: name, angle };
+        }
+        const distance = Math.sqrt(ray.distanceSqToSegment(a, b, _onRayPoint, _onSegment));
+        const along = _onRayPoint.distanceTo(ray.origin);
+        if (along <= 0) return;
+        const angle = distance / along;
+        if (angle < maxAngle && (edge == null || angle < edge.angle)) edge = { point: _onSegment.clone(), kind: 'edge', index, endpoint: null, angle };
+    });
+    const best = vertex ?? edge;
+    if (best == null) return null;
+    delete best.angle;
+    return best;
+}

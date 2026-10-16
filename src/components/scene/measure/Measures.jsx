@@ -5,7 +5,7 @@ import { Html } from '@react-three/drei';
 import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { useCanvasTexture } from '../xr-ui/useCanvasTexture';
-import { formatLength, lockToAxis, snapPoint } from './measureSnap';
+import { formatLength, lockToAxis, snapPoint, snapToSegments } from './measureSnap';
 import { objectMeshes } from '../level/objectMeshes';
 import './measures.css';
 
@@ -19,7 +19,8 @@ import './measures.css';
 *   dimensions); label and dots keep a constant size on screen (sprites without size attenuation).
 * - Click a label: actions (Save = share with the room, for my temporary measures; Delete).
 * - Ruler mode (desktop): move over walls, floor and objects: the point snaps to nearby corners (green) and
-*   edges (yellow) of the surface under the pointer (measureSnap.js); click = first point, then a live
+*   edges (yellow) of the surface under the pointer, and to the ends (green) / lines (yellow) of the
+*   measures already taken (measureSnap.js); click = first point, then a live
 *   measure follows the pointer LOCKED to one of the three axes (colored like the axis: X red, vertical
 *   blue, Z green; lockToAxis); hold Shift for a free direction. Click again = measure taken (temporary,
 *   mine). A press that drags orbits
@@ -53,6 +54,7 @@ const _raycaster = new THREE.Raycaster();
 const _up = new THREE.Vector3(0, 1, 0);
 const _boardInverse = new THREE.Matrix4();
 const _rayMatrix = new THREE.Matrix4();
+const _boardRay = new THREE.Ray();
 const _world = new THREE.Vector3();
 
 // A stored end ({ p, objectId?, local? }, or an old plain [x, y, z]) as an end object
@@ -131,17 +133,52 @@ function rulerHit(raycaster, board, camera) {
 */
 function rulerPoint(raycaster, board, root, camera, free) {
     const hit = rulerHit(raycaster, board, camera);
-    if (hit == null || hit.measureId != null) return hit;
+    if (hit?.measureId != null) return hit;
+    // the ray in board space (measures and the room's axes live there, also on a rotated tabletop)
+    _boardInverse.copy(board.matrixWorld).invert();
+    _boardRay.origin.copy(raycaster.ray.origin).applyMatrix4(_boardInverse);
+    _boardRay.direction.copy(raycaster.ray.direction).transformDirection(_boardInverse);
+    // existing measures first: their ends / lines (often in the air, so tested on the ray)
+    const onMeasure = measureSnap(_boardRay, root);
     const start = useStore.getState().measures.start;
-    if (start == null || free) return { end: makeEnd(hit.point, hit.mesh, board), kind: hit.kind };
-    // the ray in board space (the axes are the room's, also on a rotated tabletop)
-    const origin = board.worldToLocal(raycaster.ray.origin.clone());
-    const direction = raycaster.ray.direction.clone().transformDirection(_boardInverse.copy(board.matrixWorld).invert());
-    const snapped = hit.kind === 'vertex' || hit.kind === 'edge' ? new THREE.Vector3(...hit.point) : null;
-    // the surface under the ray: the axis can end where it meets it (e.g. on the opposite wall)
-    const plane = snapped == null ? { point: new THREE.Vector3(...hit.point), normal: hit.normal } : null;
-    const lock = lockToAxis(resolveEnd(start, root, new THREE.Vector3()), origin, direction, snapped, plane);
-    return { end: makeEnd(lock.point.toArray(), snapped ? hit.mesh : null, board), kind: snapped ? hit.kind : 'surface', axis: lock.axis };
+    if (start == null || free) {
+        if (onMeasure) return { end: onMeasure.end, kind: onMeasure.kind };
+        return hit && { end: makeEnd(hit.point, hit.mesh, board), kind: hit.kind };
+    }
+    if (hit == null && onMeasure == null) return null;
+    let snapped = null, plane = null, anchor = null, kind = 'surface';
+    if (onMeasure) {
+        snapped = new THREE.Vector3(...onMeasure.end.p);
+        kind = onMeasure.kind;
+    } else if (hit.kind === 'vertex' || hit.kind === 'edge') {
+        snapped = new THREE.Vector3(...hit.point);
+        anchor = hit.mesh;
+        kind = hit.kind;
+    } else {
+        // the surface under the ray: the axis can end where it meets it (e.g. on the opposite wall)
+        plane = { point: new THREE.Vector3(...hit.point), normal: hit.normal };
+    }
+    const lock = lockToAxis(resolveEnd(start, root, new THREE.Vector3()), _boardRay.origin, _boardRay.direction, snapped, plane);
+    return { end: makeEnd(lock.point.toArray(), anchor, board), kind, axis: lock.axis };
+}
+
+/*
+* Snap to the existing measures (mine and saved): an end point (it keeps its anchor on an object, so a
+* measure snapped there follows the same object) or a point of a line. Ray in board space.
+* Returns { end, kind } or null.
+*/
+function measureSnap(ray, root) {
+    const { items, local } = useStore.getState().measures;
+    const measures = [...items, ...local];
+    if (measures.length === 0) return null;
+    const ends = measures.map((measure) => [toEnd(measure.a), toEnd(measure.b)]);
+    const segments = ends.map(([a, b]) => ({ a: resolveEnd(a, root, new THREE.Vector3()), b: resolveEnd(b, root, new THREE.Vector3()) }));
+    const snap = snapToSegments(ray, segments, SNAP_SCREEN);
+    if (snap == null) return null;
+    const point = snap.point.toArray();
+    if (snap.endpoint == null) return { end: { p: point }, kind: 'edge' };
+    const source = ends[snap.index][snap.endpoint === 'a' ? 0 : 1];
+    return { end: { ...source, p: point }, kind: 'vertex' };
 }
 
 /*
