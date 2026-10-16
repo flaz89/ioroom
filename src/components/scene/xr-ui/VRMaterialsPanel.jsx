@@ -6,6 +6,7 @@ import { useMaterialList } from '../../../materials/library';
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
+import VRMaterialCard, { CARD_WIDTH } from './VRMaterialCard';
 import { PointerFilterContext, acceptsPanelPointer } from './pointers';
 import { placeInFrontOfUser } from './layout';
 
@@ -46,6 +47,8 @@ const WIDTH = COLUMNS * CELL_W + PAD * 2;
 const PIXELS_PER_METER = 4000;
 const THUMB_PIXELS = 128;    // thumbnails of the color maps
 const ACTIVE = 'rgba(255, 150, 40, 0.95)';
+const CARD_OPEN_MS = 1000;   // ray resting on a ball -> its card (VRMaterialCard.jsx)
+const CARD_CLOSE_MS = 300;   // after leaving the balls
 
 // Small thumbnails of the color maps: id -> canvas (CORS image, so the panel canvas stays usable as a texture)
 function useThumbnails(materials) {
@@ -101,7 +104,8 @@ export default function VRMaterialsPanel() {
     const closePanel = useStore((state) => state.closePanel);
     const drag = useStore((state) => state.materialDrag);
     const library = useMaterialList();
-    const thumbnails = useThumbnails(library);
+    // the store's array (stable between renders), not `library` (a new array every render)
+    const thumbnails = useThumbnails(useStore((state) => state.libraryMaterials));
     const [hovered, setHovered] = useState(null); // index (in the page) of the ball under a pointer
     const filter = useStore((state) => state.libraryFilter);
     const setLibraryFilter = useStore((state) => state.setLibraryFilter);
@@ -190,6 +194,25 @@ export default function VRMaterialsPanel() {
             clearTimeout(timer);
         };
     }, [session, isDragging]);
+    /*
+    * Material card: a pointer resting CARD_OPEN_MS on a ball opens its card beside the panel; moving to
+    * another ball switches at once; it closes CARD_CLOSE_MS after leaving the balls, and while dragging.
+    */
+    const hoveredMaterial = hovered != null ? materials[hovered] : null;
+    const hoveredId = hoveredMaterial?.maps != null ? hoveredMaterial.id : null; // Plain: no card
+    const [cardId, setCardId] = useState(null);
+    const cardOpen = useRef(false);
+    useEffect(() => {
+        cardOpen.current = cardId != null;
+    }, [cardId]);
+    useEffect(() => {
+        const next = isDragging ? null : hoveredId;
+        const delay = next == null ? CARD_CLOSE_MS : cardOpen.current ? 0 : CARD_OPEN_MS;
+        const timer = setTimeout(() => setCardId(next), isDragging ? 0 : delay);
+        return () => clearTimeout(timer);
+    }, [hoveredId, isDragging]);
+    const cardMaterial = cardId != null ? library.find((material) => material.id === cardId) : null;
+
     // Panel closed (or session over) mid-drag: no preview left behind
     useEffect(() => () => useStore.getState().setMaterialDrag(null), []);
 
@@ -232,6 +255,11 @@ export default function VRMaterialsPanel() {
                 <planeGeometry args={[gridW, gridH]} />
                 <meshBasicMaterial map={grid} transparent depthWrite={false} toneMapped={false} />
             </mesh>
+
+            {/* Material card, to the right of the panel, top-aligned */}
+            {cardMaterial?.maps != null && (
+                <VRMaterialCard material={cardMaterial} position={[WIDTH / 2 + 0.015 + CARD_WIDTH / 2, top, 0.001]} />
+            )}
 
             {/* Pages: < page/count > */}
             {pageCount > 1 && (
