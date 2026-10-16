@@ -45,6 +45,7 @@ const PAD = 0.02;
 const TITLE_H = 0.04;
 const WIDTH = COLUMNS * CELL_W + PAD * 2;
 const PIXELS_PER_METER = 4000;
+const GRID_PIXELS_PER_METER = 2500; // the balls grid: ~650 px wide, enough at arm's length, 40% of the upload
 const THUMB_PIXELS = 128;    // thumbnails of the color maps
 const ACTIVE = '#ff9628'; // dragged ball ring
 const CARD_OPEN_MS = 1000;   // ray resting on a ball -> its card (VRMaterialCard.jsx)
@@ -52,24 +53,38 @@ const CARD_SWITCH_MS = 350;  // card open, resting on another ball -> switch (ha
 const CARD_CLOSE_MS = 300;   // after leaving the balls
 const HOVER_RING = '#ffffff';
 
-// Small thumbnails of the color maps: id -> canvas (CORS image, so the panel canvas stays usable as a texture)
+/*
+* Small thumbnails of the color maps: id -> ImageBitmap (THUMB_PIXELS square).
+* Decoded AND downscaled off the main thread (createImageBitmap with resize), and cached for the session
+* (reopening the panel costs nothing). All the pending ones are fetched together and handed over in ONE
+* state update, so the grid canvas is redrawn / uploaded once, not once per thumbnail.
+*/
+const thumbnailCache = new Map(); // url -> Promise<ImageBitmap | null>
+
+function loadThumbnail(url) {
+    if (!thumbnailCache.has(url)) {
+        thumbnailCache.set(url, fetch(url, { mode: 'cors' })
+            .then((response) => response.blob())
+            .then((blob) => createImageBitmap(blob, { resizeWidth: THUMB_PIXELS, resizeHeight: THUMB_PIXELS, resizeQuality: 'medium' }))
+            .catch(() => null));
+    }
+    return thumbnailCache.get(url);
+}
+
 function useThumbnails(materials) {
     const [thumbnails, setThumbnails] = useState({});
     useEffect(() => {
         let cancelled = false;
-        for (const material of materials) {
-            if (material.maps == null || thumbnails[material.id] != null) continue;
-            const image = new Image();
-            image.crossOrigin = 'anonymous';
-            image.onload = () => {
-                if (cancelled) return;
-                const canvas = document.createElement('canvas');
-                canvas.width = canvas.height = THUMB_PIXELS;
-                canvas.getContext('2d').drawImage(image, 0, 0, THUMB_PIXELS, THUMB_PIXELS);
-                setThumbnails((current) => ({ ...current, [material.id]: canvas }));
-            };
-            image.src = material.maps.color;
-        }
+        const pending = materials.filter((material) => material.maps != null && thumbnails[material.id] == null);
+        if (pending.length === 0) return undefined;
+        Promise.all(pending.map((material) => loadThumbnail(material.maps.color))).then((bitmaps) => {
+            if (cancelled) return;
+            setThumbnails((current) => {
+                const next = { ...current };
+                pending.forEach((material, index) => { if (bitmaps[index]) next[material.id] = bitmaps[index]; });
+                return next;
+            });
+        });
         return () => { cancelled = true; };
     }, [materials]); // eslint-disable-line react-hooks/exhaustive-deps -- `thumbnails` only skips work already done
     return thumbnails;
@@ -153,7 +168,7 @@ export default function VRMaterialsPanel() {
     * separate ring meshes (below), and `materials` (a new array every render) is keyed by its ids.
     */
     const ballsKey = materials.map((material) => material.id).join('|');
-    const grid = useCanvasTexture(Math.round(gridW * PIXELS_PER_METER), Math.round(gridH * PIXELS_PER_METER), (ctx, w) => {
+    const grid = useCanvasTexture(Math.round(gridW * GRID_PIXELS_PER_METER), Math.round(gridH * GRID_PIXELS_PER_METER), (ctx, w) => {
         const cell = w / COLUMNS; // pixels (cells are CELL_W x CELL_H meters)
         const cellH = cell * (CELL_H / CELL_W);
         const radius = cell * (BALL / CELL_W) / 2;

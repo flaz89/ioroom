@@ -79,7 +79,8 @@ export default function VRMaterialCard({ material, ...groupProps }) {
             {/* origin = top center of the card */}
             <mesh position={[0, -CARD_WIDTH / 2, 0]} raycast={noRaycast}>
                 <planeGeometry args={[CARD_WIDTH, CARD_WIDTH]} />
-                <meshBasicMaterial map={map} color={map ? '#ffffff' : '#202850'} toneMapped={false} />
+                {/* keyed: a material compiled without a map ignores one set later (stays white) -> a new one */}
+                <meshBasicMaterial key={map ? map.uuid : 'loading'} map={map} color={map ? '#ffffff' : '#202850'} toneMapped={false} />
             </mesh>
             <mesh position={[0, -CARD_WIDTH - 0.006 - INFO_HEIGHT / 2, 0]} raycast={noRaycast}>
                 <planeGeometry args={[CARD_WIDTH, INFO_HEIGHT]} />
