@@ -599,7 +599,7 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     const textRef = useRef(text);
     const radius = LINE_RADIUS * boost;
 
-    useFrame(({ camera }) => {
+    useFrame(({ camera: sceneCamera, gl }) => {
         const space = groupRef.current?.parent;
         if (space == null) return;
         const start = resolveEnd(a, space, _start), end = resolveEnd(b, space, _end);
@@ -613,7 +613,9 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         dotBRef.current.position.copy(end);
         labelRef.current.position.copy(_middle);
         // label parallel to the line on screen: angle of the projected segment (NDC x scaled by the aspect,
-        // read from the projection matrix: also right for the XR eye cameras), kept within ±90° (readable)
+        // read from the projection matrix), kept within ±90° (readable). In XR the HEADSET camera (the eyes'
+        // parent, it follows every head turn and tilt; updated by the last render), not the scene camera
+        const camera = gl.xr.isPresenting ? gl.xr.getCamera() : sceneCamera;
         _screenA.copy(start); space.localToWorld(_screenA).project(camera);
         _screenB.copy(end); space.localToWorld(_screenB).project(camera);
         const aspect = camera.projectionMatrix.elements[5] / camera.projectionMatrix.elements[0];
