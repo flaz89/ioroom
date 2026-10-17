@@ -34,7 +34,9 @@ import './measures.css';
 * - XR (first person, not on the tabletop): same handles on my selected temporary measure; pressing the
 *   trigger / pinching while aiming at one (handleUnderRay) drags that end along the ray with the ruler's
 *   snaps until release (XRMeasurePlacer). That press is not a ruler point nor a label selection.
-* - TABLETOP: labels sized in board meters (like the notes' tags), not clickable, no handles.
+* - Labels keep a constant size on screen (bigger on the tabletop, TABLETOP_LABEL_BOOST) and are turned
+*   every frame to run PARALLEL to the measure line as seen on screen (never upside down).
+* - TABLETOP: labels not clickable, no handles.
 * - ANCHORED ENDS: a point taken on an object is stored in the object's local space (measuresSlice.js) and
 *   resolved every frame from its live mesh (objectMeshes.js): moving / rotating / scaling the object (also
 *   while dragging, also by another device) updates the measure live. The label text re-renders only when
@@ -47,9 +49,7 @@ const LINE_RADIUS = 0.004;           // meters (board space)
 const TABLETOP_BOOST = 6;            // thicker line on the tabletop model (1/12 scale)
 const DOT_SIZE = 0.012;              // screen fraction (sprites without size attenuation)
 const LABEL_SIZE = [0.1, 0.032];
-// tabletop: labels in BOARD meters (sized like the notes' author tags, they scale with the model) instead of
-// a constant screen size (tiny on the table); not clickable there
-const TABLETOP_LABEL_SIZE = [1.6, 0.48];
+const TABLETOP_LABEL_BOOST = 1.6; // tabletop: labels this much bigger on screen (not clickable there)
 const HANDLE_AIM = 0.04; // XR: a handle is aimed at within this angle (radians, ~2.3°) of the ray
 const SNAP_SCREEN = 0.02;            // snap distance = 2% of the camera distance (same feel at any zoom)
 const HANDLE_SCALE = 2;              // end dots of an editable measure (grab handles)
@@ -590,16 +590,16 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     // not clickable: the live preview, and every label on the tabletop (labels are selectable in the builder too)
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
     const isLocked = preview || isTabletop;
-    const labelSize = isTabletop ? TABLETOP_LABEL_SIZE : LABEL_SIZE;
+    const labelBoost = isTabletop ? TABLETOP_LABEL_BOOST : 1;
     // 2D plan open: its own actions (builder/PlanMeasures.jsx); this Html would float over the plan
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const a = toEnd(measure.a), b = toEnd(measure.b);
-    const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef();
+    const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef(), labelMaterialRef = useRef();
     const [text, setText] = useState(() => formatLength(new THREE.Vector3(...a.p).distanceTo(new THREE.Vector3(...b.p))));
     const textRef = useRef(text);
     const radius = LINE_RADIUS * boost;
 
-    useFrame(() => {
+    useFrame(({ camera }) => {
         const space = groupRef.current?.parent;
         if (space == null) return;
         const start = resolveEnd(a, space, _start), end = resolveEnd(b, space, _end);
@@ -612,6 +612,15 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         dotARef.current.position.copy(start);
         dotBRef.current.position.copy(end);
         labelRef.current.position.copy(_middle);
+        // label parallel to the line on screen: angle of the projected segment (NDC x scaled by the aspect,
+        // read from the projection matrix: also right for the XR eye cameras), kept within ±90° (readable)
+        _screenA.copy(start); space.localToWorld(_screenA).project(camera);
+        _screenB.copy(end); space.localToWorld(_screenB).project(camera);
+        const aspect = camera.projectionMatrix.elements[5] / camera.projectionMatrix.elements[0];
+        let angle = Math.atan2(_screenB.y - _screenA.y, (_screenB.x - _screenA.x) * aspect);
+        if (angle > Math.PI / 2) angle -= Math.PI;
+        if (angle < -Math.PI / 2) angle += Math.PI;
+        if (labelMaterialRef.current) labelMaterialRef.current.rotation = angle;
         const shown = formatLength(length);
         if (shown !== textRef.current) {
             textRef.current = shown;
@@ -632,14 +641,13 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
             <Dot dotRef={dotBRef} position={b.p} color={color} scale={editable ? HANDLE_SCALE : 1} handle={editable ? { id: measure.id, which: 'b' } : undefined} />
             <group ref={labelRef} position={a.p}>
                 <sprite
-                    scale={[labelSize[0], labelSize[1], 1]}
+                    scale={[LABEL_SIZE[0] * labelBoost, LABEL_SIZE[1] * labelBoost, 1]}
                     renderOrder={11}
                     userData={isLocked ? undefined : { measureId: measure.id }}
                     raycast={isLocked ? noRaycast : labelRaycast}
                     onClick={isLocked ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
                 >
-                    {/* key: sizeAttenuation is compiled into the shader, so the material is re-created when it changes */}
-                    <spriteMaterial key={isTabletop ? 'board-size' : 'screen-size'} map={label} sizeAttenuation={!isTabletop} depthTest={false} depthWrite={false} transparent toneMapped={false} />
+                    <spriteMaterial ref={labelMaterialRef} map={label} sizeAttenuation={false} depthTest={false} depthWrite={false} transparent toneMapped={false} />
                 </sprite>
                 {selected && !isXR && !isPlanView && (
                     <Html center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
@@ -654,6 +662,7 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         </group>
     );
 }
+const _screenA = new THREE.Vector3(), _screenB = new THREE.Vector3();
 const _start = new THREE.Vector3(), _end = new THREE.Vector3(), _direction = new THREE.Vector3(), _middle = new THREE.Vector3();
 
 // Length label: dark glass pill with an outline in the measure's color (brighter when selected)
