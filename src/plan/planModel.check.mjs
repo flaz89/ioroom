@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addWall, flipWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -42,4 +42,19 @@ assert.equal(setWallLength(level, 'wall-back', 0), null);
 const thick = updateWall(level, 'wall-left', { thickness: 0.3 });
 assert.equal(thick.walls[0].thickness, 0.3);
 assert.equal(thick.walls[1], level.walls[1]);
+// a new wall closing the U joins both open corners (its ends equal theirs) and is drawn clockwise:
+// right (3,3) -> left (-3,3) on screen, thickness towards +z (outside the room)
+const closed = addWall(level, [3, 3], [-3, 3], 'wall-front');
+const front = closed.walls[3];
+assert.ok(near(wallFrame(front).normal, [0, 1]));
+const fFront = wallFootprint(front, closed.walls);
+assert.equal(fFront.aJoined && fFront.bJoined, true);
+assert.equal(addWall(level, [0, 0], [0.01, 0]), null);
+// vertex snap: within the distance only
+assert.ok(near(nearestVertex(level, [2.9, -2.95], 0.2), [3, -3]));
+assert.equal(nearestVertex(level, [0, 0], 0.2), null);
+// flip: same line, thickness on the other side (back wall: outward normal -z -> +z)
+const flipped = flipWall(level, 'wall-back').walls[1];
+assert.ok(near(wallFrame(flipped).normal, [0, 1]));
+assert.ok(near(flipped.a, [3, -3]) && near(flipped.b, [-3, -3]));
 console.log('planModel: ok');

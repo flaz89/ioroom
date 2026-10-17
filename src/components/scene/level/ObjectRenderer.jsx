@@ -1,6 +1,7 @@
 import { useStore } from "../../../store/appStore"
 import { useXR } from "@react-three/xr"
 import SingleObject from "./SingleObject";
+import ObjectGhost from "./ObjectGhost";
 
 // component used to load all models inside the level and track all them
 
@@ -13,6 +14,10 @@ export default function ObjectRenderer({ isTabletop }) {
     const isVR = mode === "immersive-vr";
     const isAR = mode === "immersive-ar";
     const isFlatscreen = !isVR && !isAR;
+    // builder (flatscreen only, admin): furniture frozen as holograms (ObjectGhost.jsx), not editable
+    const isBuilder = useStore((state) => state.workspace === 'builder') && isFlatscreen;
+
+    if (isBuilder) return instances.map((obj) => <ObjectGhost key={obj.id} data={obj} />);
 
     return(
     <>

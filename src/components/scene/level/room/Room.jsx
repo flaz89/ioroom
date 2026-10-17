@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { polygonGeometry, roomFaces } from './roomLayout';
@@ -45,6 +46,31 @@ function onDragDrop(event) {
     useStore.getState().setMaterialDrag(null);
 }
 
+/*
+* BUILDER (store workspace 'builder', 3D view): a click on a wall face selects that wall (store
+* selectedWallId, shared with the 2D plan; WallPanel.jsx shows its sizes), a click on a floor deselects.
+* Not while a tool owns the click (ruler, post-it) and not at the end of an orbit drag: the pointer must
+* not have moved more than CLICK_SLOP px since the press (pmndrs events have no usable `delta`: its getter
+* throws, so the press position is recorded here). The selected wall's faces are tinted like a material preview.
+*/
+const CLICK_SLOP = 4; // px
+const pressPositions = new Map(); // pointerId -> { x, y } screen position of the last press on the room
+function onBuilderPress(event) {
+    const native = event.nativeEvent;
+    if (native?.clientX != null) pressPositions.set(event.pointerId, { x: native.clientX, y: native.clientY });
+}
+function onBuilderClick(event) {
+    const state = useStore.getState();
+    if (state.workspace !== 'builder' || state.measures.active || state.notes.placing) return;
+    const press = pressPositions.get(event.pointerId);
+    const native = event.nativeEvent;
+    if (press && native?.clientX != null && Math.hypot(native.clientX - press.x, native.clientY - press.y) > CLICK_SLOP) return;
+    const surfaceId = faceOf(event);
+    if (surfaceId == null) return;
+    event.stopPropagation();
+    state.setSelectedWallId(surfaceId.includes(':') ? surfaceId.split(':')[0] : null);
+}
+
 // Marks the room for post-it placing (components/scene/notes/Notes.jsx): its surfaces take notes.
 const ROOM_USER_DATA = { isRoom: true };
 
@@ -70,26 +96,49 @@ export default function Room() {
     // Material of each face: saved, or previewed while a material is dragged over it
     const surfaces = useStore((state) => state.surfaces);
     const drag = useStore((state) => state.materialDrag);
+    // Builder: selected wall (orange tint) and wall under the mouse (light tint + hand cursor)
+    const isBuilder = useStore((state) => state.workspace === 'builder');
+    const selectedWallId = useStore((state) => (state.workspace === 'builder' ? state.selectedWallId : null));
+    const [hoverWallId, setHoverWallId] = useState(null);
+    const hoveredWallId = isBuilder ? hoverWallId : null;
+    useEffect(() => {
+        setCursorHover('builder-wall', hoveredWallId != null);
+        return () => setCursorHover('builder-wall', false);
+    }, [hoveredWallId]);
+    // Mouse over the room: which wall (null over a floor); VR material drags keep their own handler
+    const onPointerMove = (event) => {
+        onDragMove(event);
+        if (!isBuilder || event.nativeEvent?.pointerType !== 'mouse') return; // pmndrs pointerType is its own pointer kind: read the DOM one
+        const surfaceId = faceOf(event);
+        setHoverWallId(surfaceId?.includes(':') ? surfaceId.split(':')[0] : null);
+    };
+    const onPointerLeave = (event) => {
+        onDragLeave(event);
+        setHoverWallId(null);
+    };
 
     // Batches: faces grouped by (material, tint, orientation, plain color), each merged into one geometry
     const batches = useMemo(() => {
         const groups = new Map();
         for (const face of faces) {
             const previewed = drag?.surfaceId === face.surfaceId;
+            const selected = selectedWallId != null && face.surfaceId.startsWith(`${selectedWallId}:`);
+            const hovered = hoveredWallId != null && face.surfaceId.startsWith(`${hoveredWallId}:`);
             const materialId = previewed ? drag.materialId : (surfaces[face.surfaceId] ?? PLAIN_ID);
-            const key = `${materialId}|${previewed}|${face.vertical}|${face.color}`;
-            if (!groups.has(key)) groups.set(key, { key, materialId, tinted: previewed, vertical: face.vertical, color: face.color, faces: [] });
+            const tinted = previewed || selected || (hovered ? 'hover' : false); // SurfaceMesh: 'hover' = lighter
+            const key = `${materialId}|${tinted}|${face.vertical}|${face.color}`;
+            if (!groups.has(key)) groups.set(key, { key, materialId, tinted, vertical: face.vertical, color: face.color, faces: [] });
             groups.get(key).faces.push(face);
         }
         return [...groups.values()].map((group) => {
             const { geometry, faceRanges } = mergeFaces(group.faces);
             return { ...group, geometry, spherecast: spherecastFaces(faceRanges), userData: { faceRanges, ...(group.vertical ? { surface: 'wall' } : {}) } };
         });
-    }, [faces, surfaces, drag]);
+    }, [faces, surfaces, drag, selectedWallId, hoveredWallId]);
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA} onPointerMove={onDragMove} onPointerLeave={onDragLeave} onPointerUp={onDragDrop}>
+        <group userData={ROOM_USER_DATA} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerUp={onDragDrop} onPointerDown={onBuilderPress} onClick={onBuilderClick}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh

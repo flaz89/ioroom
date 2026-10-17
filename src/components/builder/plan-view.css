@@ -27,6 +27,14 @@
 .plan-vertex { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2; pointer-events: none; }
 .plan-vertex-hit:hover + .plan-vertex { fill: #ff9a1a; }
 
+/* wall tool: crosshair, corners are snap targets only (no drag, no hover fill) */
+.plan-view.is-drawing { cursor: crosshair; }
+.plan-view.is-drawing .plan-wall { cursor: crosshair; }
+.plan-view.is-drawing .plan-vertex-hit { pointer-events: none; }
+.plan-wall-preview { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
+.plan-chain-start { fill: #ff9a1a; stroke: white; stroke-width: 1.5; pointer-events: none; }
+.plan-snap-ring { fill: none; stroke: #ff9a1a; stroke-width: 2; pointer-events: none; }
+
 /* wall lengths: screen-space text with a dark halo, readable over walls and grid */
 .plan-length {
     fill: white;
@@ -110,3 +118,22 @@
 
 .wall-panel-field input:focus { outline: 1px solid #ff9a1a; }
 .wall-panel-unit { opacity: .6; }
+
+/* Flip button (PlanView2D.jsx FlipButton): centered on the selected wall's middle */
+.plan-flip {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 2px solid white;
+    border-radius: 50%;
+    background: #ff9a1a;
+    color: white;
+    box-shadow: 0 4px 12px rgba(2, 6, 23, 0.6);
+    cursor: pointer;
+}
+.plan-flip:hover { filter: brightness(1.1); }
+.plan-flip:active { scale: .9; }

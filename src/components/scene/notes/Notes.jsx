@@ -46,6 +46,10 @@ export default function BoardNotes() {
     const anchorRef = useRef(); // child of the board: its parent is the board root
     const items = useStore((state) => state.notes.items);
     const isXR = useXR((state) => state.mode != null);
+    // builder: notes are designer content, hidden while the environment is built (the furniture is frozen
+    // as holograms, ObjectGhost.jsx, so notes stuck on objects disappear with it)
+    const isBuilder = useStore((state) => state.workspace === 'builder') && !isXR;
+    if (isBuilder) return null;
 
     return (
         <group ref={anchorRef}>

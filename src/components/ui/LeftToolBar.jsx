@@ -29,6 +29,10 @@ export default function LeftToolBar() {
 
     // Environment tools (sun, materials, bill) belong to the designer mode (store/slices/workspaceSlice.js)
     const isDesigner = useStore((state) => state.workspace === 'designer');
+    // Plan tools: builder mode, 2D view only (components/builder/PlanView2D.jsx)
+    const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
+    const planTool = useStore((state) => state.planTool);
+    const setPlanTool = useStore((state) => state.setPlanTool);
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -42,6 +46,12 @@ export default function LeftToolBar() {
             {/* bottom: the environment tools, then the settings group (last, anchored to the bottom edge) */}
             <div className="left-tools">
                 {/* environment tools: designer mode only */}
+                {/* plan tools (builder, 2D): draw walls */}
+                {isPlanView && <div className="scene-settings">
+                    <CircleButton svg={svg.wall} onClick={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')} isActive={planTool === 'wall'}
+                        title={planTool === 'wall' ? "Click to place points, click a corner or Esc to finish" : "Draw walls"}/>
+                </div>}
+
                 {isDesigner && <div className="scene-settings">
                     {/* not last: its panel is centered on the button and needs room below it */}
                     <SunPanel />

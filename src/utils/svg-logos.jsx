@@ -84,6 +84,12 @@ export const svg = {
         <path d="M7.5 6.5h5M7.5 9.5h5M7.5 12.5h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // brick courses (wall drawing tool)
+    wall: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2.5" y="4" width="15" height="12" rx="1" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M2.5 8h15M2.5 12h15M8 4v4M13 8v4M8 12v4" stroke="currentColor" strokeWidth="1.4"/>
+    </svg>,
+
     // arrow curving back to the left (undo)
     undo: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M7 4.5L3.5 8 7 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>

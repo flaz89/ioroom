@@ -1,4 +1,5 @@
 import './scene.css'
+import { useRef, useState } from 'react';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
@@ -8,6 +9,7 @@ import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import PerfSampler from './perf/PerfSampler';
 import PlanView2D from '../builder/PlanView2D';
+import WallPanel from '../builder/WallPanel';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -40,6 +42,23 @@ export default function Scene({xrStore}) {
     const deselectObject = useStore((state) => state.deselectObject);
     // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
+    const isBuilder = useStore((state) => state.workspace === 'builder');
+
+    // CAMERA DRAG (orbit / pan / zoom with OrbitControls): while the camera actually moves, the scene takes no
+    // pointer events, so nothing gets hovered (no tint, no hand cursor) under a sweeping mouse.
+    // 'start' alone is NOT enough: a plain click also starts the controls, and blocking events on press would
+    // eat that click. So: armed on start, blocked on the first camera 'change', released on 'end' (the damping
+    // changes after 'end' are ignored: not armed anymore).
+    const [isOrbiting, setIsOrbiting] = useState(false);
+    const orbitArmedRef = useRef(false);
+    const onOrbitStart = () => { orbitArmedRef.current = true; };
+    const onOrbitChange = () => { if (orbitArmedRef.current && !isOrbiting) setIsOrbiting(true); };
+    const onOrbitEnd = () => { orbitArmedRef.current = false; setIsOrbiting(false); };
+    // click on nothing: deselects the object, and the wall in the builder (3D view)
+    const onPointerMissed = () => {
+        deselectObject();
+        useStore.getState().setSelectedWallId(null);
+    };
     
 
     return(
@@ -55,7 +74,7 @@ export default function Scene({xrStore}) {
                 }}
                 dpr={ [1, 2] }
                 shadows
-                onPointerMissed={deselectObject}
+                onPointerMissed={onPointerMissed}
                 events={noEvents} // pmndrs pointer events (below) replace R3F's: one event system for mouse, touch, controllers and hands
             >
                 {/* batchEvents={false}: handlers run inside the DOM event. Registered before OrbitControls,
@@ -72,15 +91,23 @@ export default function Scene({xrStore}) {
                     maxPolarAngle={ Math.PI/2 }
                     minDistance={ 2 }
                     maxDistance={ 20 }
+                    onStart={onOrbitStart}
+                    onChange={onOrbitChange}
+                    onEnd={onOrbitEnd}
                 />
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />
-                    <Level />
+                    {/* 'listener' is the pmndrs default; it must be explicit ('undefined' is ignored by R3F) */}
+                    <group pointerEvents={isOrbiting ? 'none' : 'listener'}>
+                        <Level />
+                    </group>
                 </XR>
             
             </Canvas>
             {isPlanView && <PlanView2D />}
+            {/* selected wall panel, in both builder views (2D plan and 3D) */}
+            {isBuilder && <WallPanel />}
         </div>
         </>
     );

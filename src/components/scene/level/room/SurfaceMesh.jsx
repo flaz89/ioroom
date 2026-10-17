@@ -42,7 +42,8 @@ function TexturedMesh({ material, tinted, meshProps }) {
 // the DB and grows large.
 const materials = new Map(); // cache key -> MeshStandardMaterial
 
-const tint = (tinted) => (tinted ? { emissive: DROP_TINT, emissiveIntensity: DROP_TINT_STRENGTH } : {});
+const HOVER_TINT_STRENGTH = 0.08; // builder: wall under the mouse (tinted === 'hover'), lighter than a selection
+const tint = (tinted) => (tinted ? { emissive: DROP_TINT, emissiveIntensity: tinted === 'hover' ? HOVER_TINT_STRENGTH : DROP_TINT_STRENGTH } : {});
 
 function plainMaterial(color, tinted) {
     const key = `plain|${color}|${tinted}`;

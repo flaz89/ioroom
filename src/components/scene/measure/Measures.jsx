@@ -427,6 +427,9 @@ function FollowDot({ end, color }) {
 */
 function MeasureLine({ measure, color, boost, selected = false, saved = false, preview = false }) {
     const isXR = useXR((state) => state.mode != null); // XR: actions in VRMeasurePanel.jsx instead of Html
+    // builder: labels are not clickable (the mouse is for the walls; the ruler tool still measures)
+    const isBuilder = useStore((state) => state.workspace === 'builder') && !isXR;
+    const isLocked = preview || isBuilder;
     const a = toEnd(measure.a), b = toEnd(measure.b);
     const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef();
     const [text, setText] = useState(() => formatLength(new THREE.Vector3(...a.p).distanceTo(new THREE.Vector3(...b.p))));
@@ -467,9 +470,9 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
                 <sprite
                     scale={[LABEL_SIZE[0], LABEL_SIZE[1], 1]}
                     renderOrder={11}
-                    userData={preview ? undefined : { measureId: measure.id }}
-                    raycast={preview ? noRaycast : labelRaycast}
-                    onClick={preview ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
+                    userData={isLocked ? undefined : { measureId: measure.id }}
+                    raycast={isLocked ? noRaycast : labelRaycast}
+                    onClick={isLocked ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
                 >
                     <spriteMaterial map={label} sizeAttenuation={false} depthTest={false} depthWrite={false} transparent toneMapped={false} />
                 </sprite>

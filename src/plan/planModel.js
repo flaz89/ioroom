@@ -147,3 +147,36 @@ export function setWallLength(level, wallId, length) {
     const { dir } = wallFrame(wall);
     return moveVertex(level, wall.b, [wall.a[0] + dir[0] * length, wall.a[1] + dir[1] * length]);
 }
+
+// New unique wall id (several devices can draw at the same time: time + random, never a counter)
+export const newWallId = () => `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/*
+* The level with a new wall from `a` to `b` (default thickness, level height). a -> b is the INNER line:
+* the thickness grows on the left of the drawing direction as seen on the plan (screen y = world z), so a
+* room drawn CLOCKWISE on screen gets its walls outside. Ends equal to existing corners join them.
+* Returns null for a wall shorter than MIN_WALL_LENGTH.
+*/
+export function addWall(level, a, b, id = newWallId()) {
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < MIN_WALL_LENGTH) return null;
+    return { ...level, walls: [...level.walls, { id, a: [a[0], a[1]], b: [b[0], b[1]], thickness: DEFAULT_THICKNESS }] };
+}
+
+// Closest corner of the level to `point` within `maxDistance` meters, or null
+export function nearestVertex(level, point, maxDistance) {
+    let best = null, bestDistance = maxDistance;
+    for (const vertex of levelVertices(level)) {
+        const distance = Math.hypot(vertex[0] - point[0], vertex[1] - point[1]);
+        if (distance <= bestDistance) { best = vertex; bestDistance = distance; }
+    }
+    return best;
+}
+
+/*
+* Moves the thickness of wall `wallId` to the other side of its line: a and b are swapped, so the line the
+* user drew stays where it is and the outward normal flips. The faces swap roles too: what was ':inner'
+* is now ':outer' (the caller swaps the surface materials, planSlice.flipWallSide).
+*/
+export function flipWall(level, wallId) {
+    return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, a: wall.b, b: wall.a } : wall)) };
+}
