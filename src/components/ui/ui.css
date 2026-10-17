@@ -27,12 +27,17 @@
     left: 50%;
     transform: translateX(-50%);
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: .8em;
+    gap: .6em;
     pointer-events: none;
 }
 
-.bottom-bar > * {
+/* bottom row: the buttons (the panels stacked above stay click-through) */
+.bottom-bar-row {
+    display: flex;
+    align-items: center;
+    gap: .8em;
     pointer-events: all;
 }
 

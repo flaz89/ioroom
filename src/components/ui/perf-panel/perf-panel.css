@@ -52,6 +52,12 @@
 .perf-panel-row dt { opacity: .65; }
 .perf-panel-row dd { margin: 0; font-variant-numeric: tabular-nums; }
 
+/* Desktop: stacked in the bottom bar (ui.css), above the grid scale and the buttons */
+.bottom-bar .perf-panel {
+    position: static;
+    transform: none;
+}
+
 /* ------------------- MOBILE ---------------------- */
 /* Centered card, one metric per row: fits the portrait screen without covering the toolbars */
 @media (max-width: 767px) {
@@ -62,6 +68,11 @@
         bottom: auto;
         transform: translate(-50%, -50%);
         font-size: 13px;
+    }
+    /* out of the bottom bar's flow: centered on the screen as before */
+    .ui .bottom-bar .perf-panel {
+        position: fixed;
+        transform: translate(-50%, -50%);
     }
     .perf-panel-header { max-width: none; white-space: normal; }
     .perf-panel-grid { grid-template-columns: 1fr; row-gap: .35em; }

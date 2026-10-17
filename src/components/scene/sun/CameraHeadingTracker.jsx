@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Matrix4, Vector3 } from 'three';
 import { getCameraHeading, publishCameraHeading } from './cameraHeading';
+import { useStore } from '../../../store/appStore';
 
 const MIN_CHANGE = 0.05; // degrees: below this, no notification (camera still)
 const _forward = new Vector3();
@@ -12,11 +13,15 @@ const _toBoard = new Matrix4();
 * Follows the active camera: the orbit camera on flatscreen, the headset during XR sessions.
 * Lives inside the Board (level/Level.jsx): the view direction is measured in the board's space, so a
 * tabletop model turned by hand keeps its compass right.
+* Paused while the builder's 2D plan view covers the scene: that view publishes its own fixed heading
+* (PlanView2D.jsx); when it closes, the next frame differs from it and the camera heading is published again.
 */
 export function CameraHeadingTracker() {
     const anchorRef = useRef(); // empty group inside the board: its world matrix carries the board's rotation
 
     useFrame(({ camera }) => {
+        const { workspace, builderView } = useStore.getState();
+        if (workspace === 'builder' && builderView === '2d') return;
         camera.getWorldDirection(_forward);
         _forward.transformDirection(_toBoard.copy(anchorRef.current.matrixWorld).invert()); // world -> board
         // Looking straight down/up: the horizontal direction is undefined, keep the last heading

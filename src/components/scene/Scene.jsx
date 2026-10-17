@@ -7,6 +7,7 @@ import SceneGrid from './helpers/SceneGrid';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import PerfSampler from './perf/PerfSampler';
+import PlanView2D from '../builder/PlanView2D';
 
 /* 
 * This component is the orchestrator of all 3D environement, all the 3D objects needed in XR experience are 
@@ -37,6 +38,8 @@ export default function Scene({xrStore}) {
     const isGridVisible = useStore((state) => state.grid.visible);
     const isPerfVisible = useStore((state) => state.perfOpen);
     const deselectObject = useStore((state) => state.deselectObject);
+    // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
+    const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     
 
     return(
@@ -77,6 +80,7 @@ export default function Scene({xrStore}) {
                 </XR>
             
             </Canvas>
+            {isPlanView && <PlanView2D />}
         </div>
         </>
     );

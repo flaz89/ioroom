@@ -14,6 +14,7 @@ import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
+import PlanGridLegend from './components/builder/PlanGridLegend';
 
 
 /* 
@@ -59,14 +60,18 @@ export default function App() {
         <div className="ui">
           <LeftToolBar/>
           <RightToolBar/>
-          <PerfPanel/>
           <CompassBar/>
           <RoomNotice/>
           <NoteModal/>
-          {/* bottom center (provisional): undo / redo for everyone, workspace switch for the admin */}
+          {/* bottom center (provisional), stacked upwards: performance stats (when open), grid scale of the
+              2D plan (builder), then undo / redo for everyone and the workspace switch for the admin */}
           <div className="bottom-bar">
-            <UndoRedo/>
-            <WorkspaceSwitch/>
+            <PerfPanel/>
+            <PlanGridLegend/>
+            <div className="bottom-bar-row">
+              <UndoRedo/>
+              <WorkspaceSwitch/>
+            </div>
           </div>
         </div>
         

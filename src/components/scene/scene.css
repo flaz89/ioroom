@@ -1,4 +1,5 @@
 .scene {
+    position: relative; /* the 2D plan view (builder) covers the canvas */
     border-radius: 20px;
     height: 100%;
     background: linear-gradient(35deg, rgba(255,255,255,.1) 0%, rgba(255,255,255,0.03) 30%);
