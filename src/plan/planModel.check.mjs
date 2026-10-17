@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addWall, flipWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -57,4 +57,37 @@ assert.equal(nearestVertex(level, [0, 0], 0.2), null);
 const flipped = flipWall(level, 'wall-back').walls[1];
 assert.ok(near(wallFrame(flipped).normal, [0, 1]));
 assert.ok(near(flipped.a, [3, -3]) && near(flipped.b, [-3, -3]));
+// remove
+assert.equal(removeWall(level, 'wall-left').walls.length, 2);
+// split at the middle: first keeps id and start, second starts at the middle and ends at b; joined
+const split = splitWall(level, 'wall-back', 'wall-back-2');
+const [half1, half2] = [split.walls[1], split.walls[2]];
+assert.equal(half1.id, 'wall-back');
+assert.ok(near(half1.a, [-3, -3]) && near(half1.b, [0, -3]) && near(half2.a, [0, -3]) && near(half2.b, [3, -3]));
+assert.equal(half2.name, undefined);
+assert.equal(wallFootprint(half1, split.walls).bJoined, true);
+// FLOORS: the open U has no loop (its manual floor is kept); closed, the loop takes over the 'floor' id
+assert.equal(closedLoops(level.walls).length, 0);
+assert.equal(rebuildFloors(level).level.floors[0].id, 'floor');
+const room = rebuildFloors(closed).level;
+assert.equal(room.floors.length, 1);
+assert.equal(room.floors[0].id, 'floor');
+assert.equal(room.floors[0].auto, true);
+assert.equal(polygonArea(room.floors[0].points), 36);
+// a middle wall ending on the front and back walls (T-joints) splits it: the second room inherits.
+// Floors are CLEAR areas: the side-aligned partition (thickness towards +x) takes 0.15 x 6 off one room...
+const halves = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid'), () => 'new-floor');
+assert.deepEqual(halves.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [18, 17.1]);
+assert.deepEqual(halves.inherited, { 'new-floor': 'floor' });
+// ...a centered one half of it from each: two equal rooms
+const centered = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid', 'center'), () => 'new-floor');
+assert.deepEqual(centered.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [17.55, 17.55]);
+// mixed thickness sides at a corner (one wall flipped): faces mitered pairwise, clean L corner
+const mixed = [{ id: 'm1', a: [0, 0], b: [4, 0], thickness: 0.2 }, { id: 'm2', a: [4, 4], b: [4, 0], thickness: 0.2 }];
+assert.ok(near(wallFootprint(mixed[0], mixed).b, [3.8, 0]) && near(wallFootprint(mixed[0], mixed).bOut, [4, -0.2]));
+assert.ok(near(wallFootprint(mixed[1], mixed).b, [4, -0.2]) && near(wallFootprint(mixed[1], mixed).bOut, [3.8, 0]));
+// opening the perimeter again drops the auto floor
+const reopened = rebuildFloors(removeWall(room, 'wall-front'));
+assert.equal(reopened.level.floors.length, 0);
+assert.deepEqual(reopened.removed, ['floor']);
 console.log('planModel: ok');

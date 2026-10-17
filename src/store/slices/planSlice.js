@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN, activeLevel, flipWall, withActiveLevel } from '../../plan/planModel';
+import { DEFAULT_PLAN, activeLevel, flipWall, newWallId, rebuildFloors, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
 
 /*
 * The floor plan of the environment (plan/planModel.js): walls and floors the room is built from.
@@ -11,12 +11,54 @@ export const createPlanSlice = (set, get) => ({
     // Merges plan fields received from the shared room (or set by the editor), e.g. { levels }
     setPlan: (patch) => set((state) => ({ plan: { ...state.plan, ...patch } })),
 
-    // Replaces the level being worked on (plan editor: one call per committed edit = one undo step)
-    setActiveLevel: (level) => get().setPlan({ levels: withActiveLevel(get().plan, level).levels }),
+    // Replaces the level being worked on (plan editor: one call per committed edit = one undo step).
+    // FLOORS follow the walls here, for every edit (planModel.rebuildFloors): closed perimeters get a floor;
+    // a room split in two gives its material to both halves; an opened perimeter loses its floor and the
+    // floor's material (no orphan in the bill of quantities). Plan + surfaces in the same tick: one undo step.
+    setActiveLevel: (level) => {
+        const { level: rebuilt, inherited, removed } = rebuildFloors(level);
+        get().setPlan({ levels: withActiveLevel(get().plan, rebuilt).levels });
+        if (Object.keys(inherited).length === 0 && removed.length === 0) return;
+        const surfaces = { ...get().surfaces };
+        for (const [floorId, fromId] of Object.entries(inherited)) if (surfaces[fromId] != null) surfaces[floorId] = surfaces[fromId];
+        removed.forEach((floorId) => delete surfaces[floorId]);
+        set({ surfaces });
+    },
 
     // Thickness to the other side of the wall's line (planModel.flipWall). The inner and outer faces swap
     // roles, so their materials (surfaces slice) swap too: each face keeps its look. Plan and surfaces are
     // written in the same tick -> one undo step (history.js capture timeout).
+    // Deletes walls and their face materials (no orphan materials left in the bill of quantities): one undo step
+    deleteWalls: (wallIds) => {
+        const { plan, surfaces } = get();
+        get().setActiveLevel(wallIds.reduce((level, wallId) => removeWall(level, wallId), activeLevel(plan)));
+        const remaining = { ...surfaces };
+        wallIds.forEach((wallId) => wallFaceIds(wallId).forEach((faceId) => delete remaining[faceId]));
+        set({ surfaces: remaining, selectedWallIds: [] });
+    },
+
+    // The same field patch on several walls at once (group edit: thickness / height), one undo step
+    updateWalls: (wallIds, patch) => {
+        const level = activeLevel(get().plan);
+        get().setActiveLevel({ ...level, walls: level.walls.map((wall) => (wallIds.includes(wall.id) ? { ...wall, ...patch } : wall)) });
+    },
+
+    // Splits a wall at its middle (planModel.splitWall): the second piece copies the first one's face
+    // materials, so the wall looks the same. Returns false if the wall is too short to split.
+    splitWallInHalf: (wallId) => {
+        const { plan, surfaces } = get();
+        const newId = newWallId();
+        const next = splitWall(activeLevel(plan), wallId, newId);
+        if (next == null) return false;
+        get().setActiveLevel(next);
+        const copied = { ...surfaces };
+        wallFaceIds(wallId).forEach((faceId, index) => {
+            if (surfaces[faceId] != null) copied[wallFaceIds(newId)[index]] = surfaces[faceId];
+        });
+        set({ surfaces: copied });
+        return true;
+    },
+
     flipWallSide: (wallId) => {
         const { plan, surfaces } = get();
         get().setActiveLevel(flipWall(activeLevel(plan), wallId));

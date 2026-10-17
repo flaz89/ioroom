@@ -54,3 +54,81 @@ export function gridPath(view, w, h, step) {
     for (let z = Math.ceil(z0 / step) * step; z <= z1; z += step) d += `M${x0} ${z.toFixed(3)}H${x1}`;
     return d;
 }
+
+/*
+* Alignment snap (plan editor): the coordinate of `point` closest to the same coordinate of one of
+* `targets` ([x, z] corners), within `tolerance` meters, snaps to it, separately for X and Z. Returns
+* { point, guides }: guides = [{ from: target, to: snapped point }] (one per snapped axis), drawn as dashed
+* lines from the corner the point lines up with.
+*/
+export function alignPoint(point, targets, tolerance) {
+    let [x, z] = point;
+    let alongX = null, alongZ = null; // target the X / Z coordinate snapped to
+    let bestX = tolerance, bestZ = tolerance;
+    for (const target of targets) {
+        const dx = Math.abs(target[0] - point[0]);
+        const dz = Math.abs(target[1] - point[1]);
+        if (dx <= bestX) { bestX = dx; alongX = target; }
+        if (dz <= bestZ) { bestZ = dz; alongZ = target; }
+    }
+    if (alongX) x = alongX[0];
+    if (alongZ) z = alongZ[1];
+    const snapped = [x, z];
+    const guides = [alongX, alongZ].filter(Boolean).map((from) => ({ from, to: snapped }));
+    return { point: snapped, guides };
+}
+
+// Angle in (-PI, PI]
+const wrapAngle = (angle) => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/*
+* Angle snap ("polar tracking") of the segment origin -> point: its direction, measured from `refAngle`
+* (radians, screen/plan axes: x right, z down), snaps to the nearest multiple of `stepDeg` when within
+* `toleranceDeg`; the point is projected on that ray (same distance along it). refAngle = the previous
+* wall's direction (0 = straight on, 90 = square to it) or 0 for a first wall (multiples of the step from
+* the plan's X axis). Returns { point, angle } (angle = absolute snapped direction) or null when not snapped.
+*/
+export function angleSnap(origin, point, refAngle, stepDeg, toleranceDeg) {
+    const dx = point[0] - origin[0], dz = point[1] - origin[1];
+    if (Math.hypot(dx, dz) < 1e-6 || !(stepDeg > 0)) return null;
+    const step = stepDeg * Math.PI / 180;
+    const relative = wrapAngle(Math.atan2(dz, dx) - refAngle);
+    const snappedRelative = Math.round(relative / step) * step;
+    if (Math.abs(wrapAngle(relative - snappedRelative)) > toleranceDeg * Math.PI / 180) return null;
+    const angle = refAngle + snappedRelative;
+    const along = dx * Math.cos(angle) + dz * Math.sin(angle);
+    if (along <= 0) return null;
+    return { point: [origin[0] + along * Math.cos(angle), origin[1] + along * Math.sin(angle)], angle };
+}
+
+// Smaller angle (degrees, 0..180) between the rays center -> p and center -> q
+export function angleBetween(center, p, q) {
+    const a = Math.atan2(p[1] - center[1], p[0] - center[0]);
+    const b = Math.atan2(q[1] - center[1], q[0] - center[0]);
+    return Math.abs(wrapAngle(b - a)) * 180 / Math.PI;
+}
+
+// Does segment p-q cross the axis-aligned rectangle [min, max] (an end inside, or crossing an edge)?
+function segmentHitsRect(p, q, min, max) {
+    const inside = (r) => r[0] >= min[0] && r[0] <= max[0] && r[1] >= min[1] && r[1] <= max[1];
+    if (inside(p) || inside(q)) return true;
+    const corners = [[min[0], min[1]], [max[0], min[1]], [max[0], max[1]], [min[0], max[1]]];
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const intersects = (a, b, c, d) => cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0;
+    return corners.some((c, i) => intersects(p, q, c, corners[(i + 1) % 4]));
+}
+
+/*
+* Box selection (plan editor), CAD style, on the walls' drawn lines (a -> b), world coordinates:
+* - window (crossing = false, box dragged left -> right): walls entirely inside the box;
+* - crossing (crossing = true, dragged right -> left): walls inside OR touched by the box.
+* `corner1` / `corner2`: any two opposite corners. Returns the wall ids.
+*/
+export function wallsInBox(walls, corner1, corner2, crossing) {
+    const min = [Math.min(corner1[0], corner2[0]), Math.min(corner1[1], corner2[1])];
+    const max = [Math.max(corner1[0], corner2[0]), Math.max(corner1[1], corner2[1])];
+    const inside = (r) => r[0] >= min[0] && r[0] <= max[0] && r[1] >= min[1] && r[1] <= max[1];
+    return walls
+        .filter((wall) => (crossing ? segmentHitsRect(wall.a, wall.b, min, max) : inside(wall.a) && inside(wall.b)))
+        .map((wall) => wall.id);
+}

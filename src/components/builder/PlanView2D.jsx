@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addWall, levelBounds, levelVertices, moveVertex, nearestVertex, wallFootprint, wallFrame } from '../../plan/planModel';
-import { fitView, gridPath, gridSteps, panBy, toScreen, toWorld, zoomAt } from './planView';
+import { activeLevel, addWall, levelBounds, levelVertices, moveVertex, nearestVertex, rebuildFloors, wallFootprint, wallFrame } from '../../plan/planModel';
+import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, panBy, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
+import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { publishCameraHeading } from '../scene/sun/cameraHeading';
 import './plan-view.css';
 
@@ -12,6 +13,9 @@ const VERTEX_HIT_RADIUS = 14;    // px: touch-friendly invisible hit area around
 const LABEL_OFFSET = 14;         // px: length labels sit this far inside the room from the wall's inner line
 const VERTEX_SNAP_RADIUS = 12;   // px: the wall tool snaps to an existing corner closer than this
 const FLIP_GAP = 18;             // px: flip button center, beyond the wall's outer face
+const ALIGN_SNAP_RADIUS = 8;     // px: a coordinate this close to another corner's lines up with it
+const ANGLE_SNAP_TOLERANCE = 2;  // degrees: a wall direction this close to a multiple of the step snaps to it
+const ANGLE_ARC_RADIUS = 28;     // px: angle indicator arc
 
 /*
 * 2D top view of the floor plan (builder mode, view '2d', store/slices/workspaceSlice.js): grid in meters,
@@ -20,8 +24,10 @@ const FLIP_GAP = 18;             // px: flip button center, beyond the wall's ou
 * remote and undo changes as they arrive.
 *
 * Editing (plan editor):
-* - click a wall = select it (orange, length shown; store selectedWallId, shared with the 3D view) and open
-*   its panel (WallPanel.jsx, mounted by Scene.jsx: length, thickness, height); empty space or Esc = deselect; the round button at the middle of the selected wall
+* - click a wall = select it (orange, length shown; store selectedWallIds, shared with the 3D view) and open
+*   its panel (WallPanel.jsx, mounted by Scene.jsx: length, thickness, height); empty space or Esc = deselect;
+*   Shift+click adds / removes a wall. BOX SELECTION (mouse, left drag): left -> right = window (walls fully
+*   inside), right -> left = crossing (walls touched too), Shift adds to the selection (planView.wallsInBox); the round button at the middle of the selected wall
 *   moves its thickness to the other side of its line (planSlice.flipWallSide);
 * - drag a corner handle = move that corner: joined walls and the floor follow (planModel.moveVertex),
 *   snapped to the grid snap step when grid snap is on (right toolbar). The drag is a local DRAFT, written
@@ -30,7 +36,17 @@ const FLIP_GAP = 18;             // px: flip button center, beyond the wall's ou
 *   the first adds a wall from the previous point (chain), one undo step per wall. Points snap to existing
 *   corners (orange ring) or to the grid snap step. The chain ends on a click on an existing corner (the
 *   new wall joins it), on a second click on the same point (double click) or with Esc; Esc again leaves
-*   the tool. Walls drawn clockwise get their thickness outside (planModel.addWall). Drag still pans.
+*   the tool. Drag still pans. JUSTIFY (hover on the wall button, LeftToolBar.jsx; store wallJustify): the
+*   thickness goes on the left of the drawing direction, on the right, or half each side (center: axis
+*   line, planModel.addWall).
+* - ALIGNMENT GUIDES (wall tool and corner drag): a point that lines up horizontally / vertically with
+*   another corner (or the chain's last point) snaps to that line and shows it dashed (planView.alignPoint).
+*   Priority: exact corner > alignment (per axis) > angle snap > grid snap.
+* - ANGLE (wall tool): the wall being drawn shows its angle (arc + value at its start): the angle between
+*   it and the previous wall of the chain, or with the plan's horizontal for a first wall (hidden when
+*   straight). With rotation snap on (right toolbar), its direction snaps to multiples of the rotation step
+*   from the previous wall (planView.angleSnap) and a dashed guide shows the ray. Dragging a corner shows
+*   the angle between its two walls.
 *
 * Navigation: right (or middle) mouse drag = pan, like the 3D view (OrbitControls); left mouse drag pans
 * nothing (clicks only). Touch / pen: one finger drag = pan. Wheel = zoom at the cursor, two fingers = pinch
@@ -77,8 +93,11 @@ export default function PlanView2D() {
 
     // EDITING STATE (per device, never synced)
     const setActiveLevel = useStore((state) => state.setActiveLevel);
-    const selectedWallId = useStore((state) => state.selectedWallId);   // shared with the 3D view
+    const selectedWallIds = useStore((state) => state.selectedWallIds);  // shared with the 3D view
+    const selectedWallId = useStore(singleSelectedWall);                  // exactly one selected, else null
     const setSelectedWallId = useStore((state) => state.setSelectedWallId);
+    const [box, setBox] = useState(null);           // { start, end } screen points of the box being dragged
+    const [isPanning, setIsPanning] = useState(false); // right / middle mouse pan: grabbing cursor
     const [draft, setDraft] = useState(null); // { level, point } while a corner is dragged: preview, not saved
     // Current one-pointer gesture: { kind: 'pan', wallId, start, moved } | { kind: 'vertex', from }
     const gestureRef = useRef(null);
@@ -86,9 +105,11 @@ export default function PlanView2D() {
 
     // WALL TOOL STATE
     const planTool = useStore((state) => state.planTool);
+    const wallJustify = useStore((state) => state.wallJustify);
     const setPlanTool = useStore((state) => state.setPlanTool);
     const isDrawing = planTool === 'wall';
     const [chain, setChain] = useState(null); // [x, z]: last placed point of the wall being drawn, null = none
+    const [chainPrev, setChainPrev] = useState(null); // [x, z]: start of the chain's last wall (angle reference)
     const [hover, setHover] = useState(null); // { point, kind: 'vertex' | 'grid' | 'free' } under the mouse
     // Tool changed (toolbar button, Esc): start clean, no chain (state reset during render; the store's
     // setPlanTool clears the selection)
@@ -130,17 +151,37 @@ export default function PlanView2D() {
     const snapPoint = (point) => {
         const [x, z] = toWorld(view, size.w, size.h, point.x, point.y);
         const vertex = nearestVertex(level, [x, z], VERTEX_SNAP_RADIUS / view.scale);
-        if (vertex) return { point: vertex, kind: 'vertex' };
-        const snapped = snappedWorld(point);
-        return { point: snapped, kind: useStore.getState().settings.gridSnap ? 'grid' : 'free' };
+        if (vertex) return { point: vertex, kind: 'vertex', guides: [] };
+        const { gridSnap, rotationSnap, rotationSnapStep } = useStore.getState().settings;
+        const kind = gridSnap ? 'grid' : 'free';
+        const targets = chain ? [...levelVertices(level), chain] : levelVertices(level);
+        const tolerance = ALIGN_SNAP_RADIUS / view.scale;
+        // alignment wins (per axis, then the grid on the free axis)
+        if (alignPoint([x, z], targets, tolerance).guides.length > 0) {
+            const aligned = alignPoint(snappedWorld(point), targets, tolerance);
+            return { point: aligned.point, kind, guides: aligned.guides };
+        }
+        // angle snap from the chain's last point, relative to the previous wall (or the plan's X axis)
+        if (chain && rotationSnap) {
+            const refAngle = chainPrev ? Math.atan2(chain[1] - chainPrev[1], chain[0] - chainPrev[0]) : 0;
+            const snapped = angleSnap(chain, [x, z], refAngle, rotationSnapStep, ANGLE_SNAP_TOLERANCE);
+            if (snapped) {
+                // dashed guide along the ray, a bit past the point
+                const reach = Math.hypot(snapped.point[0] - chain[0], snapped.point[1] - chain[1]) + 80 / view.scale;
+                const far = [chain[0] + Math.cos(snapped.angle) * reach, chain[1] + Math.sin(snapped.angle) * reach];
+                return { point: snapped.point, kind, guides: [{ from: chain, to: far }] };
+            }
+        }
+        return { point: snappedWorld(point), kind, guides: [] };
     };
 
     // Wall tool click: first point starts the chain, the next ones add walls (see the header)
     const placePoint = ({ point, kind }) => {
-        if (chain == null) { setChain(point); return; }
-        const next = addWall(level, chain, point);
+        if (chain == null) { setChain(point); setChainPrev(null); return; }
+        const next = addWall(level, chain, point, undefined, useStore.getState().wallJustify);
         if (next == null) { setChain(null); return; } // same point again (double click): end
         setActiveLevel(next);
+        setChainPrev(chain);                           // the next wall's angle is measured from this one
         setChain(kind === 'vertex' ? null : point);    // joined an existing corner: end, else continue
     };
 
@@ -159,12 +200,14 @@ export default function PlanView2D() {
         const isMouse = event.pointerType === 'mouse';
         if (isMouse && event.button !== 0) {
             gestureRef.current = { kind: 'pan', wallId: null, start: point, moved: true, pans: true };
+            setIsPanning(true);
             return;
         }
         const { vertex, wallId } = isDrawing ? {} : (event.target.dataset ?? {});
+        // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
         gestureRef.current = vertex != null
             ? { kind: 'vertex', from: levelVertices(level)[Number(vertex)] }
-            : { kind: 'pan', wallId: wallId ?? null, start: point, moved: false, pans: !isMouse };
+            : { kind: 'pan', wallId: wallId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing, shift: event.shiftKey };
     };
 
     // One pointer: corner drag or pan. Two pointers: zoom by the change of their distance, at their
@@ -178,12 +221,17 @@ export default function PlanView2D() {
         if (previous == null) return;
         const gesture = gestureRef.current;
         if (pointers.size === 1 && gesture?.kind === 'vertex') {
-            const to = snappedWorld(point);
+            // align with the other corners (never with the dragged one's own start position)
+            const targets = levelVertices(level).filter((v) => v[0] !== gesture.from[0] || v[1] !== gesture.from[1]);
+            const { point: to, guides } = alignPoint(snappedWorld(point), targets, ALIGN_SNAP_RADIUS / view.scale);
             const next = moveVertex(level, gesture.from, to);
-            if (next) setDraft({ level: next, point: to }); // invalid (wall too short): keep the last valid one
+            // preview floors too (rebuilt like on commit; preview ids, never saved)
+            let previewId = 0; // unique keys for the preview floors
+            if (next) setDraft({ level: rebuildFloors(next, () => `preview-floor-${previewId++}`).level, point: to, guides }); // invalid: keep the last valid one
         } else if (pointers.size === 1) {
             if (gesture && Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
             if (gesture?.pans) setView((current) => current && panBy(current, point.x - previous.x, point.y - previous.y));
+            if (gesture?.boxes && gesture.moved) setBox({ start: gesture.start, end: point });
         } else if (pointers.size === 2) {
             const other = [...pointers.entries()].find(([id]) => id !== event.pointerId)[1];
             const before = Math.hypot(previous.x - other.x, previous.y - other.y);
@@ -203,12 +251,22 @@ export default function PlanView2D() {
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
         if (gesture.kind === 'vertex' && draft) setActiveLevel(draft.level);
-        if (gesture.kind === 'pan' && !gesture.moved) {
+        if (gesture.kind === 'pan' && gesture.boxes && gesture.moved && box) {
+            // box released: window (dragged right) or crossing (dragged left); Shift adds
+            const corner1 = toWorld(view, size.w, size.h, box.start.x, box.start.y);
+            const corner2 = toWorld(view, size.w, size.h, box.end.x, box.end.y);
+            const ids = wallsInBox(level.walls, corner1, corner2, box.end.x < box.start.x);
+            const { selectedWallIds: current, setSelectedWallIds } = useStore.getState();
+            setSelectedWallIds(gesture.shift ? [...new Set([...current, ...ids])] : ids);
+        } else if (gesture.kind === 'pan' && !gesture.moved) {
             if (isDrawing) placePoint(snapPoint(localPoint(event)));
+            else if (gesture.shift && gesture.wallId) useStore.getState().toggleSelectedWall(gesture.wallId);
             else setSelectedWallId(gesture.wallId);
         }
         gestureRef.current = null;
         setDraft(null);
+        setBox(null);
+        setIsPanning(false);
     };
 
     // Lost pointer (system gesture, capture lost): drop the gesture, never save a half drag
@@ -216,6 +274,8 @@ export default function PlanView2D() {
         pointersRef.current.delete(event.pointerId);
         gestureRef.current = null;
         setDraft(null);
+        setBox(null);
+        setIsPanning(false);
     };
 
     const isReady = size != null && view != null;
@@ -237,7 +297,7 @@ export default function PlanView2D() {
         <>
         <svg
             ref={svgRef}
-            className={isDrawing ? 'plan-view is-drawing' : 'plan-view'}
+            className={`plan-view${isDrawing ? ' is-drawing' : ''}${isPanning ? ' is-panning' : ''}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -262,7 +322,7 @@ export default function PlanView2D() {
                             <polygon
                                 key={wall.id}
                                 data-wall-id={wall.id}
-                                className={wall.id === selectedWallId && !isDrawing ? 'plan-wall is-selected' : 'plan-wall'}
+                                className={selectedWallIds.includes(wall.id) && !isDrawing ? 'plan-wall is-selected' : 'plan-wall'}
                                 points={[a, b, bOut, aOut].join(' ')}
                                 vectorEffect="non-scaling-stroke"
                             />
@@ -278,20 +338,38 @@ export default function PlanView2D() {
                     ))}
 
                     {/* wall tool: the wall being drawn (dashed, default thickness) and the snapped point */}
-                    {isDrawing && chain && hover && previewWall(shown, chain, hover.point)}
+                    {isDrawing && chain && hover && previewWall(shown, chain, hover.point, wallJustify)}
                     {isDrawing && chain && <circle className="plan-chain-start" cx={chain[0]} cy={chain[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />}
+                    {/* alignment guides: dashed lines from the corner the point lines up with */}
+                    {(draft?.guides ?? (isDrawing ? hover?.guides : null) ?? []).map((guide, index) => (
+                        <line key={index} className="plan-guide" x1={guide.from[0]} y1={guide.from[1]} x2={guide.to[0]} y2={guide.to[1]} vectorEffect="non-scaling-stroke" />
+                    ))}
                     {isDrawing && hover?.kind === 'vertex' && (
                         <circle className="plan-snap-ring" cx={hover.point[0]} cy={hover.point[1]} r={VERTEX_SNAP_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
                     )}
                 </g>
             )}
 
-            {/* wall tool: live length of the wall being drawn */}
+            {/* selection box: window (solid, dragged right) or crossing (dashed, dragged left) */}
+            {box && (
+                <rect
+                    className={box.end.x < box.start.x ? 'plan-box is-crossing' : 'plan-box'}
+                    x={Math.min(box.start.x, box.end.x)} y={Math.min(box.start.y, box.end.y)}
+                    width={Math.abs(box.end.x - box.start.x)} height={Math.abs(box.end.y - box.start.y)}
+                />
+            )}
+
+            {/* wall tool: live length and angle of the wall being drawn */}
             {isReady && isDrawing && chain && hover && lengthLabel(view, size, { a: chain, b: hover.point })}
+            {isReady && isDrawing && chain && hover && (chainPrev
+                ? angleIndicator(view, size, chain, chainPrev, hover.point, 180)                    // between walls
+                : angleIndicator(view, size, chain, [chain[0] + 1, chain[1]], hover.point, 0))}     // from the horizontal
+            {/* corner drag: angle between the dragged corner's two walls */}
+            {isReady && draft && cornerAngle(view, size, draft)}
 
             {/* length labels (screen space, constant size): the selected wall, and the walls of the dragged corner */}
             {isReady && shown.walls
-                .filter((wall) => wall.id === selectedWallId || (draft && (samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))))
+                .filter((wall) => selectedWallIds.includes(wall.id) || (draft && (samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))))
                 .map((wall) => lengthLabel(view, size, wall))}
 
         </svg>
@@ -319,12 +397,12 @@ function lengthLabel(view, size, wall) {
 }
 
 // Footprint of the wall the tool would add from `a` to `b` (joins included), dashed; null if too short
-function previewWall(level, a, b) {
-    const next = addWall(level, a, b, 'preview');
+function previewWall(level, a, b, justify) {
+    const next = addWall(level, a, b, 'preview', justify);
     if (next == null) return null;
     const wall = next.walls[next.walls.length - 1];
-    const { bOut, aOut } = wallFootprint(wall, next.walls);
-    return <polygon className="plan-wall-preview" points={[wall.a, wall.b, bOut, aOut].join(' ')} vectorEffect="non-scaling-stroke" />;
+    const { a: inA, b: inB, bOut, aOut } = wallFootprint(wall, next.walls);
+    return <polygon className="plan-wall-preview" points={[inA, inB, bOut, aOut].join(' ')} vectorEffect="non-scaling-stroke" />;
 }
 
 /*
@@ -354,4 +432,41 @@ function FlipButton({ view, size, wall }) {
             </svg>
         </button>
     );
+}
+
+/*
+* Angle indicator at `center` (screen space): an arc between the rays center -> p and center -> q, with the
+* angle value (smaller angle, degrees). Hidden when the angle is `hiddenAt` (180 = straight continuation,
+* 0 = horizontal first wall) within half a degree, or when a ray has no length.
+*/
+function angleIndicator(view, size, center, p, q, hiddenAt) {
+    if ((p[0] === center[0] && p[1] === center[1]) || (q[0] === center[0] && q[1] === center[1])) return null;
+    const degrees = angleBetween(center, p, q);
+    if (Math.abs(degrees - hiddenAt) < 0.5) return null;
+    const [cx, cy] = toScreen(view, size.w, size.h, center[0], center[1]);
+    const unit = (point) => {
+        const [x, y] = toScreen(view, size.w, size.h, point[0], point[1]);
+        const length = Math.hypot(x - cx, y - cy);
+        return [(x - cx) / length, (y - cy) / length];
+    };
+    const u1 = unit(p), u2 = unit(q);
+    const r = ANGLE_ARC_RADIUS;
+    const sweep = u1[0] * u2[1] - u1[1] * u2[0] > 0 ? 1 : 0; // clockwise on screen (y down)
+    const bisector = [u1[0] + u2[0], u1[1] + u2[1]];
+    const bisectorLength = Math.hypot(bisector[0], bisector[1]) || 1;
+    const lx = cx + (bisector[0] / bisectorLength) * (r + 16), ly = cy + (bisector[1] / bisectorLength) * (r + 16);
+    return (
+        <g key="angle" pointerEvents="none">
+            <path className="plan-angle-arc" d={`M${cx + u1[0] * r} ${cy + u1[1] * r}A${r} ${r} 0 0 ${sweep} ${cx + u2[0] * r} ${cy + u2[1] * r}`} />
+            <text className="plan-length" x={lx} y={ly}>{`${degrees.toFixed(degrees % 1 < 0.05 || degrees % 1 > 0.95 ? 0 : 1)}°`}</text>
+        </g>
+    );
+}
+
+// Corner drag: the angle between the two walls meeting at the dragged corner (none if it has 1 or 3+ walls)
+function cornerAngle(view, size, draft) {
+    const ends = draft.level.walls
+        .filter((wall) => samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))
+        .map((wall) => (samePoint(wall.a, draft.point) ? wall.b : wall.a));
+    return ends.length === 2 ? angleIndicator(view, size, draft.point, ends[0], ends[1], 180) : null;
 }

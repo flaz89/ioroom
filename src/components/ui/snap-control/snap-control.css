@@ -37,3 +37,11 @@
     outline: 2px solid white;
     outline-offset: 2px;
 }
+
+/* steps revealed to the RIGHT (controls in the left toolbar) */
+.snap-steps.is-right {
+    right: auto;
+    left: 100%;
+    padding-right: 0;
+    padding-left: 1em;
+}

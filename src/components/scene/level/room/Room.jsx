@@ -48,12 +48,13 @@ function onDragDrop(event) {
 
 /*
 * BUILDER (store workspace 'builder', 3D view): a click on a wall face selects that wall (store
-* selectedWallId, shared with the 2D plan; WallPanel.jsx shows its sizes), a click on a floor deselects.
+* selectedWallIds, shared with the 2D plan; WallPanel.jsx shows its sizes), a click on a floor deselects.
 * Not while a tool owns the click (ruler, post-it) and not at the end of an orbit drag: the pointer must
 * not have moved more than CLICK_SLOP px since the press (pmndrs events have no usable `delta`: its getter
 * throws, so the press position is recorded here). The selected wall's faces are tinted like a material preview.
 */
 const CLICK_SLOP = 4; // px
+const NO_WALLS = []; // stable empty selection outside the builder
 const pressPositions = new Map(); // pointerId -> { x, y } screen position of the last press on the room
 function onBuilderPress(event) {
     const native = event.nativeEvent;
@@ -98,7 +99,7 @@ export default function Room() {
     const drag = useStore((state) => state.materialDrag);
     // Builder: selected wall (orange tint) and wall under the mouse (light tint + hand cursor)
     const isBuilder = useStore((state) => state.workspace === 'builder');
-    const selectedWallId = useStore((state) => (state.workspace === 'builder' ? state.selectedWallId : null));
+    const selectedWallIds = useStore((state) => (state.workspace === 'builder' ? state.selectedWallIds : NO_WALLS));
     const [hoverWallId, setHoverWallId] = useState(null);
     const hoveredWallId = isBuilder ? hoverWallId : null;
     useEffect(() => {
@@ -122,7 +123,7 @@ export default function Room() {
         const groups = new Map();
         for (const face of faces) {
             const previewed = drag?.surfaceId === face.surfaceId;
-            const selected = selectedWallId != null && face.surfaceId.startsWith(`${selectedWallId}:`);
+            const selected = selectedWallIds.includes(face.surfaceId.split(':')[0]);
             const hovered = hoveredWallId != null && face.surfaceId.startsWith(`${hoveredWallId}:`);
             const materialId = previewed ? drag.materialId : (surfaces[face.surfaceId] ?? PLAIN_ID);
             const tinted = previewed || selected || (hovered ? 'hover' : false); // SurfaceMesh: 'hover' = lighter
@@ -134,7 +135,7 @@ export default function Room() {
             const { geometry, faceRanges } = mergeFaces(group.faces);
             return { ...group, geometry, spherecast: spherecastFaces(faceRanges), userData: { faceRanges, ...(group.vertical ? { surface: 'wall' } : {}) } };
         });
-    }, [faces, surfaces, drag, selectedWallId, hoveredWallId]);
+    }, [faces, surfaces, drag, selectedWallIds, hoveredWallId]);
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (

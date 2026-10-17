@@ -8,7 +8,17 @@ import SunPanel from "./sun-panel/SunPanel";
 import MaterialsPanel from "./materials-panel/MaterialsPanel";
 import BillPanel from "./bill-panel/BillPanel";
 import RoomUsers from "./room-users/RoomUsers";
+import SnapControl from "./snap-control/SnapControl";
 import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
+
+// Wall tool thickness side (store wallJustify), seen along the drawing direction
+const JUSTIFY_STEPS = ['left', 'center', 'right'];
+const JUSTIFY_LABELS = { left: 'L', center: 'C', right: 'R' };
+const JUSTIFY_TITLES = {
+    left: 'Draw walls: thickness on the left of the drawing direction',
+    center: 'Draw walls: the line is the wall axis (half thickness each side)',
+    right: 'Draw walls: thickness on the right of the drawing direction'
+};
 
 export default function LeftToolBar() {
 
@@ -33,6 +43,8 @@ export default function LeftToolBar() {
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const planTool = useStore((state) => state.planTool);
     const setPlanTool = useStore((state) => state.setPlanTool);
+    const wallJustify = useStore((state) => state.wallJustify);
+    const setWallJustify = useStore((state) => state.setWallJustify);
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -46,10 +58,20 @@ export default function LeftToolBar() {
             {/* bottom: the environment tools, then the settings group (last, anchored to the bottom edge) */}
             <div className="left-tools">
                 {/* environment tools: designer mode only */}
-                {/* plan tools (builder, 2D): draw walls */}
+                {/* plan tools (builder, 2D): draw walls; hover reveals the thickness side (Left / Center / Right) */}
                 {isPlanView && <div className="scene-settings">
-                    <CircleButton svg={svg.wall} onClick={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')} isActive={planTool === 'wall'}
-                        title={planTool === 'wall' ? "Click to place points, click a corner or Esc to finish" : "Draw walls"}/>
+                    <SnapControl
+                        icon={svg.wall}
+                        label="Draw walls"
+                        enabled={planTool === 'wall'}
+                        step={wallJustify}
+                        steps={JUSTIFY_STEPS}
+                        labels={JUSTIFY_LABELS}
+                        titles={JUSTIFY_TITLES}
+                        side="right"
+                        onToggle={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')}
+                        onPick={(justify) => { setWallJustify(justify); setPlanTool('wall'); }}
+                    />
                 </div>}
 
                 {isDesigner && <div className="scene-settings">

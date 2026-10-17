@@ -5,9 +5,11 @@
 * Guests are always in 'designer' (the switch is shown to the admin only, WorkspaceSwitch.jsx).
 * builderView: how the builder shows the environment — '2d' (top view plan, components/builder/PlanView2D.jsx)
 *   or '3d' (the perspective 3D scene). Kept when leaving and re-entering the builder.
-* selectedWallId: wall selected in the builder (2D plan or 3D scene), shared by both views; its panel is
-*   WallPanel.jsx. Cleared when leaving the builder or changing tool.
+* selectedWallIds: walls selected in the builder (2D plan or 3D scene), shared by both views; their panel is
+*   WallPanel.jsx (one wall: sizes; several: common thickness / height, delete). Cleared when leaving the
+*   builder or changing tool. Single wall: singleSelectedWall(state).
 * planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls).
+* wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
 * planGrid: { minor, major } grid steps (meters) of the open 2D plan view, null when it is closed
 *   (published by PlanView2D.jsx, shown by PlanGridLegend.jsx in the bottom bar).
 * Not to be confused with view.mode (viewSlice.js: 'life' / 'tabletop' presentation in XR).
@@ -22,11 +24,22 @@ export const createWorkspaceSlice = (set, get) => ({
 
     setBuilderView: (builderView) => set({ builderView }),
 
-    selectedWallId: null,
-    setSelectedWallId: (selectedWallId) => set({ selectedWallId }),
+    selectedWallIds: [],
+    // one wall (or none with null)
+    setSelectedWallId: (wallId) => set({ selectedWallIds: wallId ? [wallId] : [] }),
+    setSelectedWallIds: (selectedWallIds) => set({ selectedWallIds }),
+    // Shift+click: adds the wall, or removes it if already selected
+    toggleSelectedWall: (wallId) => set((state) => ({
+        selectedWallIds: state.selectedWallIds.includes(wallId)
+            ? state.selectedWallIds.filter((id) => id !== wallId)
+            : [...state.selectedWallIds, wallId]
+    })),
 
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallId: null }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [] }),
+
+    wallJustify: 'left',
+    setWallJustify: (wallJustify) => set({ wallJustify }),
 
     planGrid: null,
     setPlanGrid: (planGrid) => set({ planGrid }),
@@ -41,6 +54,9 @@ export const createWorkspaceSlice = (set, get) => ({
             if (state.notes.placing) state.setPlacingNote(false);
             if (DESIGNER_PANELS.includes(state.openPanel)) state.closePanel();
         }
-        set({ workspace, selectedWallId: null });
+        set({ workspace, selectedWallIds: [] });
     }
 });
+
+// The selected wall when exactly one is selected, else null (single-wall tools: sizes, flip)
+export const singleSelectedWall = (state) => (state.selectedWallIds.length === 1 ? state.selectedWallIds[0] : null);
