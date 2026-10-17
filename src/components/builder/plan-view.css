@@ -158,6 +158,10 @@
     cursor: pointer;
 }
 .wall-panel-actions button:hover { background: rgba(255, 255, 255, 0.16); }
+.wall-panel-actions button:disabled { opacity: .4; cursor: default; }
+/* openings of the selected wall: one row each, × removes it */
+.wall-panel-opening { display: flex; justify-content: space-between; align-items: center; font-size: .9em; opacity: .9; }
+.wall-panel-opening button { border: none; background: none; color: #ff8a8a; font: inherit; cursor: pointer; }
 .wall-panel-actions button.is-danger { border-color: rgba(255, 80, 80, 0.6); color: #ff8a8a; }
 .wall-panel-actions button.is-danger:hover { background: rgba(255, 60, 60, 0.18); }
 

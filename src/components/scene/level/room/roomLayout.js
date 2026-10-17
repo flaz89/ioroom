@@ -1,6 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, Vector3 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { faceOffsets, openingRects, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
@@ -11,6 +12,8 @@ import { polygonArea, wallFootprint, wallFrame } from '../../../../plan/planMode
 *   Faces: inner, outer, top and the free ends ("edge"); the bottom sits on the floor (not built) and the
 *   ends at a joint are inside the neighbour (not built). UVs in meters, anchored to the world along the
 *   wall direction, so a pattern continues across collinear walls; never mirrored seen from outside.
+*   Openings (doors / windows, planModel.openingRects) are cut through the inner and outer faces; their
+*   reveals (jambs, head, sill / threshold) belong to the wall's "edge" face.
 * Face ids: floor.id, '<wall>:inner' | ':outer' | ':edge'. Every geometry is indexed with position, normal
 * and uv, so batches can be merged (roomGeometry.js mergeFaces).
 */
@@ -39,20 +42,48 @@ export function polygonGeometry(points, y = 0, facingDown = false) {
     return planarUVs(geometry, facingDown ? 'ny' : 'py');
 }
 
+/*
+* One face of a wall with the openings cut out, as columns of quads between the openings' sides (no
+* triangulation, exact UVs). t0 / t1: the face's extent along the drawn line (from `a`); h: wall height;
+* point(t, y) / uv(t, y): 3D point and UV of the face at (t, y). Openings never overlap (addOpening).
+*/
+function holedFace(t0, t1, h, rects, point, normal, uv) {
+    const cuts = [...new Set([t0, t1, ...rects.flatMap((r) => [r.from, r.to]).filter((t) => t > t0 && t < t1)])].sort((p, q) => p - q);
+    const quads = [];
+    for (let i = 1; i < cuts.length; i++) {
+        const ta = cuts[i - 1], tb = cuts[i];
+        if (tb - ta < 1e-6) continue;
+        const hole = rects.find((r) => r.from < (ta + tb) / 2 && r.to > (ta + tb) / 2);
+        const spans = hole ? [[0, hole.bottom], [hole.top, h]] : [[0, h]]; // solid parts of this column
+        for (const [y0, y1] of spans) {
+            if (y1 - y0 < 1e-6) continue;
+            const corners = [[ta, y0], [tb, y0], [tb, y1], [ta, y1]];
+            quads.push(quad(corners.map(([t, y]) => point(t, y)), normal, corners.map(([t, y]) => uv(t, y))));
+        }
+    }
+    return quads.length === 1 ? quads[0] : mergeGeometries(quads);
+}
+
 // The faces of one wall: [{ part: 'inner' | 'outer' | 'edge', geometry, vertical }]
 function wallGeometries(wall, level) {
     const h = wallHeight(wall, level);
     const { dir, normal } = wallFrame(wall);
     const { a, b, aOut, bOut, aJoined, bJoined } = wallFootprint(wall, level.walls);
+    const offsets = faceOffsets(wall);
+    const rects = openingRects(wall, h);
     const at = (p, y) => [p[0], y, p[1]];
     const along = (p) => p[0] * dir[0] + p[1] * dir[1];     // world-anchored coordinate along the wall
     const across = (p) => p[0] * normal[0] + p[1] * normal[1];
+    const lineT = (p) => (p[0] - wall.a[0]) * dir[0] + (p[1] - wall.a[1]) * dir[1]; // distance from `a` along the line
+    // 3D point at distance t along the line, `offset` from it along the normal (a face), height y
+    const onLine = (t, offset, y) => [wall.a[0] + dir[0] * t + normal[0] * offset, y, wall.a[1] + dir[1] * t + normal[1] * offset];
+    const along0 = along(wall.a), across0 = across(wall.a);
     const inward = [-normal[0], 0, -normal[1]];
     const faces = [
-        { part: 'inner', vertical: true, geometry: quad([at(a, 0), at(b, 0), at(b, h), at(a, h)], inward,
-            [[along(a), 0], [along(b), 0], [along(b), h], [along(a), h]]) },
-        { part: 'outer', vertical: true, geometry: quad([at(aOut, 0), at(bOut, 0), at(bOut, h), at(aOut, h)], [normal[0], 0, normal[1]],
-            [[-along(aOut), 0], [-along(bOut), 0], [-along(bOut), h], [-along(aOut), h]]) },
+        { part: 'inner', vertical: true, geometry: holedFace(lineT(a), lineT(b), h, rects,
+            (t, y) => onLine(t, offsets.inner, y), inward, (t, y) => [along0 + t, y]) },
+        { part: 'outer', vertical: true, geometry: holedFace(lineT(aOut), lineT(bOut), h, rects,
+            (t, y) => onLine(t, offsets.outer, y), [normal[0], 0, normal[1]], (t, y) => [-(along0 + t), y]) },
         { part: 'edge', vertical: false, geometry: quad([at(a, h), at(b, h), at(bOut, h), at(aOut, h)], [0, 1, 0],
             [a, b, bOut, aOut].map((p) => [along(p), across(p)])) }
     ];
@@ -60,6 +91,21 @@ function wallGeometries(wall, level) {
         [[across(a), 0], [across(aOut), 0], [across(aOut), h], [across(a), h]]) });
     if (!bJoined) faces.push({ part: 'edge', vertical: true, geometry: quad([at(b, 0), at(bOut, 0), at(bOut, h), at(b, h)], [dir[0], 0, dir[1]],
         [[-across(b), 0], [-across(bOut), 0], [-across(bOut), h], [-across(b), h]]) });
+    // Reveals of each opening, through the wall's thickness: jambs facing into the opening, head facing
+    // down, sill (window) / threshold (door) facing up
+    const { inner: fi, outer: fo } = offsets;
+    for (const { from, to, bottom, top } of rects) {
+        const jamb = (t, sign) => quad([onLine(t, fi, bottom), onLine(t, fo, bottom), onLine(t, fo, top), onLine(t, fi, top)],
+            [dir[0] * sign, 0, dir[1] * sign], [[across0 + fi, bottom], [across0 + fo, bottom], [across0 + fo, top], [across0 + fi, top]]);
+        const flat = (y, up) => quad([onLine(from, fi, y), onLine(to, fi, y), onLine(to, fo, y), onLine(from, fo, y)],
+            [0, up, 0], [[along0 + from, across0 + fi], [along0 + to, across0 + fi], [along0 + to, across0 + fo], [along0 + from, across0 + fo]]);
+        faces.push(
+            { part: 'edge', vertical: true, geometry: jamb(from, 1) },
+            { part: 'edge', vertical: true, geometry: jamb(to, -1) },
+            { part: 'edge', vertical: false, geometry: flat(top, -1) },
+            { part: 'edge', vertical: false, geometry: flat(bottom, 1) }
+        );
+    }
     return faces;
 }
 
@@ -84,7 +130,8 @@ export function roomFaces(level) {
 /*
 * Area of every face id of a level: { surfaceId: m² }, from the plan data (no geometry): floor polygons;
 * inner face = inner line x height (exactly the side the room sees); outer = outer line x height; edge =
-* top (footprint) + free ends. Rounded to cm².
+* top (footprint) + free ends + opening reveals. Openings are subtracted from the inner / outer faces
+* (the part of each opening within that face). Rounded to cm².
 */
 export function surfaceAreas(level) {
     const areas = {};
@@ -94,10 +141,16 @@ export function surfaceAreas(level) {
         const h = wallHeight(wall, level);
         const f = wallFootprint(wall, level.walls);
         const length = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
-        put(`${wall.id}:inner`, length(f.a, f.b) * h);
-        put(`${wall.id}:outer`, length(f.aOut, f.bOut) * h);
+        const { dir } = wallFrame(wall);
+        const lineT = (p) => (p[0] - wall.a[0]) * dir[0] + (p[1] - wall.a[1]) * dir[1];
+        const rects = openingRects(wall, h);
+        // area of the openings within a face spanning t0..t1 along the line
+        const holes = (t0, t1) => rects.reduce((sum, r) => sum + Math.max(0, Math.min(r.to, t1) - Math.max(r.from, t0)) * (r.top - r.bottom), 0);
+        const reveals = rects.reduce((sum, r) => sum + 2 * ((r.top - r.bottom) + (r.to - r.from)) * wall.thickness, 0);
+        put(`${wall.id}:inner`, length(f.a, f.b) * h - holes(lineT(f.a), lineT(f.b)));
+        put(`${wall.id}:outer`, length(f.aOut, f.bOut) * h - holes(lineT(f.aOut), lineT(f.bOut)));
         put(`${wall.id}:edge`, polygonArea([f.a, f.b, f.bOut, f.aOut])
-            + (f.aJoined ? 0 : length(f.a, f.aOut) * h) + (f.bJoined ? 0 : length(f.b, f.bOut) * h));
+            + (f.aJoined ? 0 : length(f.a, f.aOut) * h) + (f.bJoined ? 0 : length(f.b, f.bOut) * h) + reveals);
     }
     return areas;
 }

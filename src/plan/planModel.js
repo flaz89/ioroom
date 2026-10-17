@@ -11,7 +11,8 @@
 *   wall's axis (half thickness each side). Walls sharing an end point are mitered face by face
 *   (wallFootprint), so they meet cleanly at any angle; a free end is closed by an end face.
 *   Face ids: '<wall id>:inner' | ':outer' | ':edge' (top and free ends).
-* ponytail: one level, no doors / windows yet (they will be openings of a wall, subtracted from areas).
+*   openings?: [opening] — doors / windows cut in the wall (see OPENINGS below).
+* ponytail: one level for now.
 */
 export const DEFAULT_WALL_HEIGHT = 2.7;
 export const DEFAULT_THICKNESS = 0.15;
@@ -225,7 +226,9 @@ export function nearestVertex(level, point, maxDistance) {
 * is now ':outer' (the caller swaps the surface materials, planSlice.flipWallSide).
 */
 export function flipWall(level, wallId) {
-    return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, a: wall.b, b: wall.a } : wall)) };
+    // openings keep their place in the world: their offset is measured from the other end now
+    const flipped = (wall) => (wall.openings ? { openings: wall.openings.map((o) => ({ ...o, offset: wallFrame(wall).length - o.offset })) } : {});
+    return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, a: wall.b, b: wall.a, ...flipped(wall) } : wall)) };
 }
 
 // The level without wall `wallId` (floors untouched: they are rebuilt from closed perimeters later)
@@ -243,10 +246,71 @@ export function splitWall(level, wallId, newId = newWallId()) {
     if (wall == null || wallFrame(wall).length < 2 * MIN_WALL_LENGTH) return null;
     const middle = [(wall.a[0] + wall.b[0]) / 2, (wall.a[1] + wall.b[1]) / 2];
     const { name, ...rest } = wall; // eslint-disable-line no-unused-vars -- the second piece gets no name
-    const first = { ...wall, b: middle };
-    const second = { ...rest, id: newId, a: middle };
+    // each opening goes to the piece holding its center (an opening across the middle is clipped there)
+    const half = wallFrame(wall).length / 2;
+    const openings = wall.openings ?? [];
+    const first = { ...wall, b: middle, ...(wall.openings ? { openings: openings.filter((o) => o.offset < half) } : {}) };
+    const second = { ...rest, id: newId, a: middle,
+        ...(wall.openings ? { openings: openings.filter((o) => o.offset >= half).map((o) => ({ ...o, offset: o.offset - half })) } : {}) };
     const walls = level.walls.flatMap((item) => (item.id === wallId ? [first, second] : [item]));
     return { ...level, walls };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// OPENINGS (doors / windows): holes through a wall, stored IN the wall (wall.openings), so they move,
+// split and flip with it and sync / undo with the plan.
+// opening: { id, type: 'door' | 'window', offset, width, height, sill } in meters: offset = distance from
+// the wall's start `a` to the opening's CENTER along the drawn line; sill = bottom above the floor (0 = door).
+// ---------------------------------------------------------------------------------------------------
+export const OPENING_DEFAULTS = {
+    door: { width: 0.9, height: 2.1, sill: 0 },
+    window: { width: 1.2, height: 1.4, sill: 0.9 }
+};
+const MIN_LINTEL = 0.05; // meters of wall always kept above an opening (the wall's top is never cut)
+
+export const newOpeningId = () => `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+/*
+* The openings of a wall as rectangles CLIPPED to the wall: [{ opening, from, to, bottom, top }] (from / to
+* along the drawn line from `a`, bottom / top above the floor). Clipped when read, never in the data:
+* shortening a wall hides the part of an opening past its end, lengthening it again brings it back.
+* Shared by the 3D geometry and the areas (roomLayout.js), so they always agree.
+*/
+export function openingRects(wall, height) {
+    const { length } = wallFrame(wall);
+    return (wall.openings ?? []).map((opening) => ({
+        opening,
+        from: Math.max(0, opening.offset - opening.width / 2),
+        to: Math.min(length, opening.offset + opening.width / 2),
+        bottom: Math.min(opening.sill, height),
+        top: Math.min(opening.sill + opening.height, height - MIN_LINTEL)
+    })).filter((rect) => rect.to - rect.from > 1e-6 && rect.top - rect.bottom > 1e-6);
+}
+
+/*
+* The level with a new opening of `type` (OPENING_DEFAULTS size) on wall `wallId`, centered in the widest
+* free stretch of the wall (between its ends and the other openings). Null when it does not fit.
+*/
+export function addOpening(level, wallId, type, id = newOpeningId()) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    if (wall == null) return null;
+    const { length } = wallFrame(wall);
+    const size = OPENING_DEFAULTS[type];
+    const taken = (wall.openings ?? []).map((o) => [o.offset - o.width / 2, o.offset + o.width / 2]).sort((p, q) => p[0] - q[0]);
+    let best = [0, 0], cursor = 0;
+    for (const [from, to] of [...taken, [length, length]]) {
+        if (from - cursor > best[1] - best[0]) best = [cursor, from];
+        cursor = Math.max(cursor, to);
+    }
+    if (best[1] - best[0] < size.width) return null;
+    const opening = { id, type, offset: (best[0] + best[1]) / 2, ...size };
+    return updateWall(level, wallId, { openings: [...(wall.openings ?? []), opening] });
+}
+
+// The level without opening `openingId` of wall `wallId`
+export function removeOpening(level, wallId, openingId) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    return updateWall(level, wallId, { openings: (wall?.openings ?? []).filter((o) => o.id !== openingId) });
 }
 
 // Face ids of a wall (keys of its materials in the store `surfaces`)

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, addOpening } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -14,13 +14,22 @@ assert.ok(near(areas['wall-back:inner'], 6 * 2.7) && near(areas['wall-left:inner
 assert.ok(near(areas['wall-back:outer'], 6.3 * 2.7), `${areas['wall-back:outer']}`);
 // left wall edge: top trapezoid (6.15 + 6) / 2 x 0.15 + its open end 0.15 x 2.7
 assert.ok(near(areas['wall-left:edge'], (6.15 + 6) / 2 * 0.15 + 0.15 * 2.7), `${areas['wall-left:edge']}`);
+// a window (1.2 x 1.4) and a door (0.9 x 2.1) on the back wall (0.15 thick): holes off both faces, reveals on the edge
+const holed = addOpening(addOpening(level, 'wall-back', 'window', 'o1'), 'wall-back', 'door', 'o2');
+const holedAreas = surfaceAreas(holed);
+const holes = 1.2 * 1.4 + 0.9 * 2.1;
+assert.ok(near(holedAreas['wall-back:inner'], 6 * 2.7 - holes), `${holedAreas['wall-back:inner']}`);
+assert.ok(near(holedAreas['wall-back:outer'], 6.3 * 2.7 - holes));
+assert.ok(near(holedAreas['wall-back:edge'] - areas['wall-back:edge'], 2 * (1.4 + 1.2 + 2.1 + 0.9) * 0.15));
 // every face: normal attribute agrees with the triangle winding (front faces outwards / inwards as declared)
-for (const face of roomFaces(level)) {
+for (const face of [...roomFaces(level), ...roomFaces(holed)]) {
     const { position, normal } = face.geometry.attributes;
     const index = face.geometry.index;
-    const p = [0, 1, 2].map((k) => new Vector3().fromBufferAttribute(position, index.getX(k)));
-    const winding = p[1].clone().sub(p[0]).cross(p[2].clone().sub(p[0]));
-    assert.ok(winding.dot(new Vector3().fromBufferAttribute(normal, 0)) > 0, `${face.key} winding`);
+    for (let t = 0; t < index.count; t += 3) {
+        const p = [0, 1, 2].map((k) => new Vector3().fromBufferAttribute(position, index.getX(t + k)));
+        const winding = p[1].clone().sub(p[0]).cross(p[2].clone().sub(p[0]));
+        assert.ok(winding.dot(new Vector3().fromBufferAttribute(normal, index.getX(t))) > 0, `${face.key} winding`);
+    }
     assert.ok(face.geometry.attributes.uv != null && index != null, `${face.key} attributes`);
 }
 // the back wall inner face faces the room (+z) and its UVs run in meters along x

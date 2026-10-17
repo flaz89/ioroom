@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, setWallLength, updateWall, wallFrame } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, addOpening, removeOpening, setWallLength, updateWall, wallFrame } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -14,6 +14,8 @@ import './plan-view.css';
 * field goes back to the current value.
 * - Length: the wall's start stays fixed, its end slides along the wall (walls joined there follow).
 * - Height: shows the level's default height until set on this wall (wall.height).
+* - Door / Window: a new opening (default size) in the widest free stretch of the wall; each opening is
+*   listed with × to remove it. ponytail: no opening editing here yet (position / size: next step).
 * - Split: two walls joined at the middle (the second copies the materials); Delete (or the Del / Backspace
 *   key): removes the wall and its materials. Both one undo step.
 */
@@ -105,6 +107,23 @@ export default function WallPanel() {
                     <button className={wall.align === 'center' ? 'is-active' : undefined}
                         onClick={() => setActiveLevel(updateWall(level, wallId, { align: 'center' }))} title="The line is the wall axis (half thickness each side)">Axis</button>
                 </div>
+            </div>
+            {(wall.openings ?? []).map((opening) => (
+                <div key={opening.id} className="wall-panel-opening">
+                    <span>{`${opening.type === 'door' ? 'Door' : 'Window'} ${opening.width.toFixed(2)} × ${opening.height.toFixed(2)}`}</span>
+                    <button onClick={() => setActiveLevel(removeOpening(level, wallId, opening.id))} title="Remove this opening">×</button>
+                </div>
+            ))}
+            <div className="wall-panel-actions">
+                {['door', 'window'].map((type) => {
+                    const next = addOpening(level, wallId, type);
+                    return (
+                        <button key={type} disabled={next == null} onClick={() => setActiveLevel(next)}
+                            title={next ? `Add a ${type} in the widest free stretch of the wall` : `No room for a ${type} on this wall`}>
+                            {type === 'door' ? '+ Door' : '+ Window'}
+                        </button>
+                    );
+                })}
             </div>
             <div className="wall-panel-actions">
                 <button onClick={() => splitWallInHalf(wallId)} title="Split this wall in two at its middle (then drag the new corner in 2D)">Split</button>
