@@ -30,6 +30,8 @@ export default function RightToolBar() {
     const setGridSnapStep = useStore(state => state.setGridSnapStep);
     const toggleRotationSnap = useStore(state => state.toggleRotationSnap);
     const setRotationSnapStep = useStore(state => state.setRotationSnapStep);
+    // Furniture and post-its belong to the designer mode (store/slices/workspaceSlice.js)
+    const isDesigner = useStore(state => state.workspace === 'designer');
     // VR/AR buttons enabled only when the browser can actually start that session (headset browser, or a
     // PC with a headset connected via Link/SteamVR)
     const isVRSupported = useXRModeSupported('immersive-vr');
@@ -84,15 +86,15 @@ export default function RightToolBar() {
                         onPick={setRotationSnapStep}
                     />
                     <CircleButton svg={svg.ruler} onClick={() => setMeasuring(!isMeasuring)} isActive={isMeasuring} title={isMeasuring ? "Click two points to measure (Esc to stop)" : "Measure"}/>
-                    <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>
+                    {isDesigner && <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>}
                 </div>
 
-                <div className='objects-selection'>
+                {isDesigner && <div className='objects-selection'>
                     {/* orange "+" (same orange as the snap step buttons) */}
                     <CircleButton svg={svg.add} onClick={() => togglePanel('objects')} title={"Add"} isActive={objectsMenuOpen} style={objectsMenuOpen ? undefined : { color: '#ff9a1a' }}/>
                     { selectedObject && <CircleButton svg={svg.trash} style={{background: "linear-gradient(35deg, rgba(255, 0, 0, 1) 0%, rgba(203, 0, 0, 0.56) 60%)"}} onClick={() => { if (!isLockedByOther(selectedObject)) removeSelectedObject(selectedObject); }} title={"Delete selected object"}/> }
                     { objectsMenuOpen && (<ObjectsMenu onClose={closePanel}/>) }
-                </div>
+                </div>}
                 
                 <div className="experience-mode">
                     <CircleButton svg={vrMode} onClick={() => enterXR('immersive-vr').catch(console.error)} isDisabled={!isVRSupported} title={isVRSupported ? "VR Mode" : "VR not available: open in the headset browser, or connect a headset (Windows + Link)"}/>

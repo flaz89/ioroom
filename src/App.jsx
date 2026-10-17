@@ -6,11 +6,13 @@ import LeftToolBar from './components/ui/LeftToolBar';
 import PerfPanel from './components/ui/perf-panel/PerfPanel';
 import { useEffect } from 'react';
 import { SYNC_HOST, connectRoom, getRoomId } from './sync/roomSync';
+import { undo, redo } from './sync/history';
 import { listMaterials } from './materials/materialsApi';
 import { useStore } from './store/appStore';
 import RoomNotice from './components/ui/room-notice/RoomNotice';
 import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
+import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
 
 
 /* 
@@ -20,8 +22,6 @@ import NoteModal from './components/ui/note-modal/NoteModal';
 
 export default function App() {
 
-  // Shared room (?room=<id> in the URL): same scene on every device that opens the link.
-  // Skipped when VITE_SYNC_HOST is not configured, or without a room (only the owner creates rooms).
   // Material library (textures stored in R2, server/src/materials.js): loaded once for everyone, rooms
   // may use any of them. Without the sync server only the plain material exists.
   useEffect(() => {
@@ -31,11 +31,25 @@ export default function App() {
       .catch((error) => console.warn('Material library not loaded:', error.message));
   }, []);
 
+  // Environment document: always created (undo / redo, sync/history.js). Shared room (?room=<id> in the
+  // URL, same scene on every device that opens the link) only when VITE_SYNC_HOST is configured;
+  // otherwise local mode (only the owner creates rooms).
+  useEffect(() => connectRoom(SYNC_HOST ? getRoomId() : null), []);
+
+  // Undo / redo shortcuts: Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z, Ctrl+Y. Text fields keep their own undo.
   useEffect(() => {
-    if (!SYNC_HOST) return;
-    const room = getRoomId();
-    if (room == null) return;
-    return connectRoom(room);
+    const onKey = (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const target = event.target;
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) undo();
+      else if ((key === 'z' && event.shiftKey) || key === 'y') redo();
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   return (
@@ -48,6 +62,7 @@ export default function App() {
           <CompassBar/>
           <RoomNotice/>
           <NoteModal/>
+          <WorkspaceSwitch/>
         </div>
         
       </div>

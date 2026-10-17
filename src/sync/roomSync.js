@@ -5,6 +5,7 @@ import { useStore } from '../store/appStore';
 import { bindAwareness } from './presence';
 import { bindSun } from './sunSync';
 import { bindFieldMap } from './fieldMapSync';
+import { LOCAL, SEED, isOwnOrigin, startHistory } from './history';
 
 /*
 * Shared room sync: keeps the scene objects (store objects.instances) identical on every device that
@@ -37,7 +38,6 @@ export const SYNC_HOST = import.meta.env.VITE_SYNC_HOST;
 // wrangler dev server). Used by roomsApi.js and materials/materialsApi.js.
 export const API_ORIGIN = `${/^(localhost|127\.)/.test(SYNC_HOST ?? '') ? 'http' : 'https'}://${SYNC_HOST}`;
 const PARTY = 'rooms'; // kebab-case of the Rooms Durable Object binding (server/wrangler.jsonc)
-const LOCAL = Symbol('local'); // transaction origin of this device's own edits
 const ROOM_NOT_FOUND = 4004;   // close code of the server for rooms that do not exist (and cannot be created)
 const ADMIN_TOKEN_KEY = 'ioroom.adminToken';
 
@@ -92,17 +92,17 @@ function bindInstances(doc, yMap, select, replaceAll) {
     let applyingRemote = false; // true while remote state is written into the store (no echo back)
 
     // local -> room: only what changed (instances are immutable, so a new reference = an edit)
-    const push = (list, previous) => {
+    const push = (list, previous, origin = LOCAL) => {
         const previousRefs = new Set(previous);
         const ids = new Set(list.map((item) => item.id));
         doc.transact(() => {
             for (const item of list) if (!previousRefs.has(item)) yMap.set(item.id, item);
             for (const item of previous) if (!ids.has(item.id)) yMap.delete(item.id);
-        }, LOCAL);
+        }, origin);
     };
 
     // What this device already has joins the room (new room: it seeds it; existing room: it merges in)
-    push(select(useStore.getState()), []);
+    push(select(useStore.getState()), [], SEED); // not an undoable edit (history.js)
 
     const unsubscribe = useStore.subscribe((state, previousState) => {
         const list = select(state);
@@ -112,7 +112,7 @@ function bindInstances(doc, yMap, select, replaceAll) {
 
     // room -> local
     const pull = (event) => {
-        if (event.transaction.origin === LOCAL) return;
+        if (isOwnOrigin(event.transaction.origin)) return;
         applyingRemote = true;
         replaceAll(Array.from(yMap.values()));
         applyingRemote = false;
@@ -125,33 +125,40 @@ function bindInstances(doc, yMap, select, replaceAll) {
     };
 }
 
-// Connects this device to `room`; returns the disconnect function
+/*
+* Creates the environment document and binds the store to it; returns the disconnect function.
+* room: id of the shared room to join, or null (local mode: same document and bindings, no provider, so
+* the scene is not shared). The document always exists so that undo / redo (history.js) works the same
+* with and without a room.
+*/
 export function connectRoom(room) {
     const doc = new Y.Doc();
-    const provider = new YProvider(SYNC_HOST, room, doc, { party: PARTY });
+    const provider = room != null ? new YProvider(SYNC_HOST, room, doc, { party: PARTY }) : null;
 
     // Status for the UI; a room that does not exist stops the reconnection attempts
-    setRoomStatus('connecting');
-    provider.on('status', ({ status }) => {
-        if (status === 'connected') setRoomStatus('connected');
-    });
-    provider.on('connection-close', (event) => {
-        if (event?.code !== ROOM_NOT_FOUND) return;
-        provider.disconnect();
-        setRoomStatus('not-found');
-    });
+    if (provider) {
+        setRoomStatus('connecting');
+        provider.on('status', ({ status }) => {
+            if (status === 'connected') setRoomStatus('connected');
+        });
+        provider.on('connection-close', (event) => {
+            if (event?.code !== ROOM_NOT_FOUND) return;
+            provider.disconnect();
+            setRoomStatus('not-found');
+        });
+    }
     const unbindObjects = bindInstances(doc, doc.getMap('objects'),
         (state) => state.objects.instances, (list) => useStore.getState().setInstances(list));
     const unbindNotes = bindInstances(doc, doc.getMap('notes'),
         (state) => state.notes.items, (list) => useStore.getState().setNotes(list));
     const unbindMeasures = bindInstances(doc, doc.getMap('measures'),
         (state) => state.measures.items, (list) => useStore.getState().setMeasureItems(list));
-    const unbindAwareness = bindAwareness(provider.awareness);
+    const unbindAwareness = provider ? bindAwareness(provider.awareness) : () => {};
     const unbindSun = bindSun(doc, provider);
     const unbindSurfaces = bindFieldMap(doc, provider, {
         name: 'surfaces',
         read: (state) => state.surfaces,
-        write: (patch) => useStore.getState().setSurfaces(patch)
+        write: (values) => useStore.getState().setSurfaces(values)
     });
 
     const unbindPlan = bindFieldMap(doc, provider, {
@@ -162,11 +169,15 @@ export function connectRoom(room) {
     const unbindPrices = bindFieldMap(doc, provider, {
         name: 'prices',
         read: (state) => state.priceSnapshots,
-        write: (patch) => useStore.getState().setPriceSnapshots(patch)
+        write: (values) => useStore.getState().setPriceSnapshots(values)
     });
+
+    // after the bindings: their seeding transactions (SEED) are not recorded anyway
+    const stopHistory = startHistory(doc);
 
     return () => {
         setRoomStatus('local');
+        stopHistory();
         unbindPrices();
         unbindPlan();
         unbindAwareness();
@@ -175,7 +186,7 @@ export function connectRoom(room) {
         unbindObjects();
         unbindNotes();
         unbindMeasures();
-        provider.destroy();
+        provider?.destroy();
         doc.destroy();
     };
 }

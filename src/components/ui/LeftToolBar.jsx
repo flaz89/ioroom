@@ -1,3 +1,4 @@
+import { useState } from "react";
 import CircleButton from "./circle-button/CircleButton";
 import { svg } from "../../utils/svg-logos";
 import { useStore } from "../../store/appStore";
@@ -15,6 +16,20 @@ export default function LeftToolBar() {
     const isPerfVisible = useStore((state) => state.perfOpen);
     const togglePerf = useStore((state) => state.togglePerf);
 
+    // Settings group (performance, environments, share): expanded/collapsed, per device and per page view
+    const [isSettingsOpen, setSettingsOpen] = useState(false);
+    const openPanel = useStore((state) => state.openPanel);
+    const closePanel = useStore((state) => state.closePanel);
+    // Collapsing the group unmounts its buttons: a panel opened from it (environments, share) is closed too,
+    // otherwise openPanel would keep pointing at a panel that is no longer rendered
+    const toggleSettings = () => {
+        if (isSettingsOpen && (openPanel === 'rooms' || openPanel === 'share')) closePanel();
+        setSettingsOpen(!isSettingsOpen);
+    };
+
+    // Environment tools (sun, materials, bill) belong to the designer mode (store/slices/workspaceSlice.js)
+    const isDesigner = useStore((state) => state.workspace === 'designer');
+
     // svg logos
     const { settingsMenu, performance } = svg;
 
@@ -24,19 +39,30 @@ export default function LeftToolBar() {
             {/* top: people in the shared room (wrapper always rendered: keeps the settings at the bottom) */}
             <div><RoomUsers /></div>
 
-            <div className="scene-settings">
-                <CircleButton svg={settingsMenu}/>
-                {/* not last: its panel is centered on the button and needs room below it */}
-                <SunPanel />
-                {/* room surface materials (floor, walls) */}
-                <MaterialsPanel />
-                {/* bill of quantities of the materials in use (everyone, for now) */}
-                <BillPanel />
-                {/* shared rooms, owner only for now (guests must not spread new rooms) */}
-                {SYNC_HOST && isAdmin && <RoomsPanel />}
-                {/* second to last */}
-                <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
-                {SYNC_HOST && isAdmin && <SharePanel />}
+            {/* bottom: the environment tools, then the settings group (last, anchored to the bottom edge) */}
+            <div className="left-tools">
+                {/* environment tools: designer mode only */}
+                {isDesigner && <div className="scene-settings">
+                    {/* not last: its panel is centered on the button and needs room below it */}
+                    <SunPanel />
+                    {/* room surface materials (floor, walls) */}
+                    <MaterialsPanel />
+                    {/* bill of quantities of the materials in use (everyone, for now) */}
+                    <BillPanel />
+                </div>}
+
+                {/* settings group, in every mode: the gear expands it upwards (it sits at the bottom edge) */}
+                <div className="scene-settings">
+                    {isSettingsOpen && (
+                        <>
+                            <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
+                            {/* shared rooms and sharing: owner only for now (guests must not spread new rooms) */}
+                            {SYNC_HOST && isAdmin && <RoomsPanel />}
+                            {SYNC_HOST && isAdmin && <SharePanel />}
+                        </>
+                    )}
+                    <CircleButton svg={settingsMenu} onClick={toggleSettings} isActive={isSettingsOpen} title={"Settings"}/>
+                </div>
             </div>
             
         </div>

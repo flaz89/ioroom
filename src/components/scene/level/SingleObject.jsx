@@ -172,6 +172,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
         event.stopPropagation();
         if (useStore.getState().notes.placing) return; // the press sticks a post-it note (scene/notes/Notes.jsx)
         if (useStore.getState().measures.active) return; // the click places a ruler point (scene/measure/Measures.jsx)
+        if (useStore.getState().workspace === 'builder') return; // furniture is locked while building (workspaceSlice.js)
         selectObject(data.id);
     };
 
@@ -231,7 +232,9 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     useHandle(targetRef, {
         handle: meshRef,
         // post-it placing mode (scene/notes/Notes.jsx): the press sticks a note, it never grabs
-        filter: () => !useStore.getState().notes.placing && !useStore.getState().measures.active,
+        // builder mode (workspaceSlice.js): furniture is locked while the environment is being built
+        filter: () => !useStore.getState().notes.placing && !useStore.getState().measures.active
+            && useStore.getState().workspace !== 'builder',
         translate: true,
         rotate: HANDLE_ROTATE[pointerRotation],
         scale: false,

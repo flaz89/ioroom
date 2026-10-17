@@ -1,0 +1,35 @@
+/* Workspace switch (WorkspaceSwitch.jsx): glass pill at the bottom center (provisional position) */
+.workspace-switch {
+    position: absolute;
+    bottom: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: .25em;
+    padding: .3em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    pointer-events: all;
+}
+
+.workspace-switch button {
+    padding: .5em 1.1em;
+    border: none;
+    border-radius: 50px;
+    background: transparent;
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+    cursor: pointer;
+}
+
+.workspace-switch button:hover { background: rgba(255, 255, 255, 0.1); }
+
+/* current mode: same orange as the active toolbar buttons */
+.workspace-switch button.is-active {
+    background: linear-gradient(35deg, rgba(255, 183, 51, 1) 0%, rgba(255, 140, 0, 1) 70%);
+    font-weight: 600;
+}

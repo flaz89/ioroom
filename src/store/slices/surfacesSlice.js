@@ -28,11 +28,12 @@ export const createSurfacesSlice = (set, get) => ({
         return snapshot ? { surfaces, priceSnapshots: { ...state.priceSnapshots, [materialId]: snapshot } } : { surfaces };
     }),
 
-    // Merges frozen prices received from the shared room
-    setPriceSnapshots: (patch) => set((state) => ({ priceSnapshots: { ...state.priceSnapshots, ...patch } })),
+    // Replaces the frozen prices with the room's (sync/roomSync.js: all values, removed keys included)
+    setPriceSnapshots: (priceSnapshots) => set({ priceSnapshots }),
 
-    // Merges materials received from the shared room
-    setSurfaces: (patch) => set((state) => ({ surfaces: { ...state.surfaces, ...patch } })),
+    // Replaces the surface materials with the room's (sync/roomSync.js): a surface reset by another device
+    // or by undo (history.js) is missing from the room and must disappear here too, so no merge
+    setSurfaces: (surfaces) => set({ surfaces }),
 
     // Drag state of the materials panel (null = no drag); skipped when nothing changed (called on every move)
     setMaterialDrag: (drag) => set((state) => {

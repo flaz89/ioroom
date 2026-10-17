@@ -1,4 +1,5 @@
 import { useStore } from '../store/appStore';
+import { LOCAL, SEED, isOwnOrigin } from './history';
 
 /*
 * Keeps a flat store object (key -> plain value) identical to the Y.Map `name` of the room document, one
@@ -9,12 +10,13 @@ import { useStore } from '../store/appStore';
 *   created before the feature) is seeded with this device's current values.
 *   Local edits made before the first sync are not sent (they would race the room's saved values).
 * - local -> room: only the fields whose value changed (fields removed locally are deleted).
-* - room -> local: `write(patch)` with the room's values; `onRemote(keysChanged)` after remote changes.
+* - room -> local: `write(values)` with ALL the room's values (keys deleted in the room are missing: the
+*   store must replace, not merge, wherever keys can be removed); `onRemote(keysChanged)` after remote
+*   changes. Undo / redo (history.js) arrive here too, like remote changes.
+* - provider null (no room, local mode): synced at once, the local values seed the local document.
 *
 * options: { name, read(state) -> object, write(patch), onRemote? }. Returns the unbind function.
 */
-const LOCAL = Symbol('local-field-map'); // transaction origin of this device's own edits
-
 export function bindFieldMap(doc, provider, { name, read, write, onRemote }) {
     const yMap = doc.getMap(name);
     let isSynced = false;
@@ -28,23 +30,23 @@ export function bindFieldMap(doc, provider, { name, read, write, onRemote }) {
     };
 
     // local -> room: write the given fields of `values` (undefined = deleted)
-    const push = (values, fields) => {
+    const push = (values, fields, origin = LOCAL) => {
         doc.transact(() => {
             for (const field of fields) {
                 if (values[field] === undefined) yMap.delete(field);
                 else yMap.set(field, values[field]);
             }
-        }, LOCAL);
+        }, origin);
     };
 
     const onSynced = (synced) => {
         if (!synced || isSynced) return;
         isSynced = true;
-        if (yMap.size === 0) push(read(useStore.getState()), Object.keys(read(useStore.getState()))); // new room: seed it
+        if (yMap.size === 0) push(read(useStore.getState()), Object.keys(read(useStore.getState())), SEED); // new room: seed it
         else pull();
     };
-    provider.on('synced', onSynced);
-    if (provider.synced) onSynced(true);
+    provider?.on('synced', onSynced);
+    if (!provider || provider.synced) onSynced(true);
 
     const unsubscribe = useStore.subscribe((state, previousState) => {
         const values = read(state);
@@ -56,14 +58,14 @@ export function bindFieldMap(doc, provider, { name, read, write, onRemote }) {
     });
 
     const observe = (event) => {
-        if (event.transaction.origin === LOCAL) return;
+        if (isOwnOrigin(event.transaction.origin)) return;
         pull();
         onRemote?.(event.keysChanged);
     };
     yMap.observe(observe);
 
     return () => {
-        provider.off('synced', onSynced);
+        provider?.off('synced', onSynced);
         unsubscribe();
         yMap.unobserve(observe);
     };

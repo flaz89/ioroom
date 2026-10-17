@@ -20,6 +20,13 @@
     pointer-events: all;
 }
 
+/* Bottom column of the left toolbar: environment tools pill above the settings pill */
+.left-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+}
+
 /* Shared rounded "pill" container for button groups (left and right toolbars) */
 .scene-settings,
 .grid-tools,

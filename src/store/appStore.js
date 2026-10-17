@@ -12,6 +12,7 @@ import { createMeasuresSlice } from "./slices/measuresSlice";
 import { createPlanSlice } from "./slices/planSlice";
 import { createSurfacesSlice } from "./slices/surfacesSlice";
 import { createMaterialLibrarySlice } from "./slices/materialLibrarySlice";
+import { createWorkspaceSlice } from "./slices/workspaceSlice";
 
 // main store
 export const useStore = create((set, get) => ({
@@ -27,5 +28,6 @@ export const useStore = create((set, get) => ({
     ...createMeasuresSlice(set, get),
     ...createPlanSlice(set, get),
     ...createSurfacesSlice(set, get),
-    ...createMaterialLibrarySlice(set, get)
+    ...createMaterialLibrarySlice(set, get),
+    ...createWorkspaceSlice(set, get)
 }))
