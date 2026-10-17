@@ -34,8 +34,9 @@ import './measures.css';
 * - XR (first person, not on the tabletop): same handles on my selected temporary measure; pressing the
 *   trigger / pinching while aiming at one (handleUnderRay) drags that end along the ray with the ruler's
 *   snaps until release (XRMeasurePlacer). That press is not a ruler point nor a label selection.
-* - Labels keep a constant size on screen (bigger on the tabletop, TABLETOP_LABEL_BOOST) and are turned
-*   every frame to run PARALLEL to the measure line as seen on screen (never upside down).
+* - Labels are flat cards in 3D lying ALONG the measure line, turned around it to face the eye (never upside
+*   down), sized with the distance so they keep a constant size on screen (bigger on the tabletop,
+*   TABLETOP_LABEL_BOOST). A real 3D orientation: stays on the line in VR too, whatever the head does.
 * - TABLETOP: labels not clickable, no handles.
 * - ANCHORED ENDS: a point taken on an object is stored in the object's local space (measuresSlice.js) and
 *   resolved every frame from its live mesh (objectMeshes.js): moving / rotating / scaling the object (also
@@ -63,6 +64,7 @@ function labelRaycast(raycaster, intersects) {
     if (raycaster.camera != null) THREE.Sprite.prototype.raycast.call(this, raycaster, intersects);
 }
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 8);
+const labelPlane = new THREE.PlaneGeometry(1, 1);
 const _ndc = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
 const _up = new THREE.Vector3(0, 1, 0);
@@ -594,12 +596,12 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     // 2D plan open: its own actions (builder/PlanMeasures.jsx); this Html would float over the plan
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const a = toEnd(measure.a), b = toEnd(measure.b);
-    const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef(), labelMaterialRef = useRef();
+    const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef(), labelMeshRef = useRef();
     const [text, setText] = useState(() => formatLength(new THREE.Vector3(...a.p).distanceTo(new THREE.Vector3(...b.p))));
     const textRef = useRef(text);
     const radius = LINE_RADIUS * boost;
 
-    useFrame(({ camera: sceneCamera, gl }) => {
+    useFrame(({ camera }) => {
         const space = groupRef.current?.parent;
         if (space == null) return;
         const start = resolveEnd(a, space, _start), end = resolveEnd(b, space, _end);
@@ -612,17 +614,25 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         dotARef.current.position.copy(start);
         dotBRef.current.position.copy(end);
         labelRef.current.position.copy(_middle);
-        // label parallel to the line on screen: angle of the projected segment (NDC x scaled by the aspect,
-        // read from the projection matrix), kept within ±90° (readable). In XR the HEADSET camera (the eyes'
-        // parent, it follows every head turn and tilt; updated by the last render), not the scene camera
-        const camera = gl.xr.isPresenting ? gl.xr.getCamera() : sceneCamera;
-        _screenA.copy(start); space.localToWorld(_screenA).project(camera);
-        _screenB.copy(end); space.localToWorld(_screenB).project(camera);
-        const aspect = camera.projectionMatrix.elements[5] / camera.projectionMatrix.elements[0];
-        let angle = Math.atan2(_screenB.y - _screenA.y, (_screenB.x - _screenA.x) * aspect);
-        if (angle > Math.PI / 2) angle -= Math.PI;
-        if (angle < -Math.PI / 2) angle += Math.PI;
-        if (labelMaterialRef.current) labelMaterialRef.current.rotation = angle;
+        // LABEL: a flat card in 3D, its long side ALONG the line, turned around the line to face the eye as
+        // much as it can, text never upside down (its up has a positive world-up component; the board only
+        // turns around Y, so local up = world up). Stereo-safe: a real 3D orientation, not a screen-space one.
+        // Sized like a sprite without size attenuation: LABEL_SIZE x distance (constant size on screen).
+        const card = labelMeshRef.current;
+        if (card != null && length > 1e-6) {
+            camera.getWorldPosition(_eyeLocal);
+            space.worldToLocal(_eyeLocal);
+            _axisX.copy(_direction); // unit, start -> end (normalized above)
+            _axisZ.subVectors(_eyeLocal, _middle);
+            const distance = _axisZ.length();
+            _axisZ.addScaledVector(_axisX, -_axisZ.dot(_axisX)); // towards the eye, square to the line
+            if (_axisZ.lengthSq() < 1e-10) _axisZ.set(0, 1, 0).cross(_axisX); // looking straight along the line
+            _axisZ.normalize();
+            _axisY.crossVectors(_axisZ, _axisX);
+            if (_axisY.y < 0) { _axisX.negate(); _axisY.negate(); } // text upright (turned 180° around Z)
+            card.quaternion.setFromRotationMatrix(_basis.makeBasis(_axisX, _axisY, _axisZ));
+            card.scale.set(LABEL_SIZE[0] * labelBoost * distance, LABEL_SIZE[1] * labelBoost * distance, 1);
+        }
         const shown = formatLength(length);
         if (shown !== textRef.current) {
             textRef.current = shown;
@@ -642,15 +652,18 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
             <Dot dotRef={dotARef} position={a.p} color={color} scale={editable ? HANDLE_SCALE : 1} handle={editable ? { id: measure.id, which: 'a' } : undefined} />
             <Dot dotRef={dotBRef} position={b.p} color={color} scale={editable ? HANDLE_SCALE : 1} handle={editable ? { id: measure.id, which: 'b' } : undefined} />
             <group ref={labelRef} position={a.p}>
-                <sprite
-                    scale={[LABEL_SIZE[0] * labelBoost, LABEL_SIZE[1] * labelBoost, 1]}
+                {/* oriented and sized every frame (useFrame above); a plain mesh: hit-tested by any ray */}
+                <mesh
+                    ref={labelMeshRef}
+                    geometry={labelPlane}
+                    dispose={null}
                     renderOrder={11}
                     userData={isLocked ? undefined : { measureId: measure.id }}
-                    raycast={isLocked ? noRaycast : labelRaycast}
+                    raycast={isLocked ? noRaycast : undefined}
                     onClick={isLocked ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
                 >
-                    <spriteMaterial ref={labelMaterialRef} map={label} sizeAttenuation={false} depthTest={false} depthWrite={false} transparent toneMapped={false} />
-                </sprite>
+                    <meshBasicMaterial map={label} side={THREE.DoubleSide} depthTest={false} depthWrite={false} transparent toneMapped={false} />
+                </mesh>
                 {selected && !isXR && !isPlanView && (
                     <Html center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
                         <div className="measure-actions">
@@ -664,7 +677,8 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         </group>
     );
 }
-const _screenA = new THREE.Vector3(), _screenB = new THREE.Vector3();
+const _eyeLocal = new THREE.Vector3(), _axisX = new THREE.Vector3(), _axisY = new THREE.Vector3(), _axisZ = new THREE.Vector3();
+const _basis = new THREE.Matrix4();
 const _start = new THREE.Vector3(), _end = new THREE.Vector3(), _direction = new THREE.Vector3(), _middle = new THREE.Vector3();
 
 // Length label: dark glass pill with an outline in the measure's color (brighter when selected)
