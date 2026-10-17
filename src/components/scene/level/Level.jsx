@@ -1,4 +1,5 @@
 import { useXR } from "@react-three/xr";
+import { createPortal, useThree } from "@react-three/fiber";
 import Room from "./room/Room";
 import Board from "./Board";
 import ObjectRenderer from "./ObjectRenderer";
@@ -25,6 +26,7 @@ export default function Level() {
     const isVR = mode === "immersive-vr"
     const isAR = mode === "immersive-ar"
     const isXR = isVR || isAR;
+    const scene = useThree((state) => state.scene);
     // Tabletop (miniature) view exists only inside XR sessions
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
     const isSunPanelOpen = useStore((state) => state.openPanel === 'sun');
@@ -32,8 +34,9 @@ export default function Level() {
 
     return(
         <>
-            {/* Only VR */}
-            { isVR && <color args={["rgb(42, 66, 165)"]} attach="background"/> }
+            {/* Only VR. Portaled into the scene: Level sits inside a <group> (Scene.jsx), and attach="background"
+                attaches to the PARENT, so without the portal it would set group.background (ignored) */}
+            { isVR && createPortal(<color args={["rgb(42, 66, 165)"]} attach="background"/>, scene) }
 
             {/* ----------- ROOM + OBJECTS ---------------- */}
             {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}

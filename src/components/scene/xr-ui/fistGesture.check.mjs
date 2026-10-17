@@ -40,8 +40,8 @@ const OPEN = 1.9, HALF = 1.4, FIST = 1.1;
     assert.equal(isDeletePose(0.95, 0.05, false), false, 'hand sideways (karate chop)');
     assert.equal(isDeletePose(0.95, -0.95, false), false, 'palm towards the user (wrist menu)');
     assert.equal(isDeletePose(0.1, 0.95, false), false, 'palm parallel to the floor');
-    assert.equal(isDeletePose(0.7, 0.6, false), false, 'not yet in the pose');
+    assert.equal(isDeletePose(0.55, 0.45, false), false, 'not yet in the pose');
     assert.equal(isDeletePose(0.7, 0.6, true), true, 'hysteresis keeps it while closing');
-    assert.equal(isDeletePose(0.5, 0.6, true), false, 'fingers tilted away');
+    assert.equal(isDeletePose(0.35, 0.6, true), false, 'fingers tilted away');
 }
 console.log('fistGesture: ok');

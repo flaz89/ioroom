@@ -26,14 +26,14 @@ export const FIRE_WINDOW_MS = 600;  // max time from armed (hand starts closing)
 * - backToUser: cosine between the BACK-of-hand normal and the horizontal direction hand -> eyes
 *   (1 = back of the hand squarely towards the user, 0 = hand sideways, -1 = palm towards the user).
 * Fingers up already makes the palm perpendicular to the floor.
-* Hysteresis: enters within ~35° (fingers) / ~45° (back), leaves beyond ~50° / ~65°, so the small
+* Hysteresis: enters within ~50° (fingers) / ~60° (back), leaves beyond ~65° / ~75°, so the small
 * wrist rotations of closing the fist do not cancel the gesture.
 */
 const cos = (degrees) => Math.cos((degrees * Math.PI) / 180);
-export const FINGERS_UP_ENTER = cos(35);
-export const FINGERS_UP_EXIT = cos(50);
-export const BACK_TO_USER_ENTER = cos(45);
-export const BACK_TO_USER_EXIT = cos(65);
+export const FINGERS_UP_ENTER = cos(50);
+export const FINGERS_UP_EXIT = cos(65);
+export const BACK_TO_USER_ENTER = cos(60);
+export const BACK_TO_USER_EXIT = cos(75);
 
 export function isDeletePose(fingersUp, backToUser, wasPose) {
     if (wasPose) return fingersUp > FINGERS_UP_EXIT && backToUser > BACK_TO_USER_EXIT;
