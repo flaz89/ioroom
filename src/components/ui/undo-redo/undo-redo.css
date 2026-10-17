@@ -1,0 +1,10 @@
+/* Undo / redo (UndoRedo.jsx): horizontal glass pill in the bottom bar (ui.css), same look as the toolbars */
+.undo-redo {
+    display: flex;
+    gap: .5em;
+    padding: .3em;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    border-radius: 50px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+}

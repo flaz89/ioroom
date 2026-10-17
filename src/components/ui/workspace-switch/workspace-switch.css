@@ -1,9 +1,5 @@
-/* Workspace switch (WorkspaceSwitch.jsx): glass pill at the bottom center (provisional position) */
+/* Workspace switch (WorkspaceSwitch.jsx): glass pill in the bottom bar (ui.css) */
 .workspace-switch {
-    position: absolute;
-    bottom: 1em;
-    left: 50%;
-    transform: translateX(-50%);
     display: flex;
     gap: .25em;
     padding: .3em;

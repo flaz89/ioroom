@@ -11,6 +11,7 @@ import { BUTTON_SIZE } from './layout';
 import VRCatalogPanel from './VRCatalogPanel';
 import VRStatsPanel from './VRStatsPanel';
 import { PointerFilterContext, acceptsWristPointer } from './pointers';
+import { undo, redo } from '../../../sync/history';
 
 /*
 * Menu attached to the LEFT controller (or left hand when hand tracking is active), pressed with
@@ -133,6 +134,10 @@ export default function WristMenu() {
                         <VRButton label={`${gridSnapStep}cm`} active={gridSnap} onClick={() => setGridSnapStep(nextStep(GRID_SNAP_STEPS, gridSnapStep))} position={[STEP_X, BUTTON_STEP * 3, 0]} />
                         <VRButton svg={svg.rotationSnap} active={rotationSnap} onClick={toggleRotationSnap} position={[0, BUTTON_STEP * 4, 0]} />
                         <VRButton label={`${rotationSnapStep}°`} active={rotationSnap} onClick={() => setRotationSnapStep(nextStep(ROTATION_SNAP_STEPS, rotationSnapStep))} position={[STEP_X, BUTTON_STEP * 4, 0]} />
+                        {/* undo / redo (sync/history.js), in the free slots of the third column */}
+                        {/* ponytail: always pressable (no-op on an empty history); dim them if that confuses */}
+                        <VRButton svg={svg.undo} onClick={undo} position={[STEP_X * 2, 0, 0]} />
+                        <VRButton svg={svg.redo} onClick={redo} position={[STEP_X * 2, BUTTON_STEP, 0]} />
                         {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </PointerFilterContext.Provider>

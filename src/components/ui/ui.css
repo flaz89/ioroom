@@ -20,6 +20,22 @@
     pointer-events: all;
 }
 
+/* Bottom center bar (provisional position): undo / redo, workspace switch */
+.bottom-bar {
+    position: absolute;
+    bottom: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: .8em;
+    pointer-events: none;
+}
+
+.bottom-bar > * {
+    pointer-events: all;
+}
+
 /* Bottom column of the left toolbar: environment tools pill above the settings pill */
 .left-tools {
     display: flex;
@@ -92,10 +108,40 @@
         bottom: calc(10px + 1em + .5em + 2px);
         flex-direction: row;
     }
-    /* Delete (shown with a selection) next to "+", without moving "+" off center */
+    /* Delete (shown with a selection) ABOVE "+", without moving "+" off center (provisional) */
     .ui .objects-selection > button + button {
         position: absolute;
-        left: calc(100% + 12px);
+        left: 0;
+        bottom: calc(100% + 12px);
+    }
+
+    /* Undo / redo (provisional): free buttons (no pill) on the two sides of "+", same row.
+       The gap leaves room for "+" in the middle: its width (20px icon + .5em padding x2 + 1px border x2)
+       plus 12px on each side. Fixed to the viewport, like "+". */
+    .ui .undo-redo {
+        position: fixed;
+        left: 0;
+        right: 0;
+        width: fit-content;
+        margin: 0 auto;
+        bottom: calc(10px + 1em + .5em + 2px);
+        gap: calc(20px + 1em + 2px + 24px);
+        padding: 0;
+        border: none;
+        background: none;
+        box-shadow: none;
+    }
+
+    /* The rest of the bottom bar (admin workspace switch) goes above that row and the delete button.
+       Centered with auto margins, not a transform: a transform would become the containing block of the
+       fixed undo / redo inside it. */
+    .ui .bottom-bar {
+        left: 0;
+        right: 0;
+        width: fit-content;
+        margin: 0 auto;
+        transform: none;
+        bottom: calc(10px + 1em + .5em + 2px + 2 * (20px + 1em + 2px + 12px));
     }
 
     /* Every toolbar menu opens as a card centered on the screen (portrait phones), like the performance

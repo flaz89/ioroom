@@ -13,6 +13,7 @@ import RoomNotice from './components/ui/room-notice/RoomNotice';
 import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
+import UndoRedo from './components/ui/undo-redo/UndoRedo';
 
 
 /* 
@@ -62,7 +63,11 @@ export default function App() {
           <CompassBar/>
           <RoomNotice/>
           <NoteModal/>
-          <WorkspaceSwitch/>
+          {/* bottom center (provisional): undo / redo for everyone, workspace switch for the admin */}
+          <div className="bottom-bar">
+            <UndoRedo/>
+            <WorkspaceSwitch/>
+          </div>
         </div>
         
       </div>

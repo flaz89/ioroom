@@ -84,6 +84,18 @@ export const svg = {
         <path d="M7.5 6.5h5M7.5 9.5h5M7.5 12.5h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // arrow curving back to the left (undo)
+    undo: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7 4.5L3.5 8 7 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M3.5 8h8.5a4.5 4.5 0 0 1 0 9H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+
+    // arrow curving forward to the right (redo)
+    redo: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 4.5L16.5 8 13 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M16.5 8H8a4.5 4.5 0 0 0 0 9h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+
     // post-it with a folded corner (notes placing mode)
     note: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M3.5 3.5h13v8.5l-4.5 4.5H3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
