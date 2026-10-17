@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addWall, levelBounds, levelVertices, moveVertex, nearestVertex, rebuildFloors, wallFootprint, wallFrame } from '../../plan/planModel';
-import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, panBy, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
+import { activeLevel, addWall, faceOffsets, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, rulerSnap2D, rulerTargets, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
+import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { publishCameraHeading } from '../scene/sun/cameraHeading';
 import './plan-view.css';
@@ -16,6 +17,7 @@ const FLIP_GAP = 18;             // px: flip button center, beyond the wall's ou
 const ALIGN_SNAP_RADIUS = 8;     // px: a coordinate this close to another corner's lines up with it
 const ANGLE_SNAP_TOLERANCE = 2;  // degrees: a wall direction this close to a multiple of the step snaps to it
 const ANGLE_ARC_RADIUS = 28;     // px: angle indicator arc
+const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall (centered on its axis, sticks out)
 
 /*
 * 2D top view of the floor plan (builder mode, view '2d', store/slices/workspaceSlice.js): grid in meters,
@@ -47,6 +49,21 @@ const ANGLE_ARC_RADIUS = 28;     // px: angle indicator arc
 *   straight). With rotation snap on (right toolbar), its direction snaps to multiples of the rotation step
 *   from the previous wall (planView.angleSnap) and a dashed guide shows the ray. Dragging a corner shows
 *   the angle between its two walls.
+* - OPENINGS (doors / windows, planModel wall.openings): drawn as a gap in the wall with the drafting symbol
+*   (door: leaf + swing arc, on its hinge side and opening side; window: line on the wall's axis). Click =
+*   select it (store selectedOpening; its panel is WallPanel.jsx). DRAG = slide it along its wall (start
+*   edge on the grid snap step when grid snap is on; stops at the wall's ends and at the other openings),
+*   with live distances from both wall ends; a local draft saved on release (one undo step).
+*
+* - RULER (toolbar ruler button, store measures.active; PlanMeasures.jsx): the 3D ruler's measures seen
+*   from above, and new ones taken here (at floor level). Click = first point, click = measure (temporary,
+*   mine; Save shares it). Points snap to wall / opening corners and faces and to existing measures
+*   (planView.rulerSnap2D), else to the grid snap step; after the first point the measure is locked to the
+*   plan's X or Z axis (planView.lockToPlanAxis), Shift = free. Label click = select (Save / Delete). The
+*   ruler wins over the wall tool; Esc is handled by the 3D ruler (Measures.jsx: first point, then off).
+*   MY temporary (orange) measure, once selected, shows a handle on each end (ruler on or off): dragging
+*   one moves that end with the same snaps, locked to the axis through the other end (Shift = free); the
+*   end keeps its height; saved on release (store moveMeasureEnd). Saved (shared) measures are not editable.
 *
 * Navigation: right (or middle) mouse drag = pan, like the 3D view (OrbitControls); left mouse drag pans
 * nothing (clicks only). Touch / pen: one finger drag = pan. Wheel = zoom at the cursor, two fingers = pinch
@@ -96,18 +113,34 @@ export default function PlanView2D() {
     const selectedWallIds = useStore((state) => state.selectedWallIds);  // shared with the 3D view
     const selectedWallId = useStore(singleSelectedWall);                  // exactly one selected, else null
     const setSelectedWallId = useStore((state) => state.setSelectedWallId);
+    const selectedOpening = useStore((state) => state.selectedOpening);
+    const selectedOpeningId = selectedOpening?.openingId;
     const [box, setBox] = useState(null);           // { start, end } screen points of the box being dragged
     const [isPanning, setIsPanning] = useState(false); // right / middle mouse pan: grabbing cursor
     const [draft, setDraft] = useState(null); // { level, point } while a corner is dragged: preview, not saved
+    const [slide, setSlide] = useState(null); // { level, wallId, openingId } while an opening is dragged: preview
     // Current one-pointer gesture: { kind: 'pan', wallId, start, moved } | { kind: 'vertex', from }
     const gestureRef = useRef(null);
-    const shown = draft?.level ?? level;      // what is drawn: the draft while dragging
+    const shown = draft?.level ?? slide?.level ?? level; // what is drawn: the draft while dragging
 
     // WALL TOOL STATE
     const planTool = useStore((state) => state.planTool);
     const wallJustify = useStore((state) => state.wallJustify);
     const setPlanTool = useStore((state) => state.setPlanTool);
-    const isDrawing = planTool === 'wall';
+    const isRuler = useStore((state) => state.measures.active);
+    const measures = useStore((state) => state.measures);
+    const measureList = planMeasureList(measures);
+    const isDrawing = planTool === 'wall' && !isRuler;
+    const [rulerHover, setRulerHover] = useState(null); // { point, kind, axis } snapped ruler point under the mouse
+    const [endDrag, setEndDrag] = useState(null); // { id, which, point, kind, axis } while a measure end is dragged: preview
+    // the selected measure, if it is one of MY temporary ones: its ends get drag handles (PlanMeasures.jsx)
+    const editableId = measures.local.some((m) => m.id === measures.selectedId) ? measures.selectedId : null;
+    // what is drawn: the dragged end at its preview position (true 3D length: heights kept)
+    const shownMeasures = endDrag == null ? measureList : measureList.map((item) => {
+        if (item.id !== endDrag.id) return item;
+        const moved = { ...item, [endDrag.which]: endDrag.point };
+        return { ...moved, length: Math.hypot(moved.b[0] - moved.a[0], moved.yb - moved.ya, moved.b[1] - moved.a[1]) };
+    });
     const [chain, setChain] = useState(null); // [x, z]: last placed point of the wall being drawn, null = none
     const [chainPrev, setChainPrev] = useState(null); // [x, z]: start of the chain's last wall (angle reference)
     const [hover, setHover] = useState(null); // { point, kind: 'vertex' | 'grid' | 'free' } under the mouse
@@ -175,6 +208,33 @@ export default function PlanView2D() {
         return { point: snappedWorld(point), kind, guides: [] };
     };
 
+    // Ruler point under the pointer (screen point): snapped (planView.rulerSnap2D), on the grid when it
+    // snaps to nothing, then locked to the X / Z axis from the first point unless `free` (Shift)
+    // `from`: the fixed point the axis lock starts from ([x, z]; default: the ruler's first point);
+    // `excludeId`: a measure that is not a snap target (the one whose end is being dragged)
+    const rulerPoint = (point, free, from, excludeId) => {
+        const raw = toWorld(view, size.w, size.h, point.x, point.y);
+        const state = useStore.getState();
+        const others = planMeasureList(state.measures).filter((item) => item.id !== excludeId);
+        const { vertices, segments } = rulerTargets(level, others);
+        const snap = rulerSnap2D(raw, vertices, segments, VERTEX_SNAP_RADIUS / view.scale);
+        if (snap.kind == null) snap.point = snappedWorld(point);
+        const start = state.measures.start;
+        const origin = from ?? (start ? [start.p[0], start.p[2]] : null);
+        if (origin == null || free) return { point: snap.point, kind: snap.kind, axis: null };
+        return { ...lockToPlanAxis(origin, raw, snap), kind: snap.kind };
+    };
+
+    // Ruler click: first point, or the measure (at the first point's height: floor level when taken here)
+    const placeRulerPoint = ({ point }) => {
+        const { measures: current, setMeasureStart, addMeasure } = useStore.getState();
+        const y = current.start?.p[1] ?? 0;
+        const end = { p: [point[0], y, point[1]] };
+        if (current.start == null) return setMeasureStart(end);
+        if (Math.hypot(point[0] - current.start.p[0], point[1] - current.start.p[2]) < 0.001) return setMeasureStart(null); // same point: cancel
+        addMeasure(end);
+    };
+
     // Wall tool click: first point starts the chain, the next ones add walls (see the header)
     const placePoint = ({ point, kind }) => {
         if (chain == null) { setChain(point); setChainPrev(null); return; }
@@ -194,6 +254,8 @@ export default function PlanView2D() {
         if (pointersRef.current.size > 1) { // second finger: pinch, any corner drag is dropped
             gestureRef.current = null;
             setDraft(null);
+            setSlide(null);
+        setEndDrag(null);
             return;
         }
         // mouse: right / middle button = pan only (never a click); left button never pans
@@ -203,11 +265,20 @@ export default function PlanView2D() {
             setIsPanning(true);
             return;
         }
-        const { vertex, wallId } = isDrawing ? {} : (event.target.dataset ?? {});
+        const dataset = event.target.dataset ?? {};
+        // ruler: only measure labels are picked (corners, walls and openings are snap targets)
+        const { vertex, wallId, openingId, measureId, measureEnd } = isDrawing ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
         // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
-        gestureRef.current = vertex != null
+        const wall = openingId ? level.walls.find((item) => item.id === wallId) : null;
+        const opening = wall?.openings.find((item) => item.id === openingId);
+        gestureRef.current = measureEnd
+            ? { kind: 'measureEnd', id: measureId, which: measureEnd, start: point, moved: false }
+            : vertex != null
             ? { kind: 'vertex', from: levelVertices(level)[Number(vertex)] }
-            : { kind: 'pan', wallId: wallId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing, shift: event.shiftKey };
+            : opening
+            // grab: where along the wall the opening was taken, relative to its center (it slides, no jump)
+            ? { kind: 'opening', wallId, openingId, start: point, moved: false, grab: alongWall(wall, toWorld(view, size.w, size.h, point.x, point.y)) - opening.offset }
+            : { kind: 'pan', wallId: wallId ?? null, openingId: openingId ?? null, measureId: measureId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing && !isRuler, shift: event.shiftKey };
     };
 
     // One pointer: corner drag or pan. Two pointers: zoom by the change of their distance, at their
@@ -218,6 +289,7 @@ export default function PlanView2D() {
         if (size == null || view == null) return;
         const point = localPoint(event);
         if (isDrawing && pointers.size <= 1) setHover(snapPoint(point)); // preview of the next point (mouse)
+        if (isRuler && pointers.size <= 1) setRulerHover(rulerPoint(point, event.shiftKey));
         if (previous == null) return;
         const gesture = gestureRef.current;
         if (pointers.size === 1 && gesture?.kind === 'vertex') {
@@ -228,6 +300,29 @@ export default function PlanView2D() {
             // preview floors too (rebuilt like on commit; preview ids, never saved)
             let previewId = 0; // unique keys for the preview floors
             if (next) setDraft({ level: rebuildFloors(next, () => `preview-floor-${previewId++}`).level, point: to, guides }); // invalid: keep the last valid one
+        } else if (pointers.size === 1 && gesture?.kind === 'measureEnd') {
+            if (Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
+            const item = gesture.moved && measureList.find((entry) => entry.id === gesture.id);
+            if (item) {
+                // locked to the axis through the OTHER end (Shift = free); this measure is not a snap target
+                const hit = rulerPoint(point, event.shiftKey, gesture.which === 'a' ? item.b : item.a, gesture.id);
+                setEndDrag({ id: gesture.id, which: gesture.which, ...hit });
+            }
+        } else if (pointers.size === 1 && gesture?.kind === 'opening') {
+            if (Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
+            if (gesture.moved) {
+                const wall = level.walls.find((item) => item.id === gesture.wallId);
+                const opening = wall?.openings.find((item) => item.id === gesture.openingId);
+                if (opening) {
+                    const { length } = wallFrame(wall);
+                    let from = alongWall(wall, toWorld(view, size.w, size.h, point.x, point.y)) - gesture.grab - opening.width / 2;
+                    const { gridSnap, gridSnapStep } = useStore.getState().settings;
+                    if (gridSnap) from = Math.round(from / (gridSnapStep / 100)) * (gridSnapStep / 100);
+                    from = Math.min(Math.max(from, 0), length - opening.width); // stops at the wall's ends
+                    const next = updateOpening(level, gesture.wallId, gesture.openingId, { offset: from + opening.width / 2 });
+                    if (next) setSlide({ level: next, wallId: gesture.wallId, openingId: gesture.openingId }); // overlap: keep the last valid
+                }
+            }
         } else if (pointers.size === 1) {
             if (gesture && Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
             if (gesture?.pans) setView((current) => current && panBy(current, point.x - previous.x, point.y - previous.y));
@@ -251,6 +346,15 @@ export default function PlanView2D() {
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
         if (gesture.kind === 'vertex' && draft) setActiveLevel(draft.level);
+        if (gesture.kind === 'measureEnd' && endDrag) {
+            const item = measureList.find((entry) => entry.id === endDrag.id);
+            const y = endDrag.which === 'a' ? item.ya : item.yb; // the end keeps its height
+            useStore.getState().moveMeasureEnd(endDrag.id, endDrag.which, { p: [endDrag.point[0], y, endDrag.point[1]] });
+        }
+        if (gesture.kind === 'opening') {
+            if (gesture.moved && slide) setActiveLevel(slide.level);
+            useStore.getState().setSelectedOpening({ wallId: gesture.wallId, openingId: gesture.openingId });
+        }
         if (gesture.kind === 'pan' && gesture.boxes && gesture.moved && box) {
             // box released: window (dragged right) or crossing (dragged left); Shift adds
             const corner1 = toWorld(view, size.w, size.h, box.start.x, box.start.y);
@@ -259,12 +363,17 @@ export default function PlanView2D() {
             const { selectedWallIds: current, setSelectedWallIds } = useStore.getState();
             setSelectedWallIds(gesture.shift ? [...new Set([...current, ...ids])] : ids);
         } else if (gesture.kind === 'pan' && !gesture.moved) {
-            if (isDrawing) placePoint(snapPoint(localPoint(event)));
+            const { measures: current, selectMeasure } = useStore.getState();
+            if (gesture.measureId) selectMeasure(current.selectedId === gesture.measureId ? null : gesture.measureId);
+            else if (isRuler) placeRulerPoint(rulerPoint(localPoint(event), event.shiftKey));
+            else if (isDrawing) placePoint(snapPoint(localPoint(event)));
             else if (gesture.shift && gesture.wallId) useStore.getState().toggleSelectedWall(gesture.wallId);
             else setSelectedWallId(gesture.wallId);
         }
         gestureRef.current = null;
         setDraft(null);
+        setSlide(null);
+        setEndDrag(null);
         setBox(null);
         setIsPanning(false);
     };
@@ -274,6 +383,8 @@ export default function PlanView2D() {
         pointersRef.current.delete(event.pointerId);
         gestureRef.current = null;
         setDraft(null);
+        setSlide(null);
+        setEndDrag(null);
         setBox(null);
         setIsPanning(false);
     };
@@ -297,7 +408,7 @@ export default function PlanView2D() {
         <>
         <svg
             ref={svgRef}
-            className={`plan-view${isDrawing ? ' is-drawing' : ''}${isPanning ? ' is-panning' : ''}`}
+            className={`plan-view${isDrawing ? ' is-drawing' : ''}${isRuler ? ' is-measuring' : ''}${isPanning ? ' is-panning' : ''}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -329,6 +440,11 @@ export default function PlanView2D() {
                         );
                     })}
 
+                    {/* doors / windows: over their wall (a click on them selects the opening, not the wall) */}
+                    {shown.walls.flatMap((wall) => openingRects(wall, wall.height ?? shown.wallHeight).map((rect) => (
+                        <OpeningSymbol key={rect.opening.id} wall={wall} rect={rect} isSelected={rect.opening.id === selectedOpeningId && !isDrawing} />
+                    )))}
+
                     {/* corner handles: invisible touch-size hit circle + visible dot (radii in px -> meters) */}
                     {levelVertices(shown).map((vertex, index) => (
                         <g key={index}>
@@ -350,6 +466,16 @@ export default function PlanView2D() {
                 </g>
             )}
 
+            {/* measures (3D ruler's, seen from above) + ruler preview: screen space, constant size */}
+            {isReady && (
+                <PlanMeasures view={view} size={size} list={shownMeasures} selectedId={measures.selectedId} editableId={editableId}
+                    preview={endDrag ? { point: endDrag.point, kind: endDrag.kind, start: null } : isRuler && rulerHover ? {
+                        ...rulerHover,
+                        start: measures.start ? [measures.start.p[0], measures.start.p[2]] : null,
+                        length: measures.start ? Math.hypot(rulerHover.point[0] - measures.start.p[0], rulerHover.point[1] - measures.start.p[2]) : 0 // same height
+                    } : null} />
+            )}
+
             {/* selection box: window (solid, dragged right) or crossing (dashed, dragged left) */}
             {box && (
                 <rect
@@ -364,6 +490,9 @@ export default function PlanView2D() {
             {isReady && isDrawing && chain && hover && (chainPrev
                 ? angleIndicator(view, size, chain, chainPrev, hover.point, 180)                    // between walls
                 : angleIndicator(view, size, chain, [chain[0] + 1, chain[1]], hover.point, 0))}     // from the horizontal
+            {/* opening dragged (or selected): clear distances to the nearest opening / wall end on each side */}
+            {isReady && slide && openingDistances(view, size, slide.level, slide.wallId, slide.openingId)}
+            {isReady && !slide && selectedOpening && !isDrawing && openingDistances(view, size, level, selectedOpening.wallId, selectedOpening.openingId)}
             {/* corner drag: angle between the dragged corner's two walls */}
             {isReady && draft && cornerAngle(view, size, draft)}
 
@@ -373,12 +502,84 @@ export default function PlanView2D() {
                 .map((wall) => lengthLabel(view, size, wall))}
 
         </svg>
-        {selectedWallId && !isDrawing && !draft && isReady && (
+        {isReady && !endDrag && <PlanMeasureActions view={view} size={size} list={measureList} />}
+        {selectedWallId && !isDrawing && !draft && !slide && isReady && (
             <FlipButton view={view} size={size} wall={level.walls.find((wall) => wall.id === selectedWallId)} />
         )}
         </>
     );
 }
+
+/*
+* A door / window in the 2D plan (world meters, inside the view's transform): the gap through the wall
+* (hit target, data-wall-id + data-opening-id) and its drafting symbol. Door: the leaf, open square to the
+* wall, hinged at the opening's start or end (opening.hinge) on the face it opens towards (opening.swing:
+* inner side = -normal, outer = +normal), and its swing arc; window: a line on the wall's axis and one
+* across it at the middle of its width (WINDOW_MARK_LENGTH long, centered on the axis: sticks out of the wall).
+*/
+function OpeningSymbol({ wall, rect, isSelected }) {
+    const { dir, normal } = wallFrame(wall);
+    const { inner, outer } = faceOffsets(wall);
+    const at = (t, offset) => [wall.a[0] + dir[0] * t + normal[0] * offset, wall.a[1] + dir[1] * t + normal[1] * offset];
+    const { from, to, opening } = rect;
+    const gap = [at(from, inner), at(to, inner), at(to, outer), at(from, outer)];
+    const width = to - from;
+    const isOut = opening.swing === 'out';
+    const [hingeT, freeT] = opening.hinge === 'end' ? [to, from] : [from, to];
+    const side = isOut ? 1 : -1; // leaf direction along the normal
+    const hinge = at(hingeT, isOut ? outer : inner);
+    const leafTip = [hinge[0] + normal[0] * side * width, hinge[1] + normal[1] * side * width];
+    const closed = at(freeT, isOut ? outer : inner);
+    // arc direction: clockwise on screen when leaf -> closed turns positively (screen y = world z down)
+    const sweep = (leafTip[0] - hinge[0]) * (closed[1] - hinge[1]) - (leafTip[1] - hinge[1]) * (closed[0] - hinge[0]) > 0 ? 1 : 0;
+    return (
+        <g className={isSelected ? 'plan-opening is-selected' : 'plan-opening'}>
+            <polygon className="plan-opening-gap" data-wall-id={wall.id} data-opening-id={opening.id} points={gap.join(' ')} vectorEffect="non-scaling-stroke" />
+            {opening.type === 'door' ? (
+                <>
+                    <line className="plan-opening-mark" x1={hinge[0]} y1={hinge[1]} x2={leafTip[0]} y2={leafTip[1]} vectorEffect="non-scaling-stroke" />
+                    {/* quarter circle from the open leaf's tip back to the closed position */}
+                    <path className="plan-opening-swing" d={`M${leafTip[0]} ${leafTip[1]}A${width} ${width} 0 0 ${sweep} ${closed[0]} ${closed[1]}`} vectorEffect="non-scaling-stroke" />
+                </>
+            ) : (
+                <>
+                    <line className="plan-opening-mark" {...lineAt(at(from, (inner + outer) / 2), at(to, (inner + outer) / 2))} vectorEffect="non-scaling-stroke" />
+                    <line className="plan-opening-mark" {...lineAt(at((from + to) / 2, (inner + outer - WINDOW_MARK_LENGTH) / 2), at((from + to) / 2, (inner + outer + WINDOW_MARK_LENGTH) / 2))} vectorEffect="non-scaling-stroke" />
+                </>
+            )}
+        </g>
+    );
+}
+
+// Distance of world point p from the wall's start along its line (meters)
+const alongWall = (wall, p) => {
+    const { dir } = wallFrame(wall);
+    return (p[0] - wall.a[0]) * dir[0] + (p[1] - wall.a[1]) * dir[1];
+};
+
+/*
+* Clear distances of an opening (dragged or selected) along its wall: from its edges to the NEAREST element
+* on each side, i.e. the next opening of the same wall or, if none, the visible end of the wall's inner
+* face (mitered footprint: at a corner, the face of the other wall). Two length labels (inside the room).
+*/
+function openingDistances(view, size, level, wallId, openingId) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const opening = wall?.openings?.find((item) => item.id === openingId);
+    if (opening == null) return null;
+    const { dir } = wallFrame(wall);
+    const footprint = wallFootprint(wall, level.walls);
+    const at = (t) => [wall.a[0] + dir[0] * t, wall.a[1] + dir[1] * t];
+    const from = opening.offset - opening.width / 2, to = opening.offset + opening.width / 2;
+    const others = wall.openings.filter((item) => item.id !== openingId);
+    const before = Math.max(alongWall(wall, footprint.a), ...others.map((o) => o.offset + o.width / 2).filter((t) => t <= from + 1e-9));
+    const after = Math.min(alongWall(wall, footprint.b), ...others.map((o) => o.offset - o.width / 2).filter((t) => t >= to - 1e-9));
+    return [
+        from - before > 0.005 && lengthLabel(view, size, { id: 'gap-before', a: at(before), b: at(from) }),
+        after - to > 0.005 && lengthLabel(view, size, { id: 'gap-after', a: at(to), b: at(after) })
+    ];
+}
+
+const lineAt = (p, q) => ({ x1: p[0], y1: p[1], x2: q[0], y2: q[1] });
 
 // Same corner (exact: the dragged point is copied into the walls by moveVertex)
 const samePoint = (p, q) => p[0] === q[0] && p[1] === q[1];

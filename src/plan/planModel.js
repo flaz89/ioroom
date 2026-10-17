@@ -226,8 +226,14 @@ export function nearestVertex(level, point, maxDistance) {
 * is now ':outer' (the caller swaps the surface materials, planSlice.flipWallSide).
 */
 export function flipWall(level, wallId) {
-    // openings keep their place in the world: their offset is measured from the other end now
-    const flipped = (wall) => (wall.openings ? { openings: wall.openings.map((o) => ({ ...o, offset: wallFrame(wall).length - o.offset })) } : {});
+    // openings keep their place in the world: their offset is measured from the other end now, and a door
+    // keeps its hinge and the side it opens towards (start / end and inner / outer swap with the line)
+    const mirror = (o, length) => ({
+        ...o,
+        offset: length - o.offset,
+        ...(o.type === 'door' ? { hinge: o.hinge === 'end' ? 'start' : 'end', swing: o.swing === 'out' ? 'in' : 'out' } : {})
+    });
+    const flipped = (wall) => (wall.openings ? { openings: wall.openings.map((o) => mirror(o, wallFrame(wall).length)) } : {});
     return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, a: wall.b, b: wall.a, ...flipped(wall) } : wall)) };
 }
 
@@ -259,14 +265,17 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // ---------------------------------------------------------------------------------------------------
 // OPENINGS (doors / windows): holes through a wall, stored IN the wall (wall.openings), so they move,
 // split and flip with it and sync / undo with the plan.
-// opening: { id, type: 'door' | 'window', offset, width, height, sill } in meters: offset = distance from
-// the wall's start `a` to the opening's CENTER along the drawn line; sill = bottom above the floor (0 = door).
+// opening: { id, type: 'door' | 'window', offset, width, height, sill, hinge?, swing? } in meters: offset =
+// distance from the wall's start `a` to the opening's CENTER along the drawn line; sill = bottom above the
+// floor (0 = door). Doors: hinge 'start' (default, the side towards `a`) | 'end'; swing 'in' (default, the
+// leaf opens on the wall's inner side, -normal) | 'out'.
 // ---------------------------------------------------------------------------------------------------
 export const OPENING_DEFAULTS = {
     door: { width: 0.9, height: 2.1, sill: 0 },
     window: { width: 1.2, height: 1.4, sill: 0.9 }
 };
-const MIN_LINTEL = 0.05; // meters of wall always kept above an opening (the wall's top is never cut)
+export const MIN_LINTEL = 0.05; // meters of wall always kept above an opening (the wall's top is never cut)
+export const MIN_OPENING_SIZE = 0.3; // meters: smallest width / height of an opening
 
 export const newOpeningId = () => `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -305,6 +314,26 @@ export function addOpening(level, wallId, type, id = newOpeningId()) {
     if (best[1] - best[0] < size.width) return null;
     const opening = { id, type, offset: (best[0] + best[1]) / 2, ...size };
     return updateWall(level, wallId, { openings: [...(wall.openings ?? []), opening] });
+}
+
+/*
+* The level with opening `openingId` of wall `wallId` merged with `patch` (e.g. { width: 1 }), or null when
+* the result is not valid: smaller than MIN_OPENING_SIZE, negative sill, not entirely within the wall's line,
+* closer than MIN_LINTEL to the wall's top, or overlapping another opening of the wall.
+*/
+export function updateOpening(level, wallId, openingId, patch) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const current = wall?.openings?.find((o) => o.id === openingId);
+    if (current == null) return null;
+    const next = { ...current, ...patch };
+    const { length } = wallFrame(wall);
+    const height = wall.height ?? level.wallHeight;
+    const from = next.offset - next.width / 2, to = next.offset + next.width / 2;
+    const isValid = next.width >= MIN_OPENING_SIZE && next.height >= MIN_OPENING_SIZE && next.sill >= 0
+        && from >= -1e-9 && to <= length + 1e-9 && next.sill + next.height <= height - MIN_LINTEL + 1e-9
+        && wall.openings.every((o) => o.id === openingId || o.offset + o.width / 2 <= from + 1e-9 || o.offset - o.width / 2 >= to - 1e-9);
+    if (!isValid) return null;
+    return updateWall(level, wallId, { openings: wall.openings.map((o) => (o.id === openingId ? next : o)) });
 }
 
 // The level without opening `openingId` of wall `wallId`

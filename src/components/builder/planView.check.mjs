@@ -1,6 +1,6 @@
 // Check for planView.js: node src/components/builder/planView.check.mjs
 import assert from 'node:assert/strict';
-import { fitView, toWorld, zoomAt, panBy, gridSteps, alignPoint, angleSnap, angleBetween, wallsInBox, MAX_SCALE } from './planView.js';
+import { fitView, toWorld, zoomAt, panBy, gridSteps, alignPoint, angleSnap, angleBetween, wallsInBox, rulerSnap2D, lockToPlanAxis, planMeasureList, MAX_SCALE } from './planView.js';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 
@@ -44,4 +44,19 @@ near(angleBetween([0, 0], [-1, 0], [1, 0]), 180);
 const boxWalls = [{ id: 'in', a: [1, 1], b: [2, 1] }, { id: 'half', a: [1, 2], b: [5, 2] }, { id: 'through', a: [-1, 1.5], b: [5, 1.5] }, { id: 'out', a: [8, 8], b: [9, 8] }];
 assert.deepEqual(wallsInBox(boxWalls, [0, 0], [3, 3], false), ['in']);
 assert.deepEqual(wallsInBox(boxWalls, [3, 3], [0, 0], true), ['in', 'half', 'through']);
+// ruler snap: a corner wins over an edge, an edge over nothing
+const segs = [[[0, 0], [4, 0]]];
+assert.deepEqual(rulerSnap2D([3.95, 0.05], [[4, 0]], segs, 0.1), { point: [4, 0], kind: 'vertex' });
+assert.equal(rulerSnap2D([2, 0.05], [[4, 0]], segs, 0.1).kind, 'edge');
+assert.equal(rulerSnap2D([2, 1], [[4, 0]], segs, 0.1).kind, null);
+// axis lock: along Z from (1, 3) to a slanted wall face from (0, 0) to (4, 1): crosses it at z = 0.25
+const locked = lockToPlanAxis([1, 3], [1.2, 0.3], { point: [1.2, 0.3], kind: 'edge', segment: [[0, 0], [4, 1]] });
+assert.equal(locked.axis, 'z');
+assert.ok(Math.abs(locked.point[0] - 1) < 1e-9 && Math.abs(locked.point[1] - 0.25) < 1e-9);
+// measures from above: true 3D length; a vertical one (a point from above) is hidden
+const seen = planMeasureList({ items: [{ id: 'v', a: [0, 0, 0], b: [0, 2.7, 0] }], local: [{ id: 'h', a: { p: [0, 0, 0] }, b: { p: [3, 0, 4] } }] });
+assert.equal(seen.length, 1);
+assert.equal(seen[0].length, 5);
+// a vertex is projected on the axis
+assert.deepEqual(lockToPlanAxis([0, 0], [5, 0.4], { point: [5, 0.4], kind: 'vertex' }).point, [5, 0]);
 console.log('planView.check: ok');

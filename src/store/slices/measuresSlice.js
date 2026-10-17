@@ -61,6 +61,12 @@ export const createMeasuresSlice = (set) => ({
         };
     }),
 
+    // MOVE an end ('a' | 'b') of one of MY temporary measures (saved ones are shared: not editable here).
+    // end: { p } (a moved end is not anchored on an object anymore)
+    moveMeasureEnd: (id, which, end) => set((state) => ({
+        measures: { ...state.measures, local: state.measures.local.map((m) => (m.id === id ? { ...m, [which]: end } : m)) }
+    })),
+
     // DELETE a measure (local or saved)
     removeMeasure: (id) => set((state) => ({
         measures: {

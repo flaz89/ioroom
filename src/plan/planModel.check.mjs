@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addOpening, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addOpening, updateOpening, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -97,12 +97,22 @@ const withTwo = addOpening(withWindow, 'wall-back', 'window', 'o2');
 assert.ok(Math.abs(withTwo.walls[1].openings[1].offset - 1.2) < 1e-9); // gap 0..2.4
 assert.equal(addOpening(updateWall(level, 'wall-back', { b: [-2.5, -3] }), 'wall-back', 'door'), null); // 0.5 m wall: no door
 assert.equal(removeOpening(withTwo, 'wall-back', 'o1').walls[1].openings.length, 1);
+// editing: valid patches apply, invalid ones (overlap, past the wall's end, through the top, too small) give null
+assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { width: 2 }).walls[1].openings[0].width, 2); // 2..4: free
+assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { offset: 2 }), null);      // 1.4..2.6 overlaps o2 (0.6..1.8)
+assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { offset: 5.5 }), null);    // past the end (6)
+assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { height: 1.8 }), null);    // 0.9 + 1.8 > 2.7 - 0.05
+assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { width: 0.1 }), null);
 // clipped to the wall: a wall shortened to 3.2 m cuts the window (2.4..3.6) at 3.2, below a 5 cm lintel
 const rect = openingRects(setWallLength(withWindow, 'wall-back', 3.2).walls[1], 2.2)[0];
 assert.ok(Math.abs(rect.to - 3.2) < 1e-9 && Math.abs(rect.top - 2.15) < 1e-9);
 // flip keeps the opening where it is in the world; split gives it to the piece holding its center
 const shifted = updateWall(withWindow, 'wall-back', { openings: [{ ...withWindow.walls[1].openings[0], offset: 4 }] });
 assert.equal(flipWall(shifted, 'wall-back').walls[1].openings[0].offset, 2);
+const door = addOpening(level, 'wall-back', 'door', 'd1');
+const flippedDoor = flipWall(flipWall(door, 'wall-back'), 'wall-back').walls[1].openings[0];
+assert.ok(flippedDoor.hinge === 'start' && flippedDoor.swing === 'in'); // flipping twice: back to the defaults
+assert.equal(flipWall(door, 'wall-back').walls[1].openings[0].hinge, 'end');
 const pieces = splitWall(shifted, 'wall-back', 'w-new').walls;
 assert.equal(pieces[1].openings.length, 0);
 assert.equal(pieces[2].openings[0].offset, 1);

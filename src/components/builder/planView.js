@@ -4,6 +4,8 @@
 * View: { cx, cz, scale } — world point (meters) at the center of the view, pixels per meter.
 * Screen axes: world X -> right, world Z -> down (top view looking down -Y, north = -Z up).
 */
+import { faceOffsets, openingRects, wallFootprint, wallFrame } from '../../plan/planModel.js';
+
 export const MIN_SCALE = 5;     // px per meter: whole building
 export const MAX_SCALE = 2000;  // px per meter: millimeter detail
 const FIT_MARGIN = 1;           // meters of empty space around the level when fitting
@@ -131,4 +133,101 @@ export function wallsInBox(walls, corner1, corner2, crossing) {
     return walls
         .filter((wall) => (crossing ? segmentHitsRect(wall.a, wall.b, min, max) : inside(wall.a) && inside(wall.b)))
         .map((wall) => wall.id);
+}
+
+/*
+* RULER SNAP in the 2D plan: the point under the pointer snaps to the nearest of `vertices` ([x, z]) within
+* `radius` meters ('vertex'), else to the nearest point of `segments` ([[x, z], [x, z]]) within `radius`
+* ('edge', with that segment), else nothing (kind null: the caller uses the grid or the raw point).
+*/
+export function rulerSnap2D(point, vertices, segments, radius) {
+    let best = null, bestDistance = radius;
+    for (const vertex of vertices) {
+        const distance = Math.hypot(vertex[0] - point[0], vertex[1] - point[1]);
+        if (distance <= bestDistance) { best = vertex; bestDistance = distance; }
+    }
+    if (best) return { point: [best[0], best[1]], kind: 'vertex' };
+    let edge = null;
+    bestDistance = radius;
+    for (const segment of segments) {
+        const nearest = nearestOnSegment(point, segment[0], segment[1]);
+        const distance = Math.hypot(nearest[0] - point[0], nearest[1] - point[1]);
+        if (distance <= bestDistance) { edge = { point: nearest, kind: 'edge', segment }; bestDistance = distance; }
+    }
+    return edge ?? { point, kind: null };
+}
+
+function nearestOnSegment(p, a, b) {
+    const d = [b[0] - a[0], b[1] - a[1]];
+    const lengthSq = d[0] * d[0] + d[1] * d[1];
+    const t = lengthSq > 0 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / lengthSq)) : 0;
+    return [a[0] + d[0] * t, a[1] + d[1] * t];
+}
+
+/*
+* AXIS LOCK of the 2D ruler (default after the first point; Shift = free): the measure runs along the
+* plan's X or Z axis through `start`, the one the raw `pointer` is further along. The end is `snap`
+* ({ point, kind, segment? } from rulerSnap2D) brought onto that axis: an edge = where the axis line
+* crosses the edge's line (exact clear distance to a wall face; projection if nearly parallel); a vertex
+* or a free point = its projection on the axis (the measure reaches exactly its coordinate).
+* Returns { point, axis: 'x' | 'z' }.
+*/
+export function lockToPlanAxis(start, pointer, snap) {
+    const axis = Math.abs(pointer[0] - start[0]) >= Math.abs(pointer[1] - start[1]) ? 'x' : 'z';
+    const projected = axis === 'x' ? [snap.point[0], start[1]] : [start[0], snap.point[1]];
+    if (snap.kind !== 'edge') return { point: projected, axis };
+    const [a, b] = snap.segment;
+    const d = [b[0] - a[0], b[1] - a[1]];
+    const length = Math.hypot(d[0], d[1]);
+    // axis line: start + s * u (u = unit X or Z); edge line: a + t * d
+    const u = axis === 'x' ? [1, 0] : [0, 1];
+    const den = u[0] * d[1] - u[1] * d[0];
+    if (length === 0 || Math.abs(den) / length < 0.05) return { point: projected, axis }; // nearly parallel
+    const s = ((a[0] - start[0]) * d[1] - (a[1] - start[1]) * d[0]) / den;
+    return { point: [start[0] + u[0] * s, start[1] + u[1] * s], axis };
+}
+
+// ---------------------------------------------------------------------------------------------------
+// RULER MEASURES seen from above (PlanMeasures.jsx draws them, PlanView2D.jsx snaps to them)
+// ---------------------------------------------------------------------------------------------------
+const MEASURE_COLOR = '#ff9a1a'; // my temporary measures (the 3D ruler's orange)
+const MIN_PLAN_LENGTH = 0.01;    // meters: shorter than this seen from above = vertical measure, hidden
+
+// A stored end ({ p, ... } or an old plain [x, y, z]) -> [x, y, z]
+const endPoint = (end) => (Array.isArray(end) ? end : end.p);
+const plan = (p) => [p[0], p[2]];
+const length3 = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
+
+// Measures drawn in the plan: [{ id, a, b ([x, z]), ya, yb (heights), length (3D, m), color, saved }]
+export function planMeasureList(measures) {
+    const list = [
+        ...measures.items.map((m) => ({ m, color: m.author?.color ?? MEASURE_COLOR, saved: true })),
+        ...measures.local.map((m) => ({ m, color: MEASURE_COLOR, saved: false }))
+    ];
+    return list.map(({ m, color, saved }) => {
+        const a = endPoint(m.a), b = endPoint(m.b);
+        return { id: m.id, a: plan(a), b: plan(b), ya: a[1], yb: b[1], length: length3(a, b), color, saved };
+    }).filter((item) => Math.hypot(item.b[0] - item.a[0], item.b[1] - item.a[1]) >= MIN_PLAN_LENGTH);
+}
+
+// Snap targets of the 2D ruler: { vertices: [[x, z]], segments: [[[x, z], [x, z]]] }
+export function rulerTargets(level, measureList) {
+    const vertices = [], segments = [];
+    for (const wall of level.walls) {
+        const f = wallFootprint(wall, level.walls);
+        vertices.push(f.a, f.b, f.aOut, f.bOut);
+        segments.push([f.a, f.b], [f.aOut, f.bOut]);
+        const { dir, normal } = wallFrame(wall);
+        const { inner, outer } = faceOffsets(wall);
+        const at = (t, offset) => [wall.a[0] + dir[0] * t + normal[0] * offset, wall.a[1] + dir[1] * t + normal[1] * offset];
+        for (const { from, to } of openingRects(wall, wall.height ?? level.wallHeight)) {
+            vertices.push(at(from, inner), at(from, outer), at(to, inner), at(to, outer));
+            segments.push([at(from, inner), at(from, outer)], [at(to, inner), at(to, outer)]); // jambs
+        }
+    }
+    for (const item of measureList) {
+        vertices.push(item.a, item.b);
+        segments.push([item.a, item.b]);
+    }
+    return { vertices, segments };
 }

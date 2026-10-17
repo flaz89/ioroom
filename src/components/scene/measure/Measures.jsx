@@ -7,6 +7,7 @@ import { useStore } from '../../../store/appStore';
 import { useCanvasTexture } from '../xr-ui/useCanvasTexture';
 import { formatLength, lockToAxis, snapPoint, snapToSegments } from './measureSnap';
 import { objectMeshes } from '../level/objectMeshes';
+import { setCursorGrabbing, setCursorHover } from '../sceneCursor';
 import './measures.css';
 
 /*
@@ -26,6 +27,10 @@ import './measures.css';
 *   mine). A press that drags orbits
 *   the camera as usual (only a still click places a point). Esc: drop the first point, then leave the mode.
 *   Objects are not selected or grabbed while the ruler is on (SingleObject.jsx).
+* - MOVING ENDS (desktop): my selected temporary (orange) measure shows bigger, grabbable end dots;
+*   dragging one moves that end with the ruler's snaps, locked to the axis through the other end (Shift =
+*   free), anchored on the object it lands on (if any); saved on release (store moveMeasureEnd). The press
+*   on a handle never orbits the camera nor places a ruler point (MeasureEndDragger, handleAt).
 * - ANCHORED ENDS: a point taken on an object is stored in the object's local space (measuresSlice.js) and
 *   resolved every frame from its live mesh (objectMeshes.js): moving / rotating / scaling the object (also
 *   while dragging, also by another device) updates the measure live. The label text re-renders only when
@@ -39,6 +44,7 @@ const TABLETOP_BOOST = 6;            // thicker line on the tabletop model (1/12
 const DOT_SIZE = 0.012;              // screen fraction (sprites without size attenuation)
 const LABEL_SIZE = [0.1, 0.032];
 const SNAP_SCREEN = 0.02;            // snap distance = 2% of the camera distance (same feel at any zoom)
+const HANDLE_SCALE = 2;              // end dots of an editable measure (grab handles)
 const CLICK_SLOP = 5;                // pixels: a press that moves more is an orbit, not a click
 const noRaycast = () => null;
 /*
@@ -86,18 +92,24 @@ function makeEnd(point, mesh, board) {
 export default function BoardMeasures() {
     const rootRef = useRef(); // child of the board, identity: its parent is the board root
     const { items, local, selectedId } = useStore((state) => state.measures);
+    const [draft, setDraft] = useState(null); // { id, which, end, kind } while an end is dragged (desktop)
+    // 2D plan open: its own actions and handles (builder/PlanMeasures.jsx)
+    const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const isXR = useXR((state) => state.mode != null);
     const boost = useStore((state) => state.view.mode === 'tabletop') ? TABLETOP_BOOST : 1;
 
     return (
         <group ref={rootRef}>
             {isXR ? <XRMeasurePlacer rootRef={rootRef} boost={boost} /> : <MeasurePlacer rootRef={rootRef} boost={boost} />}
+            {!isXR && !isPlanView && <MeasureEndDragger rootRef={rootRef} onDraft={setDraft} />}
+            {draft && <Dot position={draft.end.p} color={SNAP_COLORS[draft.kind] ?? SNAP_COLORS.surface} scale={1.4} />}
             {items.map((measure) => (
                 <MeasureLine key={measure.id} measure={measure} color={measure.author?.color ?? LOCAL_COLOR} boost={boost}
                     selected={selectedId === measure.id} saved />
             ))}
             {local.map((measure) => (
-                <MeasureLine key={measure.id} measure={measure} color={LOCAL_COLOR} boost={boost} selected={selectedId === measure.id} />
+                <MeasureLine key={measure.id} measure={draft?.id === measure.id ? { ...measure, [draft.which]: draft.end } : measure}
+                    color={LOCAL_COLOR} boost={boost} selected={selectedId === measure.id} editable={selectedId === measure.id && !isXR && !isPlanView} />
             ))}
         </group>
     );
@@ -131,7 +143,9 @@ function rulerHit(raycaster, board, camera) {
 * point is anchored on an object only when it comes from a snapped corner / edge of it.
 * `root`: group with the board's frame (BoardMeasures' root).
 */
-function rulerPoint(raycaster, board, root, camera, free) {
+// origin: the end the axis lock starts from (default: the ruler's first point); excludeId: a measure that is
+// not a snap target (the one whose end is being dragged)
+function rulerPoint(raycaster, board, root, camera, free, origin = useStore.getState().measures.start, excludeId = null) {
     const hit = rulerHit(raycaster, board, camera);
     if (hit?.measureId != null) return hit;
     // the ray in board space (measures and the room's axes live there, also on a rotated tabletop)
@@ -139,8 +153,8 @@ function rulerPoint(raycaster, board, root, camera, free) {
     _boardRay.origin.copy(raycaster.ray.origin).applyMatrix4(_boardInverse);
     _boardRay.direction.copy(raycaster.ray.direction).transformDirection(_boardInverse);
     // existing measures first: their ends / lines (often in the air, so tested on the ray)
-    const onMeasure = measureSnap(_boardRay, root);
-    const start = useStore.getState().measures.start;
+    const onMeasure = measureSnap(_boardRay, root, excludeId);
+    const start = origin;
     if (start == null || free) {
         if (onMeasure) return { end: onMeasure.end, kind: onMeasure.kind };
         return hit && { end: makeEnd(hit.point, hit.mesh, board), kind: hit.kind };
@@ -167,9 +181,9 @@ function rulerPoint(raycaster, board, root, camera, free) {
 * measure snapped there follows the same object) or a point of a line. Ray in board space.
 * Returns { end, kind } or null.
 */
-function measureSnap(ray, root) {
+function measureSnap(ray, root, excludeId = null) {
     const { items, local } = useStore.getState().measures;
-    const measures = [...items, ...local];
+    const measures = [...items, ...local].filter((measure) => measure.id !== excludeId);
     if (measures.length === 0) return null;
     const ends = measures.map((measure) => [toEnd(measure.a), toEnd(measure.b)]);
     const segments = ends.map(([a, b]) => ({ a: resolveEnd(a, root, new THREE.Vector3()), b: resolveEnd(b, root, new THREE.Vector3()) }));
@@ -250,7 +264,11 @@ function MeasurePlacer({ rootRef, boost }) {
             const hit = cast(event);
             setHover(hit?.end ? hit : null);
         };
-        const down = (event) => { pressAt = event.target === element ? [event.clientX, event.clientY] : null; };
+        // a press on an end handle is a drag (MeasureEndDragger), not a ruler point
+        const down = (event) => {
+            const onHandle = handleAt(event, element, camera, rootRef.current) != null;
+            pressAt = event.target === element && !onHandle ? [event.clientX, event.clientY] : null;
+        };
         const up = (event) => {
             if (pressAt == null || event.target !== element) return;
             const moved = Math.hypot(event.clientX - pressAt[0], event.clientY - pressAt[1]);
@@ -291,6 +309,77 @@ function MeasurePlacer({ rootRef, boost }) {
 
     if (!active) return null;
     return <RulerPreview start={start} hover={hover} boost={boost} />;
+}
+
+// The end handle ({ id, which }) under the mouse event, or null (sprites: the desktop raycaster has the camera)
+function handleAt(event, element, camera, root) {
+    if (root == null) return null;
+    const rect = element.getBoundingClientRect();
+    _ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    _raycaster.setFromCamera(_ndc, camera);
+    const hit = _raycaster.intersectObject(root, true).find((item) => item.object.userData.measureHandle != null);
+    return hit?.object.userData.measureHandle ?? null;
+}
+
+/*
+* Desktop: drag the end handles of my selected temporary measure (ruler on or off). Window listeners in
+* the capture phase: a press on a handle is stopped there, so the camera does not orbit and objects are
+* not grabbed. The moved end: rulerPoint from the OTHER end (axis lock, Shift = free), this measure
+* excluded from the snaps; live preview through onDraft, saved on release (one store write).
+*/
+function MeasureEndDragger({ rootRef, onDraft }) {
+    const gl = useThree((state) => state.gl);
+    const camera = useThree((state) => state.camera);
+
+    useEffect(() => {
+        const element = gl.domElement;
+        let drag = null; // { id, which, other (end), draft }
+        const down = (event) => {
+            if (event.button !== 0 || event.target !== element) return;
+            const handle = handleAt(event, element, camera, rootRef.current);
+            const measure = handle && useStore.getState().measures.local.find((item) => item.id === handle.id);
+            if (measure == null) return;
+            event.stopPropagation();
+            drag = { ...handle, other: toEnd(handle.which === 'a' ? measure.b : measure.a), draft: null };
+            setCursorGrabbing('measure-handle', true);
+        };
+        const move = (event) => {
+            if (drag == null) {
+                // hover: hand cursor over a handle (sceneCursor.js)
+                setCursorHover('measure-handle', event.target === element && handleAt(event, element, camera, rootRef.current) != null);
+                return;
+            }
+            const board = rootRef.current?.parent;
+            if (board == null) return;
+            const rect = element.getBoundingClientRect();
+            _ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+            _raycaster.setFromCamera(_ndc, camera);
+            const hit = rulerPoint(_raycaster, board, rootRef.current, camera, event.shiftKey, drag.other, drag.id);
+            if (hit?.end == null) return; // over a label / nothing: keep the last position
+            drag.draft = { id: drag.id, which: drag.which, end: hit.end, kind: hit.kind };
+            onDraft(drag.draft);
+        };
+        const up = (event) => {
+            if (drag == null) return;
+            event.stopPropagation();
+            if (drag.draft) useStore.getState().moveMeasureEnd(drag.id, drag.which, drag.draft.end);
+            drag = null;
+            onDraft(null);
+            setCursorGrabbing('measure-handle', false);
+        };
+        window.addEventListener('pointerdown', down, true);
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up, true);
+        return () => {
+            window.removeEventListener('pointerdown', down, true);
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up, true);
+            setCursorHover('measure-handle', false);
+            setCursorGrabbing('measure-handle', false);
+            onDraft(null);
+        };
+    }, [gl, camera, rootRef, onDraft]);
+    return null;
 }
 
 // Snapped point under the pointer + the live measure from the first point (both placers)
@@ -401,9 +490,10 @@ function getDotTexture() {
 }
 
 // End point / snap marker: a circle of constant size on screen, drawn over everything
-function Dot({ position, color, scale = 1, dotRef }) {
+function Dot({ position, color, scale = 1, dotRef, handle }) {
     return (
-        <sprite ref={dotRef} position={position} scale={[DOT_SIZE * scale, DOT_SIZE * scale, 1]} raycast={noRaycast} renderOrder={10}>
+        <sprite ref={dotRef} position={position} scale={[DOT_SIZE * scale, DOT_SIZE * scale, 1]} renderOrder={10}
+            raycast={handle ? labelRaycast : noRaycast} userData={handle ? { measureHandle: handle } : undefined}>
             <spriteMaterial map={getDotTexture()} color={color} transparent sizeAttenuation={false} depthTest={false} depthWrite={false} toneMapped={false} />
         </sprite>
     );
@@ -425,11 +515,12 @@ function FollowDot({ end, color }) {
 * text (a canvas texture) is re-rendered only when the shown value changes.
 * `saved`: shared measure (no Save action). `preview`: the live one while measuring (not clickable).
 */
-function MeasureLine({ measure, color, boost, selected = false, saved = false, preview = false }) {
+function MeasureLine({ measure, color, boost, selected = false, saved = false, preview = false, editable = false }) {
     const isXR = useXR((state) => state.mode != null); // XR: actions in VRMeasurePanel.jsx instead of Html
-    // builder: labels are not clickable (the mouse is for the walls; the ruler tool still measures)
-    const isBuilder = useStore((state) => state.workspace === 'builder') && !isXR;
-    const isLocked = preview || isBuilder;
+    // only the live preview is not clickable (labels are selectable in the builder too: Save / Delete / handles)
+    const isLocked = preview;
+    // 2D plan open: its own actions (builder/PlanMeasures.jsx); this Html would float over the plan
+    const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const a = toEnd(measure.a), b = toEnd(measure.b);
     const groupRef = useRef(), lineRef = useRef(), dotARef = useRef(), dotBRef = useRef(), labelRef = useRef();
     const [text, setText] = useState(() => formatLength(new THREE.Vector3(...a.p).distanceTo(new THREE.Vector3(...b.p))));
@@ -464,8 +555,9 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
             <mesh ref={lineRef} geometry={cylinder} dispose={null} raycast={noRaycast} renderOrder={9}>
                 <meshBasicMaterial color={color} depthTest={false} depthWrite={false} transparent opacity={0.9} toneMapped={false} />
             </mesh>
-            <Dot dotRef={dotARef} position={a.p} color={color} />
-            <Dot dotRef={dotBRef} position={b.p} color={color} />
+            {/* editable (my selected temporary measure): bigger dots, grabbable (MeasureEndDragger) */}
+            <Dot dotRef={dotARef} position={a.p} color={color} scale={editable ? HANDLE_SCALE : 1} handle={editable ? { id: measure.id, which: 'a' } : undefined} />
+            <Dot dotRef={dotBRef} position={b.p} color={color} scale={editable ? HANDLE_SCALE : 1} handle={editable ? { id: measure.id, which: 'b' } : undefined} />
             <group ref={labelRef} position={a.p}>
                 <sprite
                     scale={[LABEL_SIZE[0], LABEL_SIZE[1], 1]}
@@ -476,7 +568,7 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
                 >
                     <spriteMaterial map={label} sizeAttenuation={false} depthTest={false} depthWrite={false} transparent toneMapped={false} />
                 </sprite>
-                {selected && !isXR && (
+                {selected && !isXR && !isPlanView && (
                     <Html center zIndexRange={[50, 0]} style={{ pointerEvents: 'none' }}>
                         <div className="measure-actions">
                             {!saved && <button className="primary" onClick={() => saveMeasure(measure.id)} title="Save and share with the room">Save</button>}

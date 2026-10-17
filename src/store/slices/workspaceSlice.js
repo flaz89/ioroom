@@ -8,6 +8,8 @@
 * selectedWallIds: walls selected in the builder (2D plan or 3D scene), shared by both views; their panel is
 *   WallPanel.jsx (one wall: sizes; several: common thickness / height, delete). Cleared when leaving the
 *   builder or changing tool. Single wall: singleSelectedWall(state).
+* selectedOpening: { wallId, openingId } of the door / window selected in the builder (null = none); its panel
+*   is WallPanel.jsx too. Exclusive with selectedWallIds: selecting one clears the other.
 * planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls).
 * wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
 * planGrid: { minor, major } grid steps (meters) of the open 2D plan view, null when it is closed
@@ -26,17 +28,21 @@ export const createWorkspaceSlice = (set, get) => ({
 
     selectedWallIds: [],
     // one wall (or none with null)
-    setSelectedWallId: (wallId) => set({ selectedWallIds: wallId ? [wallId] : [] }),
-    setSelectedWallIds: (selectedWallIds) => set({ selectedWallIds }),
+    setSelectedWallId: (wallId) => set({ selectedWallIds: wallId ? [wallId] : [], selectedOpening: null }),
+    setSelectedWallIds: (selectedWallIds) => set({ selectedWallIds, selectedOpening: null }),
     // Shift+click: adds the wall, or removes it if already selected
     toggleSelectedWall: (wallId) => set((state) => ({
+        selectedOpening: null,
         selectedWallIds: state.selectedWallIds.includes(wallId)
             ? state.selectedWallIds.filter((id) => id !== wallId)
             : [...state.selectedWallIds, wallId]
     })),
 
+    selectedOpening: null,
+    setSelectedOpening: (selectedOpening) => set({ selectedOpening, selectedWallIds: [] }),
+
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [] }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null }),
 
     wallJustify: 'left',
     setWallJustify: (wallJustify) => set({ wallJustify }),
@@ -54,7 +60,7 @@ export const createWorkspaceSlice = (set, get) => ({
             if (state.notes.placing) state.setPlacingNote(false);
             if (DESIGNER_PANELS.includes(state.openPanel)) state.closePanel();
         }
-        set({ workspace, selectedWallIds: [] });
+        set({ workspace, selectedWallIds: [], selectedOpening: null });
     }
 });
 

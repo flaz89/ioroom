@@ -22,6 +22,15 @@
 .plan-wall { fill: #d9dcea; stroke: #ffffff; stroke-width: 1; stroke-linejoin: miter; cursor: pointer; }
 .plan-wall.is-selected { fill: #ff9a1a; stroke: #ffd29a; }
 
+/* doors / windows: a dark gap through the wall + the drafting symbol; selected = orange */
+.plan-opening-gap { fill: #0a1030; stroke: #ffffff; stroke-width: 1; cursor: grab; }
+.plan-opening-mark { stroke: #ffffff; stroke-width: 1.5; pointer-events: none; }
+.plan-opening-swing { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.plan-opening.is-selected .plan-opening-gap { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; }
+.plan-opening.is-selected .plan-opening-mark,
+.plan-opening.is-selected .plan-opening-swing { stroke: #ff9a1a; }
+.plan-view.is-drawing .plan-opening-gap { pointer-events: none; }
+
 /* corner handles: the hit circle is invisible but catches the pointer (touch-size) */
 .plan-vertex-hit { fill: transparent; cursor: move; }
 .plan-vertex { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2; pointer-events: none; }
@@ -161,6 +170,8 @@
 .wall-panel-actions button:disabled { opacity: .4; cursor: default; }
 /* openings of the selected wall: one row each, × removes it */
 .wall-panel-opening { display: flex; justify-content: space-between; align-items: center; font-size: .9em; opacity: .9; }
+.wall-panel-opening-name { cursor: pointer; }
+.wall-panel-opening-name:hover { color: #ff9a1a; }
 .wall-panel-opening button { border: none; background: none; color: #ff8a8a; font: inherit; cursor: pointer; }
 .wall-panel-actions button.is-danger { border-color: rgba(255, 80, 80, 0.6); color: #ff8a8a; }
 .wall-panel-actions button.is-danger:hover { background: rgba(255, 60, 60, 0.18); }
@@ -182,3 +193,14 @@
     cursor: pointer;
 }
 .wall-panel-toggle button.is-active { background: #ff9a1a; border-color: #ff9a1a; font-weight: 600; }
+
+/* ruler (PlanMeasures.jsx): crosshair; walls, corners and openings are snap targets, not handles */
+.plan-view.is-measuring, .plan-view.is-measuring .plan-wall, .plan-view.is-measuring .plan-opening-gap { cursor: crosshair; }
+.plan-view.is-measuring .plan-vertex-hit, .plan-view.is-measuring .plan-opening-gap { pointer-events: none; }
+.plan-measure-label { cursor: pointer; }
+.plan-measure-text { fill: white; font: 700 12px "SUSE Mono", monospace; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.plan-measure-snap { stroke: #0a1030; stroke-width: 1.5; pointer-events: none; }
+.plan-measure-actions { position: absolute; transform: translateX(-50%); }
+.plan-measure-actions .measure-actions { transform: none; }
+.plan-measure-handle { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2.5; cursor: move; }
+.plan-view.is-measuring .plan-measure-handle { cursor: move; }
