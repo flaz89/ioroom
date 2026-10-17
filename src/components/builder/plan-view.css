@@ -18,8 +18,27 @@
 
 .plan-floor { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
 
-/* walls: solid, like a drafting plan */
-.plan-wall { fill: #d9dcea; stroke: #ffffff; stroke-width: 1; stroke-linejoin: miter; }
+/* walls: solid, like a drafting plan; selected = the app's orange */
+.plan-wall { fill: #d9dcea; stroke: #ffffff; stroke-width: 1; stroke-linejoin: miter; cursor: pointer; }
+.plan-wall.is-selected { fill: #ff9a1a; stroke: #ffd29a; }
+
+/* corner handles: the hit circle is invisible but catches the pointer (touch-size) */
+.plan-vertex-hit { fill: transparent; cursor: move; }
+.plan-vertex { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2; pointer-events: none; }
+.plan-vertex-hit:hover + .plan-vertex { fill: #ff9a1a; }
+
+/* wall lengths: screen-space text with a dark halo, readable over walls and grid */
+.plan-length {
+    fill: white;
+    stroke: #0a1030;
+    stroke-width: 3px;
+    paint-order: stroke;
+    font-family: "SUSE Mono", monospace;
+    font-size: 12px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+}
 
 .plan-legend {
     padding: .3em .9em;
@@ -32,3 +51,62 @@
     font-size: 12px;
     white-space: nowrap;
 }
+
+/* Selected wall panel (WallPanel.jsx): glass card at the top center of the plan, under the compass */
+.wall-panel {
+    position: absolute;
+    top: 4.5em;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: .4em;
+    min-width: 200px;
+    padding: .6em .8em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 14px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: 12px;
+}
+
+.wall-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 700;
+    color: #ff9a1a;
+}
+
+.wall-panel-close {
+    border: none;
+    background: none;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.wall-panel-field {
+    display: grid;
+    grid-template-columns: 1fr 5em auto;
+    align-items: center;
+    gap: .5em;
+}
+
+.wall-panel-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: .25em .4em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    background: rgba(10, 16, 48, 0.6);
+    color: white;
+    font: inherit;
+    text-align: right;
+}
+
+.wall-panel-field input:focus { outline: 1px solid #ff9a1a; }
+.wall-panel-unit { opacity: .6; }

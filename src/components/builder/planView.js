@@ -22,6 +22,11 @@ export function toWorld(view, w, h, px, py) {
     return [view.cx + (px - w / 2) / view.scale, view.cz + (py - h / 2) / view.scale];
 }
 
+// World [x, z] -> screen pixel [px, py] (relative to the view's top-left corner)
+export function toScreen(view, w, h, x, z) {
+    return [(x - view.cx) * view.scale + w / 2, (z - view.cz) * view.scale + h / 2];
+}
+
 // Zoom by `factor` keeping the world point under the screen pixel (px, py) still
 export function zoomAt(view, w, h, px, py, factor) {
     const [x, z] = toWorld(view, w, h, px, py);

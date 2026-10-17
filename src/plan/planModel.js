@@ -15,6 +15,7 @@
 export const DEFAULT_WALL_HEIGHT = 2.7;
 export const DEFAULT_THICKNESS = 0.15;
 const JOIN_EPSILON = 1e-4; // meters: end points closer than this are the same corner
+export const MIN_WALL_LENGTH = 0.05; // meters: editing never makes a wall shorter than this
 
 // The test room of the first versions: 6 x 6 m, open towards +Z. Same face ids as before (materials kept).
 export const DEFAULT_PLAN = {
@@ -34,6 +35,9 @@ export const DEFAULT_PLAN = {
 
 // The level being worked on
 export const activeLevel = (plan) => plan.levels[0];
+
+// The plan with the level being worked on replaced by `level` (the other levels untouched)
+export const withActiveLevel = (plan, level) => ({ ...plan, levels: [level, ...plan.levels.slice(1)] });
 
 const sub = (p, q) => [p[0] - q[0], p[1] - q[1]];
 const add = (p, q) => [p[0] + q[0], p[1] + q[1]];
@@ -93,4 +97,53 @@ export function levelBounds(level) {
     const max = [Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1]))];
     const center = scale(add(min, max), 0.5);
     return { min, max, center, radius: Math.hypot(max[0] - center[0], max[1] - center[1]) };
+}
+
+// Distinct wall end points of a level ([x, z]); joined ends count once (corners of the plan editor)
+export function levelVertices(level) {
+    const vertices = [];
+    for (const wall of level.walls) {
+        for (const end of [wall.a, wall.b]) if (!vertices.some((v) => same(v, end))) vertices.push(end);
+    }
+    return vertices;
+}
+
+/*
+* Moves the corner at `from` to `to`: every wall end AND floor point on that corner moves with it, so joined
+* walls stay joined and the floor follows. Returns the new level, or null when a wall would become shorter
+* than MIN_WALL_LENGTH (the editor keeps the last valid position).
+*/
+export function moveVertex(level, from, to) {
+    const move = (point) => (same(point, from) ? [to[0], to[1]] : point);
+    const walls = level.walls.map((wall) => (same(wall.a, from) || same(wall.b, from)
+        ? { ...wall, a: move(wall.a), b: move(wall.b) }
+        : wall));
+    const isValid = walls.every((wall) => Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) >= MIN_WALL_LENGTH);
+    if (!isValid) return null;
+    const floors = level.floors.map((floor) => (floor.points.some((p) => same(p, from))
+        ? { ...floor, points: floor.points.map(move) }
+        : floor));
+    return { ...level, walls, floors };
+}
+
+// Editable ranges of a wall (meters), shared by the plan editor's fields
+export const WALL_LIMITS = {
+    thickness: { min: 0.05, max: 1 },
+    height: { min: 0.1, max: 10 }
+};
+
+// The level with wall `wallId` merged with `patch` (e.g. { thickness: 0.3 })
+export function updateWall(level, wallId, patch) {
+    return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, ...patch } : wall)) };
+}
+
+/*
+* Sets the length of wall `wallId` keeping its start `a` fixed: the end `b` slides along the wall's
+* direction, and walls joined at `b` follow (moveVertex). Returns null if a wall would become too short.
+*/
+export function setWallLength(level, wallId, length) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    if (wall == null || !(length >= MIN_WALL_LENGTH)) return null;
+    const { dir } = wallFrame(wall);
+    return moveVertex(level, wall.b, [wall.a[0] + dir[0] * length, wall.a[1] + dir[1] * length]);
 }
