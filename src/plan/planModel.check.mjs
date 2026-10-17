@@ -21,6 +21,8 @@ assert.ok(near(f1.bOut, f2.aOut), `${f1.bOut} vs ${f2.aOut}`);
 assert.equal(polygonArea(level.floors[0].points), 36);
 const bounds = levelBounds(level);
 assert.ok(near(bounds.min, [-3.15, -3.15]) && near(bounds.max, [3.15, 3]));
+// an empty level: the default room's bounds (never infinite)
+assert.ok(near(levelBounds({ ...level, walls: [], floors: [] }).center, [0, 0]));
 // corners: 3 walls in a U = 4 distinct end points
 assert.equal(levelVertices(level).length, 4);
 // moving the back-left corner moves both walls' ends and the floor point, nothing else

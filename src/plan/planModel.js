@@ -131,12 +131,14 @@ export function polygonArea(points) {
     return Math.abs(sum) / 2;
 }
 
-// Bounds of a level: { min: [x, z], max: [x, z], center, radius } (walls included)
+// Bounds of a level: { min: [x, z], max: [x, z], center, radius } (walls included). An empty level (no
+// walls, no floors) gets the bounds of the default 6 x 6 m room, so sun, compass and views stay sized.
 export function levelBounds(level) {
-    const points = [...level.floors.flatMap((floor) => floor.points), ...level.walls.flatMap((wall) => {
+    const found = [...level.floors.flatMap((floor) => floor.points), ...level.walls.flatMap((wall) => {
         const f = wallFootprint(wall, level.walls);
         return [f.a, f.b, f.aOut, f.bOut];
     })];
+    const points = found.length > 0 ? found : [[-3, -3], [3, 3]];
     const min = [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1]))];
     const max = [Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1]))];
     const center = scale(add(min, max), 0.5);
