@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -20,6 +20,9 @@ const ALIGN_SNAP_RADIUS = 8;     // px: a coordinate this close to another corne
 const ANGLE_SNAP_TOLERANCE = 2;  // degrees: a wall direction this close to a multiple of the step snaps to it
 const ANGLE_ARC_RADIUS = 28;     // px: angle indicator arc
 const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall (centered on its axis, sticks out)
+const LEAF_THICKNESS = 0.03;     // meters: a sliding leaf panel in the plan (and the track spacing)
+const SLIDE_GAP = 0.02;          // meters: a sliding leaf off the wall face / its arrow off the leaves
+const ARROW_HEAD = 0.08;         // meters: longest arrow head of a sliding leaf
 
 /*
 * 2D top view of the floor plan (builder mode, view '2d', store/slices/workspaceSlice.js): grid in meters,
@@ -612,10 +615,17 @@ export default function PlanView2D() {
 
 /*
 * A door / window in the 2D plan (world meters, inside the view's transform): the gap through the wall
-* (hit target, data-wall-id + data-opening-id) and its drafting symbol. Door: the leaf, open square to the
-* wall, hinged at the opening's start or end (opening.hinge) on the face it opens towards (opening.swing:
-* inner side = -normal, outer = +normal), and its swing arc; window: a line on the wall's axis and one
-* across it at the middle of its width (WINDOW_MARK_LENGTH long, centered on the axis: sticks out of the wall).
+* (hit target, data-wall-id + data-opening-id) and its drafting symbol, one per leaf (planModel.openingLeaves:
+* 1..4 equal leaves, each with its fixed side towards the opening's start or end):
+* - 'swing' (default): each leaf open square to the wall from its hinge, on the face it opens towards
+*   (opening.swing: inner side = -normal, outer = +normal), with its swing arc;
+* - 'slide' (sliding outside the wall): thin leaf panels just off the face on the swing side, on two
+*   alternating tracks, each with an arrow towards the side it slides to;
+* - 'pocket' (sliding into the wall): thin leaf panels on the wall's axis and the dashed pocket in the wall
+*   beside the opening on each side the leaves slide to (as long as those leaves), with arrows.
+* - 'standard' (windows' default): no leaves, just the window marks below.
+* Windows also keep their mark across the wall at mid width (WINDOW_MARK_LENGTH, sticks out of the wall) and,
+* when standard or hinged, the line on the wall's axis.
 */
 function OpeningSymbol({ wall, rect, isSelected }) {
     const { dir, normal } = wallFrame(wall);
@@ -623,30 +633,71 @@ function OpeningSymbol({ wall, rect, isSelected }) {
     const at = (t, offset) => [wall.a[0] + dir[0] * t + normal[0] * offset, wall.a[1] + dir[1] * t + normal[1] * offset];
     const { from, to, opening } = rect;
     const gap = [at(from, inner), at(to, inner), at(to, outer), at(from, outer)];
-    const width = to - from;
+    const operation = openingOperation(opening);
+    const leaves = openingLeaves(opening, from, to);
     const isOut = opening.swing === 'out';
-    const [hingeT, freeT] = opening.hinge === 'end' ? [to, from] : [from, to];
-    const side = isOut ? 1 : -1; // leaf direction along the normal
-    const hinge = at(hingeT, isOut ? outer : inner);
-    const leafTip = [hinge[0] + normal[0] * side * width, hinge[1] + normal[1] * side * width];
-    const closed = at(freeT, isOut ? outer : inner);
-    // arc direction: clockwise on screen when leaf -> closed turns positively (screen y = world z down)
-    const sweep = (leafTip[0] - hinge[0]) * (closed[1] - hinge[1]) - (leafTip[1] - hinge[1]) * (closed[0] - hinge[0]) > 0 ? 1 : 0;
+    const side = isOut ? 1 : -1;                      // away from the wall, along the normal, on the swing side
+    const face = isOut ? Math.max(inner, outer) : Math.min(inner, outer);
+    const axis = (inner + outer) / 2;
+    const isWindow = opening.type === 'window';
+    const panel = (leaf, near, far, key) => (
+        <polygon key={key} className="plan-opening-leaf" points={[at(leaf.from, near), at(leaf.to, near), at(leaf.to, far), at(leaf.from, far)].join(' ')} vectorEffect="non-scaling-stroke" />
+    );
+    // arrow along the wall from the leaf's middle towards the side it slides to, at offset `offset`
+    const arrow = (leaf, offset, key) => {
+        const width = leaf.to - leaf.from;
+        const tail = (leaf.from + leaf.to) / 2;
+        const tip = tail + (leaf.towardsStart ? -1 : 1) * width * 0.35;
+        const head = Math.min(ARROW_HEAD, width * 0.15) * (leaf.towardsStart ? 1 : -1);
+        const [p, q, h1, h2] = [at(tail, offset), at(tip, offset), at(tip + head, offset + Math.abs(head) * 0.6), at(tip + head, offset - Math.abs(head) * 0.6)];
+        return <path key={key} className="plan-opening-mark" d={`M${p}L${q}M${h1}L${q}L${h2}`} vectorEffect="non-scaling-stroke" />;
+    };
+
+    let symbol;
+    if (operation === 'slide') {
+        symbol = leaves.flatMap((leaf, i) => {
+            const near = face + side * (SLIDE_GAP + (i % 2) * LEAF_THICKNESS);
+            return [panel(leaf, near, near + side * LEAF_THICKNESS, `leaf${i}`), arrow(leaf, near + side * (LEAF_THICKNESS + SLIDE_GAP * 2), `arrow${i}`)];
+        });
+    } else if (operation === 'pocket') {
+        // leaves on two tracks around the axis; pockets: as long as the leaves sliding to each side
+        const half = Math.min(LEAF_THICKNESS, Math.abs(outer - inner) / 4);
+        const towardsStart = leaves.filter((leaf) => leaf.towardsStart).reduce((sum, leaf) => sum + leaf.to - leaf.from, 0);
+        const towardsEnd = (to - from) - towardsStart;
+        const pocket = (t0, t1, key) => (
+            <polygon key={key} className="plan-opening-swing" points={[at(t0, axis - half), at(t1, axis - half), at(t1, axis + half), at(t0, axis + half)].join(' ')} vectorEffect="non-scaling-stroke" />
+        );
+        symbol = [
+            towardsStart > 0 && pocket(from - towardsStart, from, 'pocketStart'),
+            towardsEnd > 0 && pocket(to, to + towardsEnd, 'pocketEnd'),
+            ...leaves.flatMap((leaf, i) => {
+                const near = i % 2 === 0 ? axis - half : axis;
+                return [panel(leaf, near, near + half, `leaf${i}`), arrow(leaf, axis + side * (Math.abs(outer - inner) / 2 + SLIDE_GAP * 2), `arrow${i}`)];
+            })
+        ];
+    } else if (operation === 'swing') {
+        symbol = leaves.flatMap((leaf, i) => {
+            const width = leaf.to - leaf.from;
+            const [hingeT, freeT] = leaf.towardsStart ? [leaf.from, leaf.to] : [leaf.to, leaf.from];
+            const hinge = at(hingeT, face);
+            const tip = [hinge[0] + normal[0] * side * width, hinge[1] + normal[1] * side * width];
+            const closed = at(freeT, face);
+            // arc direction: clockwise on screen when leaf -> closed turns positively (screen y = world z down)
+            const sweep = (tip[0] - hinge[0]) * (closed[1] - hinge[1]) - (tip[1] - hinge[1]) * (closed[0] - hinge[0]) > 0 ? 1 : 0;
+            return [
+                <line key={`leaf${i}`} className="plan-opening-mark" x1={hinge[0]} y1={hinge[1]} x2={tip[0]} y2={tip[1]} vectorEffect="non-scaling-stroke" />,
+                // quarter circle from the open leaf's tip back to the closed position
+                <path key={`arc${i}`} className="plan-opening-swing" d={`M${tip[0]} ${tip[1]}A${width} ${width} 0 0 ${sweep} ${closed[0]} ${closed[1]}`} vectorEffect="non-scaling-stroke" />
+            ];
+        });
+    }
+
     return (
         <g className={isSelected ? 'plan-opening is-selected' : 'plan-opening'}>
             <polygon className="plan-opening-gap" data-wall-id={wall.id} data-opening-id={opening.id} points={gap.join(' ')} vectorEffect="non-scaling-stroke" />
-            {opening.type === 'door' ? (
-                <>
-                    <line className="plan-opening-mark" x1={hinge[0]} y1={hinge[1]} x2={leafTip[0]} y2={leafTip[1]} vectorEffect="non-scaling-stroke" />
-                    {/* quarter circle from the open leaf's tip back to the closed position */}
-                    <path className="plan-opening-swing" d={`M${leafTip[0]} ${leafTip[1]}A${width} ${width} 0 0 ${sweep} ${closed[0]} ${closed[1]}`} vectorEffect="non-scaling-stroke" />
-                </>
-            ) : (
-                <>
-                    <line className="plan-opening-mark" {...lineAt(at(from, (inner + outer) / 2), at(to, (inner + outer) / 2))} vectorEffect="non-scaling-stroke" />
-                    <line className="plan-opening-mark" {...lineAt(at((from + to) / 2, (inner + outer - WINDOW_MARK_LENGTH) / 2), at((from + to) / 2, (inner + outer + WINDOW_MARK_LENGTH) / 2))} vectorEffect="non-scaling-stroke" />
-                </>
-            )}
+            {isWindow && (operation === 'swing' || operation === 'standard') && <line className="plan-opening-mark" {...lineAt(at(from, axis), at(to, axis))} vectorEffect="non-scaling-stroke" />}
+            {isWindow && <line className="plan-opening-mark" {...lineAt(at((from + to) / 2, axis - WINDOW_MARK_LENGTH / 2), at((from + to) / 2, axis + WINDOW_MARK_LENGTH / 2))} vectorEffect="non-scaling-stroke" />}
+            {symbol}
         </g>
     );
 }

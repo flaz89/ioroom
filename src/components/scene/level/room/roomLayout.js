@@ -1,25 +1,27 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { faceOffsets, openingRects, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { faceOffsets, openingFloors, openingRects, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
 * quantities measures (surfaceAreas), so both always agree.
 *
-* - Floors: polygons, world-space UVs in meters (planarUVs, same rule as before).
+* - Floors: polygons, world-space UVs in meters (planarUVs, same rule as before), plus the strips under the
+*   floor-level openings they run through (planModel.openingFloors: the chosen room's floor fills the
+*   opening's depth, no threshold; same UVs, so the pattern continues).
 * - Walls: prisms on their mitered footprint (wallFootprint), height = wall.height ?? level.wallHeight.
 *   Faces: inner, outer, top and the free ends ("edge"); the bottom sits on the floor (not built) and the
 *   ends at a joint are inside the neighbour (not built). UVs in meters, anchored to the world along the
 *   wall direction, so a pattern continues across collinear walls; never mirrored seen from outside.
 *   Openings (doors / windows, planModel.openingRects) are cut through the inner and outer faces; their
-*   reveals (jambs, head, sill / threshold) belong to the wall's "edge" face.
+*   reveals (jambs, head, sill; a threshold only when no floor fills the opening) belong to the wall's
+*   "edge" face.
 * Face ids: floor.id, '<wall>:inner' | ':outer' | ':edge'. Every geometry is indexed with position, normal
 * and uv, so batches can be merged (roomGeometry.js mergeFaces).
 */
 const FLOOR_COLOR = '#d4d4d4'; // plain material colors
 const WALL_COLOR = '#ffffff';
-const THRESHOLD_LIFT = 0.003; // meters (enough for the headset's depth precision at room distances): a door threshold above the floors it overlaps (no z-fighting)
 
 const wallHeight = (wall, level) => wall.height ?? level.wallHeight;
 
@@ -66,7 +68,8 @@ function holedFace(t0, t1, h, rects, point, normal, uv) {
 }
 
 // The faces of one wall: [{ part: 'inner' | 'outer' | 'edge', geometry, vertical }]
-function wallGeometries(wall, level) {
+// filled: ids of this wall's openings whose depth a floor fills (openingFloors): no threshold built there
+function wallGeometries(wall, level, filled) {
     const h = wallHeight(wall, level);
     const { dir, normal } = wallFrame(wall);
     const { a, b, aOut, bOut, aJoined, bJoined } = wallFootprint(wall, level.walls);
@@ -95,7 +98,7 @@ function wallGeometries(wall, level) {
     // Reveals of each opening, through the wall's thickness: jambs facing into the opening, head facing
     // down, sill (window) / threshold (door) facing up
     const { inner: fi, outer: fo } = offsets;
-    for (const { from, to, bottom, top } of rects) {
+    for (const { opening, from, to, bottom, top } of rects) {
         const jamb = (t, sign) => quad([onLine(t, fi, bottom), onLine(t, fo, bottom), onLine(t, fo, top), onLine(t, fi, top)],
             [dir[0] * sign, 0, dir[1] * sign], [[across0 + fi, bottom], [across0 + fo, bottom], [across0 + fo, top], [across0 + fi, top]]);
         const flat = (y, up) => quad([onLine(from, fi, y), onLine(to, fi, y), onLine(to, fo, y), onLine(from, fo, y)],
@@ -103,11 +106,9 @@ function wallGeometries(wall, level) {
         faces.push(
             { part: 'edge', vertical: true, geometry: jamb(from, 1) },
             { part: 'edge', vertical: true, geometry: jamb(to, -1) },
-            { part: 'edge', vertical: false, geometry: flat(top, -1) },
-            // a door's threshold on the floor level is lifted a hair: at y = 0 it is coplanar with the ground
-            // and the floors meeting it (z-fighting, worst on the headset's depth buffer)
-            { part: 'edge', vertical: false, geometry: flat(Math.max(bottom, THRESHOLD_LIFT), 1) }
+            { part: 'edge', vertical: false, geometry: flat(top, -1) }
         );
+        if (!filled.has(opening.id)) faces.push({ part: 'edge', vertical: false, geometry: flat(bottom, 1) });
     }
     return faces;
 }
@@ -116,11 +117,15 @@ function wallGeometries(wall, level) {
 * Every visible face of a level: { key, geometry, surfaceId, vertical, color }.
 */
 export function roomFaces(level) {
+    const patches = openingFloors(level);
+    const filled = new Set(patches.map((patch) => patch.openingId));
     return [
-        ...level.floors.map((floor) => ({
-            key: floor.id, geometry: polygonGeometry(floor.points), surfaceId: floor.id, vertical: false, color: FLOOR_COLOR
-        })),
-        ...level.walls.flatMap((wall) => wallGeometries(wall, level).map((face, index) => ({
+        ...level.floors.map((floor) => {
+            const strips = patches.filter((patch) => patch.floorId === floor.id).map((patch) => polygonGeometry(patch.points));
+            const geometry = strips.length > 0 ? mergeGeometries([polygonGeometry(floor.points), ...strips]) : polygonGeometry(floor.points);
+            return { key: floor.id, geometry, surfaceId: floor.id, vertical: false, color: FLOOR_COLOR };
+        }),
+        ...level.walls.flatMap((wall) => wallGeometries(wall, level, filled).map((face, index) => ({
             key: `${wall.id}-${face.part}-${index}`,
             geometry: face.geometry,
             surfaceId: `${wall.id}:${face.part}`,
@@ -133,13 +138,17 @@ export function roomFaces(level) {
 /*
 * Area of every face id of a level: { surfaceId: m² }, from the plan data (no geometry): floor polygons;
 * inner face = inner line x height (exactly the side the room sees); outer = outer line x height; edge =
-* top (footprint) + free ends + opening reveals. Openings are subtracted from the inner / outer faces
+* top (footprint) + free ends + opening reveals (no threshold where a floor fills the opening: that strip
+* counts for the floor). Openings are subtracted from the inner / outer faces
 * (the part of each opening within that face). Rounded to cm².
 */
 export function surfaceAreas(level) {
     const areas = {};
     const put = (id, value) => { areas[id] = Math.round(((areas[id] ?? 0) + value) * 100) / 100; };
     for (const floor of level.floors) put(floor.id, polygonArea(floor.points));
+    const patches = openingFloors(level);
+    for (const patch of patches) put(patch.floorId, polygonArea(patch.points));
+    const filled = new Set(patches.map((patch) => patch.openingId));
     for (const wall of level.walls) {
         const h = wallHeight(wall, level);
         const f = wallFootprint(wall, level.walls);
@@ -149,7 +158,8 @@ export function surfaceAreas(level) {
         const rects = openingRects(wall, h);
         // area of the openings within a face spanning t0..t1 along the line
         const holes = (t0, t1) => rects.reduce((sum, r) => sum + Math.max(0, Math.min(r.to, t1) - Math.max(r.from, t0)) * (r.top - r.bottom), 0);
-        const reveals = rects.reduce((sum, r) => sum + 2 * ((r.top - r.bottom) + (r.to - r.from)) * wall.thickness, 0);
+        // jambs + head, and the threshold unless a floor fills the opening
+        const reveals = rects.reduce((sum, r) => sum + (2 * (r.top - r.bottom) + (filled.has(r.opening.id) ? 1 : 2) * (r.to - r.from)) * wall.thickness, 0);
         put(`${wall.id}:inner`, length(f.a, f.b) * h - holes(lineT(f.a), lineT(f.b)));
         put(`${wall.id}:outer`, length(f.aOut, f.bOut) * h - holes(lineT(f.aOut), lineT(f.bOut)));
         put(`${wall.id}:edge`, polygonArea([f.a, f.b, f.bOut, f.aOut])

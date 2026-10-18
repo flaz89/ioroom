@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, addOpening, removeOpening, setWallLength, updateOpening, updateWall, wallFrame } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, addOpening, openingOperation, removeOpening, setWallLength, updateOpening, updateWall, wallFrame } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -141,8 +141,11 @@ function WallsPanel() {
 
 /*
 * Panel of the selected door / window (store selectedOpening): distance of its start edge from the wall's
-* start, width (the start edge stays put), height, sill (windows; doors stand on the floor); doors: hinge side
-* (towards the wall's start / end) and opening side (In = the wall's inner side, Out = outer); Delete.
+* start, width (the start edge stays put), height, sill (windows; doors stand on the floor); doors and
+* windows: type (windows: Standard, the default plain symbol; Hinged / Sliding on a face / Pocket into the
+* wall) and leaves (1..4); for an odd leaf count
+* the hinge or slide side (towards the wall's start / end); the side it opens or slides on (In = the wall's
+* inner side, Out = outer; not for Pocket); Floor (floor-level only: whose floor fills its depth); Delete.
 * A value that would make the opening invalid (overlap, past the wall, through the top: planModel
 * updateOpening) is ignored, like the wall fields. Esc deselects, Del / Backspace deletes. ← back to the wall.
 */
@@ -181,6 +184,9 @@ function OpeningPanel() {
     };
     const number = (text) => Number(String(text).replace(',', '.'));
     const isDoor = opening.type === 'door';
+    const operation = openingOperation(opening);
+    const hasLeaves = operation !== 'standard';
+    const leaves = opening.leaves ?? 1;
 
     return (
         <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
@@ -193,8 +199,14 @@ function OpeningPanel() {
             <Field label="Width" value={opening.width} onApply={(text) => apply({ width: number(text), offset: start + number(text) / 2 })} />
             <Field label="Height" value={opening.height} onApply={(text) => apply({ height: number(text) })} />
             {!isDoor && <Field label="Sill" value={opening.sill} onApply={(text) => apply({ sill: number(text) })} />}
-            {isDoor && <Toggle label="Hinge" value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
-            {isDoor && <Toggle label="Opens" value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}
+            {/* how it opens (doors and windows): hinged, sliding on a face, sliding into the wall; 1..4 leaves
+                (planModel.openingLeaves); hinge / slide direction only matters for an odd leaf count */}
+            <Toggle label="Type" value={operation} options={[...(isDoor ? [] : [['standard', 'Standard']]), ['swing', 'Hinged'], ['slide', 'Sliding'], ['pocket', 'Pocket']]} onChange={(next) => apply({ operation: next })} />
+            {hasLeaves && <Toggle label="Leaves" value={leaves} options={[[1, '1'], [2, '2'], [3, '3'], [4, '4']]} onChange={(next) => apply({ leaves: next })} />}
+            {hasLeaves && leaves % 2 === 1 && <Toggle label={operation === 'swing' ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
+            {hasLeaves && operation !== 'pocket' && <Toggle label={operation === 'swing' ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}
+            {/* floor-level opening: which side's floor runs on through the wall's depth (planModel.openingFloors) */}
+            {opening.sill === 0 && <Toggle label="Floor" value={opening.floorSide ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(floorSide) => apply({ floorSide })} />}
             <div className="wall-panel-actions">
                 <button className="is-danger" onClick={remove} title="Delete this opening (Del)">Delete</button>
             </div>

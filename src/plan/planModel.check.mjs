@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addOpening, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -150,4 +150,37 @@ assert.ok(near(moveUnderlay(u0, [1, 1], [3, 0]).center, [4, -1]));
     // the branch ends on the through walls' face on the branch side (x = 0 or x = ±0.2, never a miter)
     assert.ok(Math.abs(fb.b[0] - fb.bOut[0]) < 1e-9, `branch end not square: ${fb.b} ${fb.bOut}`);
 }
+// floor under a floor-level opening: the chosen side's room, flipped with its wall
+{
+    const room2 = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid'), () => 'east').level; // west 'floor' | east 'east'
+    const withDoor = addOpening(room2, 'mid', 'door', 'dd');
+    const sideOf = (level) => openingFloors(level).find((p) => p.openingId === 'dd').floorId;
+    const inner = sideOf(withDoor);
+    const outerLevel = updateOpening(withDoor, 'mid', 'dd', { floorSide: 'out' });
+    assert.notEqual(sideOf(outerLevel), inner);
+    // flipping the wall (floors rebuilt, as every edit in the app: planSlice.setActiveLevel) keeps the room
+    assert.equal(sideOf(rebuildFloors(flipWall(outerLevel, 'mid'), () => 'east').level), sideOf(outerLevel));
+    assert.equal(openingFloors(withDoor).length, 1);
+    // a raised window has no floor strip
+    assert.equal(openingFloors(addOpening(room2, 'mid', 'window', 'ww')).length, 0);
+}
+
+// leaves: equal widths; halves part in the middle, the odd middle leaf follows the hinge
+{
+    const sides = (opening) => openingLeaves(opening, 0, 1.2).map((leaf) => leaf.towardsStart);
+    assert.deepEqual(sides({}), [true]);
+    assert.deepEqual(sides({ hinge: 'end' }), [false]);
+    assert.deepEqual(sides({ leaves: 2 }), [true, false]);
+    assert.deepEqual(sides({ leaves: 3, hinge: 'end' }), [true, false, false]);
+    assert.deepEqual(sides({ leaves: 4 }), [true, true, false, false]);
+    const four = openingLeaves({ leaves: 4 }, 1, 2.2);
+    assert.ok(Math.abs(four[1].from - 1.3) < 1e-9 && Math.abs(four[3].to - 2.2) < 1e-9);
+    assert.equal(openingLeaves({ leaves: 9 }, 0, 1).length, 4); // clamped
+}
+
+// default operation: doors hinged, windows the standard symbol; an explicit one wins
+assert.equal(openingOperation({ type: 'door' }), 'swing');
+assert.equal(openingOperation({ type: 'window' }), 'standard');
+assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
+
 console.log('planModel: ok');

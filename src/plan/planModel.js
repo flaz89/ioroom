@@ -233,12 +233,15 @@ export function nearestVertex(level, point, maxDistance) {
 * is now ':outer' (the caller swaps the surface materials, planSlice.flipWallSide).
 */
 export function flipWall(level, wallId) {
-    // openings keep their place in the world: their offset is measured from the other end now, and a door
-    // keeps its hinge and the side it opens towards (start / end and inner / outer swap with the line)
+    // openings keep their place in the world: their offset is measured from the other end now, and they
+    // keep their hinge / slide side and the side they open towards (start / end and inner / outer swap with the line)
     const mirror = (o, length) => ({
         ...o,
         offset: length - o.offset,
-        ...(o.type === 'door' ? { hinge: o.hinge === 'end' ? 'start' : 'end', swing: o.swing === 'out' ? 'in' : 'out' } : {})
+        hinge: o.hinge === 'end' ? 'start' : 'end', // doors and windows: hinged / sliding leaves (openingLeaves)
+        swing: o.swing === 'out' ? 'in' : 'out',
+        // the floor filling a floor-level opening stays the same room's
+        ...(o.sill === 0 ? { floorSide: o.floorSide === 'out' ? 'in' : 'out' } : {})
     });
     const flipped = (wall) => (wall.openings ? { openings: wall.openings.map((o) => mirror(o, wallFrame(wall).length)) } : {});
     return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, a: wall.b, b: wall.a, ...flipped(wall) } : wall)) };
@@ -275,7 +278,11 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // opening: { id, type: 'door' | 'window', offset, width, height, sill, hinge?, swing? } in meters: offset =
 // distance from the wall's start `a` to the opening's CENTER along the drawn line; sill = bottom above the
 // floor (0 = door). Doors: hinge 'start' (default, the side towards `a`) | 'end'; swing 'in' (default, the
-// leaf opens on the wall's inner side, -normal) | 'out'.
+// leaf opens on the wall's inner side, -normal) | 'out'. Floor-level openings (sill 0): floorSide 'in'
+// (default) | 'out' = the room whose floor runs on through the wall's thickness under it (openingFloors).
+// Doors and windows alike: operation 'swing' (hinged leaves) | 'slide' (sliding on a wall face: the swing
+// side) | 'pocket' (sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
+// 'standard' (their default: the plain window symbol, no leaves). openingOperation(opening) reads it.
 // ---------------------------------------------------------------------------------------------------
 export const OPENING_DEFAULTS = {
     door: { width: 0.9, height: 2.1, sill: 0 },
@@ -302,6 +309,62 @@ export function openingRects(wall, height) {
         top: Math.min(opening.sill + opening.height, height - MIN_LINTEL)
     })).filter((rect) => rect.to - rect.from > 1e-6 && rect.top - rect.bottom > 1e-6);
 }
+
+// How an opening opens, its type's default when not set: doors 'swing', windows 'standard'
+export const openingOperation = (opening) => opening.operation ?? (opening.type === 'window' ? 'standard' : 'swing');
+export const MAX_LEAVES = 4;
+
+/*
+* The LEAVES of an opening spanning from..to along its wall's line: [{ from, to, towardsStart }], equal
+* widths, in order. towardsStart = the leaf's fixed side is its start-side edge: the hinge of a swing leaf,
+* the side a sliding / pocket leaf slides away to. A leaf in the first half goes towards the start, one in
+* the second half towards the end (a pair parts in the middle), the middle leaf of an odd count follows
+* opening.hinge ('start' default | 'end'): 1 leaf = the classic single hinge choice.
+*/
+export function openingLeaves(opening, from, to) {
+    const count = Math.min(MAX_LEAVES, Math.max(1, Math.round(opening.leaves ?? 1)));
+    const width = (to - from) / count;
+    const middle = (count - 1) / 2;
+    return Array.from({ length: count }, (_, i) => ({
+        from: from + i * width,
+        to: from + (i + 1) * width,
+        towardsStart: i < middle || (i === middle && opening.hinge !== 'end')
+    }));
+}
+
+/*
+* FLOOR UNDER FLOOR-LEVEL OPENINGS (doors, French windows: sill 0): no threshold, the floor of the room on
+* the opening's floorSide ('in' = the wall's inner side, -normal; 'out') runs on through the wall's
+* thickness to the other face. The room is the floor found just past that face (the other side's if none
+* there, e.g. an outside door; none at all = the wall keeps its threshold).
+* Returns [{ wallId, openingId, floorId, points: [[x, z] x 4] }] (the patch, between the two faces).
+*/
+export function openingFloors(level) {
+    const patches = [];
+    for (const wall of level.walls) {
+        const { dir, normal } = wallFrame(wall);
+        const { inner, outer } = faceOffsets(wall);
+        const at = (t, offset) => add(add(wall.a, scale(dir, t)), scale(normal, offset));
+        for (const { opening, from, to, bottom } of openingRects(wall, wall.height ?? level.wallHeight)) {
+            if (bottom > 1e-6) continue;
+            const middle = (from + to) / 2;
+            // just past each face (5 cm): the inner side lies towards -normal from the inner face
+            const sides = {
+                in: at(middle, Math.min(inner, outer) - FLOOR_PROBE),
+                out: at(middle, Math.max(inner, outer) + FLOOR_PROBE)
+            };
+            const order = opening.floorSide === 'out' ? ['out', 'in'] : ['in', 'out'];
+            const floor = order.map((side) => level.floors.find((f) => pointInPolygon(sides[side], f.points))).find(Boolean);
+            if (floor == null) continue;
+            patches.push({
+                wallId: wall.id, openingId: opening.id, floorId: floor.id,
+                points: [at(from, inner), at(to, inner), at(to, outer), at(from, outer)]
+            });
+        }
+    }
+    return patches;
+}
+const FLOOR_PROBE = 0.05; // meters past a wall face where the room's floor is looked for
 
 /*
 * The level with a new opening of `type` (OPENING_DEFAULTS size) on wall `wallId`, centered in the widest

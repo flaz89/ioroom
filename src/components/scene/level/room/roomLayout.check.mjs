@@ -20,7 +20,19 @@ const holedAreas = surfaceAreas(holed);
 const holes = 1.2 * 1.4 + 0.9 * 2.1;
 assert.ok(near(holedAreas['wall-back:inner'], 6 * 2.7 - holes), `${holedAreas['wall-back:inner']}`);
 assert.ok(near(holedAreas['wall-back:outer'], 6.3 * 2.7 - holes));
-assert.ok(near(holedAreas['wall-back:edge'] - areas['wall-back:edge'], 2 * (1.4 + 1.2 + 2.1 + 0.9) * 0.15));
+// reveals: window jambs + head + sill, door jambs + head (no threshold: the room's floor fills the door's depth)
+assert.ok(near(holedAreas['wall-back:edge'] - areas['wall-back:edge'], (2 * (1.4 + 1.2) + 2 * 2.1 + 0.9) * 0.15));
+assert.ok(near(holedAreas.floor, 36 + 0.9 * 0.15), `${holedAreas.floor}`);
+// the floor's geometry has the strip: it reaches the back wall's outer face (z = -3.15) under the door
+const holedFloor = roomFaces(holed).find((face) => face.surfaceId === 'floor').geometry;
+holedFloor.computeBoundingBox();
+assert.ok(Math.abs(holedFloor.boundingBox.min.z + 3.15) < 1e-6, `${holedFloor.boundingBox.min.z}`);
+// floorSide 'out' with no floor outside: the room's floor still fills it (nothing else could)
+const outside = { ...holed, walls: holed.walls.map((w) => (w.id === 'wall-back' ? { ...w, openings: w.openings.map((o) => ({ ...o, floorSide: 'out' })) } : w)) };
+assert.ok(near(surfaceAreas(outside).floor, 36 + 0.9 * 0.15));
+// no floor on either side (no floors at all): the threshold is back
+const bare = surfaceAreas({ ...holed, floors: [] });
+assert.ok(near(bare['wall-back:edge'] - areas['wall-back:edge'], 2 * (1.4 + 1.2 + 2.1 + 0.9) * 0.15));
 // every face: normal attribute agrees with the triangle winding (front faces outwards / inwards as declared)
 for (const face of [...roomFaces(level), ...roomFaces(holed)]) {
     const { position, normal } = face.geometry.attributes;

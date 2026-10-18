@@ -29,9 +29,11 @@
 .plan-opening-gap { fill: #0a1030; fill-opacity: var(--wall-opacity, 1); stroke: #ffffff; stroke-width: 1; cursor: grab; }
 .plan-opening-mark { stroke: #ffffff; stroke-width: 1.5; pointer-events: none; }
 .plan-opening-swing { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.plan-opening-leaf { fill: #0a1030; stroke: #ffffff; stroke-width: 1.2; pointer-events: none; }
 .plan-opening.is-selected .plan-opening-gap { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; }
 .plan-opening.is-selected .plan-opening-mark,
 .plan-opening.is-selected .plan-opening-swing { stroke: #ff9a1a; }
+.plan-opening.is-selected .plan-opening-leaf { stroke: #ff9a1a; }
 .plan-view.is-drawing .plan-opening-gap { pointer-events: none; }
 
 /* corner handles: the hit circle is invisible but catches the pointer (touch-size) */
