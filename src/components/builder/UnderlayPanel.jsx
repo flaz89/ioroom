@@ -4,6 +4,7 @@ import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
 import { UNDERLAY_DEFAULTS, activeLevel, levelBounds, nominalMetersPerPixel } from '../../plan/planModel';
 import { UNDERLAY_ACCEPT, prepareUnderlay, uploadUnderlay } from '../../plan/underlayFile';
+import { UNIT_METERS } from '../../plan/dxfUnderlay';
 import './underlay-panel.css';
 
 const SCALE_RANGE = [1, 10000];  // 1:1 .. 1:10000
@@ -19,11 +20,13 @@ const TOOLS = [
 /*
 * Floor plan UNDERLAY panel (builder, left toolbar; store openPanel 'underlay'): a drawing to trace walls on
 * (planModel.js level.underlay, saved with the environment: one undo step per change).
-* - No underlay: "Load a plan" (image or PDF, first page): prepared in the browser, uploaded to R2
-*   (plan/underlayFile.js), placed with its center on the plan's center at the default nominal scale.
+* - No underlay: "Load a plan" (image, PDF first page, or DXF): prepared in the browser, uploaded to R2
+*   (plan/underlayFile.js), placed with its center on the plan's center at the default nominal scale (a DXF:
+*   at its exact size, from its units).
 * - Underlay: Show / Hide and Opacity (this device only, store underlayVisible / underlayOpacity), nominal
 *   scale 1:N ("calibrated" once Calibrate is used) and, for images, the scan resolution (dpi: a PDF knows
-*   its paper size), the adjustment tools Calibrate / Align / Move (store underlayTool, 2D plan), Replace,
+*   its paper size); for a DXF instead: its units (read from the file, can be corrected) and its layers, each
+*   switched on / off (saved: everyone sees the same); the adjustment tools Calibrate / Align / Move (store underlayTool, 2D plan), Replace,
 *   Remove.
 * ponytail: owner only for now (uploads need the admin token); no PDF page choice (first page).
 */
@@ -58,6 +61,17 @@ export default function UnderlayPanel() {
         try {
             const prepared = await prepareUnderlay(file);
             const url = await uploadUnderlay(prepared.blob);
+            const placement = {
+                center: underlay?.center ?? levelBounds(activeLevel(useStore.getState().plan)).center,
+                rotation: underlay?.rotation ?? 0
+            };
+            if (prepared.kind === 'dxf') {
+                const { blob: _blob, ...info } = prepared; // the blob is uploaded, not saved
+                saveUnderlay({ ...info, url, metersPerPixel: UNIT_METERS[prepared.units], hiddenLayers: [], ...placement });
+                setUnderlayVisible(true);
+                setStatus(null);
+                return;
+            }
             const nominal = {
                 dpi: prepared.dpi ?? UNDERLAY_DEFAULTS.dpi,
                 downscale: prepared.downscale,
@@ -70,8 +84,7 @@ export default function UnderlayPanel() {
                 height: prepared.height,
                 ...nominal,
                 metersPerPixel: nominalMetersPerPixel(nominal),
-                center: underlay?.center ?? levelBounds(activeLevel(useStore.getState().plan)).center,
-                rotation: underlay?.rotation ?? 0
+                ...placement
             });
             setUnderlayVisible(true);
             setStatus(null);
@@ -88,6 +101,18 @@ export default function UnderlayPanel() {
         saveUnderlay({ ...next, metersPerPixel: nominalMetersPerPixel(next) });
     };
 
+    // DXF units chosen: exact size again (a calibration is dropped)
+    const applyUnits = (units) => {
+        const { scale: _calibrated, ...rest } = underlay; // a calibration is dropped
+        saveUnderlay({ ...rest, units, metersPerPixel: UNIT_METERS[units] });
+    };
+
+    // DXF layer switched on / off
+    const toggleLayer = (name) => {
+        const hidden = underlay.hiddenLayers ?? [];
+        saveUnderlay({ ...underlay, hiddenLayers: hidden.includes(name) ? hidden.filter((layer) => layer !== name) : [...hidden, name] });
+    };
+
     return (
         <div className="underlay-control">
             <CircleButton svg={svg.underlay} onClick={() => togglePanel('underlay')} isActive={isOpen} title="Floor plan underlay" />
@@ -98,7 +123,7 @@ export default function UnderlayPanel() {
 
                     {underlay == null ? (
                         <>
-                            <span className="underlay-hint">An image or a PDF of the floor plan, to draw the walls over it.</span>
+                            <span className="underlay-hint">An image, a PDF or a DXF (CAD) of the floor plan, to draw the walls over it.</span>
                             <button className="underlay-primary" disabled={status === 'loading'} onClick={() => fileRef.current.click()}>
                                 {status === 'loading' ? 'Loading…' : 'Load a plan'}
                             </button>
@@ -114,7 +139,30 @@ export default function UnderlayPanel() {
                                 <input type="range" min={0.1} max={1} step={0.05} value={opacity}
                                     onChange={(event) => setUnderlayOpacity(Number(event.target.value))} />
                             </label>
-                            <NumberRow label="Scale 1:" value={underlay.scale} placeholder="calibrated" onApply={applyNominal('scale', SCALE_RANGE)} />
+                            {underlay.kind === 'dxf' ? (
+                                <>
+                                    <label className="underlay-row underlay-number">
+                                        <span>Units</span>
+                                        <select value={underlay.scale === null ? '' : underlay.units} onChange={(event) => applyUnits(event.target.value)}>
+                                            {underlay.scale === null && <option value="" disabled>calibrated</option>}
+                                            {Object.keys(UNIT_METERS).map((units) => <option key={units} value={units}>{units}</option>)}
+                                        </select>
+                                    </label>
+                                    <div className="underlay-row">
+                                        <span>Layers</span>
+                                        <div className="underlay-layers">
+                                            {underlay.layers.map((name) => (
+                                                <label key={name}>
+                                                    <input type="checkbox" checked={!underlay.hiddenLayers?.includes(name)} onChange={() => toggleLayer(name)} />
+                                                    <span title={name}>{name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <NumberRow label="Scale 1:" value={underlay.scale} placeholder="calibrated" onApply={applyNominal('scale', SCALE_RANGE)} />
+                            )}
                             {underlay.kind === 'image' && (
                                 <NumberRow label="Resolution (dpi)" value={underlay.dpi} onApply={applyNominal('dpi', DPI_RANGE)} />
                             )}

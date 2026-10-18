@@ -346,13 +346,17 @@ export function removeOpening(level, wallId, openingId) {
 }
 
 // ---------------------------------------------------------------------------------------------------
-// UNDERLAY: a floor plan drawing (image or PDF page) shown under the plan to trace walls over it.
-// level.underlay = { url, kind: 'image' | 'pdf', width, height (pixels of the stored image), dpi, downscale,
+// UNDERLAY: a floor plan drawing (image, PDF page or DXF) shown under the plan to trace walls over it.
+// level.underlay = { url, kind: 'image' | 'pdf' | 'dxf', width, height (pixels of the stored image), dpi, downscale,
 //   scale, metersPerPixel, center: [x, z] (plan point under the image center), rotation (radians) }
 // - Nominal scale (default): the drawing is at 1:`scale` on paper; a stored pixel is 1 / (dpi x downscale)
 //   inches of paper (dpi: of the original image, or 72 for a PDF, whose units are points; downscale: stored
 //   pixels per original pixel / point). metersPerPixel = 0.0254 / (dpi x downscale) x scale.
-// - Two-point calibration (next step) sets metersPerPixel directly (scale = null).
+// - Two-point calibration sets metersPerPixel directly (scale = null).
+// - kind 'dxf' (CAD drawing, vectors: plan/dxfUnderlay.js): the file is JSON line segments per layer, in
+//   drawing units centered on the drawing; width / height = drawing size in units; `units` ('mm', 'cm', 'm',
+//   'in', 'ft': read from the file or chosen in the panel) gives metersPerPixel = meters per unit (exact
+//   scale, no dpi / scale); `layers`: the layer names, `hiddenLayers`: the ones switched off (saved, shared).
 // The image file lives in R2 (server/src/underlays.js); visibility and opacity are per device (workspace).
 // ---------------------------------------------------------------------------------------------------
 export const UNDERLAY_DEFAULTS = { scale: 100, dpi: 150 };

@@ -16,6 +16,9 @@
 .plan-grid-minor { stroke: rgba(255, 255, 255, 0.05); stroke-width: 1; fill: none; }
 .plan-grid-major { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; fill: none; }
 
+/* DXF underlay (CAD lines): thin light lines under the plan, never interactive */
+.plan-underlay-dxf { fill: none; stroke: #c8d4ff; stroke-width: 1; pointer-events: none; }
+
 .plan-floor { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
 
 /* walls: solid, like a drafting plan; selected = the app's orange */

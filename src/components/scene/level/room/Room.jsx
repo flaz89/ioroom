@@ -89,14 +89,15 @@ export default function Room() {
     const level = useStore((state) => activeLevel(state.plan));
 
     // Builder with a floor plan UNDERLAY shown (this device: store underlayVisible): the drawing lies on the
-    // floor (UnderlayPlane) and the floors are not drawn; hidden = the floors are back
+    // floor (UnderlayPlane) and the floors are not drawn; hidden = the floors are back. A DXF is only lines:
+    // drawn over the floors, which stay (something to see between the lines, and to measure on)
     const underlayOpacity = useStore((state) => state.underlayOpacity);
     const showUnderlay = useStore((state) => state.workspace === 'builder' && state.underlayVisible) && level.underlay != null;
 
     // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
     const allFaces = useMemo(() => roomFaces(level), [level]);
     const faces = useMemo(() => {
-        if (!showUnderlay) return allFaces;
+        if (!showUnderlay || level.underlay.kind === 'dxf') return allFaces;
         const floorIds = new Set(level.floors.map((floor) => floor.id));
         return allFaces.filter((face) => !floorIds.has(face.surfaceId));
     }, [allFaces, showUnderlay, level]);

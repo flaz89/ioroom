@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
 import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, rulerSnap2D, rulerTargets, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { publishCameraHeading } from '../scene/sun/cameraHeading';
+import { useUnderlayVectors } from '../../plan/underlayFile';
 import './plan-view.css';
 
 const WHEEL_ZOOM_SPEED = 0.0015; // zoom factor per wheel delta unit (exp scale: same feel in and out)
@@ -484,7 +485,9 @@ export default function PlanView2D() {
                 // Strokes use vector-effect="non-scaling-stroke": widths stay in pixels at any zoom.
                 <g transform={`translate(${size.w / 2} ${size.h / 2}) scale(${view.scale}) translate(${-view.cx} ${-view.cz})`}>
                     {/* floor plan underlay (planModel.js level.underlay), under everything; this device's visibility / opacity */}
-                    {underlay && isUnderlayVisible && <UnderlayImage underlay={underlay} opacity={underlayOpacity} />}
+                    {underlay && isUnderlayVisible && (underlay.kind === 'dxf'
+                        ? <UnderlayVectors underlay={underlay} opacity={underlayOpacity} />
+                        : <UnderlayImage underlay={underlay} opacity={underlayOpacity} />)}
                     <path className="plan-grid-minor" d={gridPath(view, size.w, size.h, steps.minor)} vectorEffect="non-scaling-stroke" />
                     <path className="plan-grid-major" d={gridPath(view, size.w, size.h, steps.major)} vectorEffect="non-scaling-stroke" />
 
@@ -706,6 +709,31 @@ function UnderlayImage({ underlay, opacity }) {
             opacity={opacity}
             pointerEvents="none"
         />
+    );
+}
+
+/*
+* A DXF underlay (kind 'dxf'): its line segments (drawing units, centered) drawn with the same placement as
+* an image: scaled by metersPerPixel (meters per unit), turned and moved onto underlay.center. One path per
+* visible layer (hiddenLayers off), hairline strokes at any zoom. Nothing until the JSON is loaded.
+*/
+function UnderlayVectors({ underlay, opacity }) {
+    const layers = useUnderlayVectors(underlay);
+    const paths = useMemo(() => (layers ?? []).map(({ name, segments }) => {
+        let d = '';
+        for (let i = 0; i < segments.length; i += 4) d += `M${segments[i]} ${segments[i + 1]}L${segments[i + 2]} ${segments[i + 3]}`;
+        return { name, d };
+    }), [layers]);
+    const hidden = new Set(underlay.hiddenLayers ?? []);
+    const [cx, cz] = underlay.center;
+    return (
+        <g
+            className="plan-underlay-dxf"
+            transform={`translate(${cx} ${cz}) rotate(${underlay.rotation * 180 / Math.PI}) scale(${underlay.metersPerPixel})`}
+            opacity={opacity}
+        >
+            {paths.map(({ name, d }) => !hidden.has(name) && <path key={name} d={d} vectorEffect="non-scaling-stroke" />)}
+        </g>
     );
 }
 

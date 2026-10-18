@@ -35,7 +35,7 @@
 
 /* label and field on one line */
 .underlay-number { flex-direction: row; align-items: center; justify-content: space-between; }
-.underlay-number input {
+.underlay-number input, .underlay-number select {
     width: 6em;
     padding: .3em .45em;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -63,3 +63,9 @@
 .underlay-toggle, .underlay-actions { display: flex; gap: .4em; }
 .underlay-toggle button, .underlay-actions button { flex: 1; }
 .underlay-toggle button.is-active { background: rgba(255, 154, 26, 0.35); border-color: #ff9a1a; }
+
+/* DXF layers: one checkbox per layer, scrolls when long */
+.underlay-layers { display: flex; flex-direction: column; gap: .2em; max-height: 10em; overflow-y: auto; }
+.underlay-layers label { display: flex; align-items: center; gap: .4em; cursor: pointer; }
+.underlay-layers input { accent-color: #ff9a1a; margin: 0; }
+.underlay-layers span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
