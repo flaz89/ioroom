@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -182,5 +182,35 @@ assert.ok(near(moveUnderlay(u0, [1, 1], [3, 0]).center, [4, -1]));
 assert.equal(openingOperation({ type: 'door' }), 'swing');
 assert.equal(openingOperation({ type: 'window' }), 'standard');
 assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
+
+// LINE JUSTIFY: an L corner of axis walls (0.2 thick); the horizontal wall's line moved to a face keeps the wall
+// in place (same faces) and the corner follows onto the vertical wall's line
+{
+    const lvl = { walls: [
+        { id: 'h', a: [0, 0], b: [4, 0], thickness: 0.2, align: 'center' },
+        { id: 'v', a: [4, 0], b: [4, 3], thickness: 0.2, align: 'center' }
+    ], floors: [] };
+    const faces = (w) => { const { normal } = wallFrame(w); const { inner, outer } = faceOffsets(w); return [inner, outer].map((o) => w.a[1] + normal[1] * o).sort(); };
+    for (const justify of ['left', 'right']) {
+        const next = setWallJustify(lvl, 'h', justify);
+        const h = next.walls[0], v = next.walls[1];
+        assert.deepEqual(faces(h).map((z) => z.toFixed(6)), faces(lvl.walls[0]).map((z) => z.toFixed(6)), `${justify}: faces stay`);
+        assert.ok(near(h.b, v.a) && Math.abs(v.a[0] - 4) < 1e-9, `${justify}: corner on the vertical line`);
+    }
+    assert.equal(setWallJustify(setWallJustify(lvl, 'h', 'right'), 'h', 'center').walls[0].align, 'center');
+}
+// T ATTACH AT A WALL'S END: a wall ending on the far face of a corner wall, right where that wall ends, closes
+// the room (the end attaches to the corner point)
+{
+    const box = [
+        { id: 'top', a: [0, 0], b: [4, 0], thickness: 0.2, align: 'center' },
+        { id: 'right', a: [4, 0], b: [4, 4], thickness: 0.2, align: 'center' },
+        { id: 'bottom', a: [4, 4], b: [0, 4], thickness: 0.2, align: 'center' },
+        { id: 'stub', a: [0, 4], b: [0, 2], thickness: 0.2, align: 'center' },  // left side, lower half
+        { id: 'arm', a: [0, 2], b: [1, 2], thickness: 0.2, align: 'center' },   // corner stub + arm
+        { id: 'door', a: [0, 1.9], b: [0, 0.1], thickness: 0.2, align: 'center' } // from the arm's face to the top face
+    ];
+    assert.equal(closedLoops(box).length >= 1, true, 'closed through the doorway');
+}
 
 console.log('planModel: ok');

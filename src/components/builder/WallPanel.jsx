@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, addOpening, openingOperation, removeOpening, setWallLength, updateOpening, updateWall, wallFrame } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, addOpening, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -19,6 +19,13 @@ import './plan-view.css';
 * - Split: two walls joined at the middle (the second copies the materials); Delete (or the Del / Backspace
 *   key): removes the wall and its materials. Both one undo step.
 */
+// Line positions of a wall (planModel.setWallJustify): same letters as the wall tool (LeftToolBar.jsx)
+const LINE_JUSTIFY = [
+    ['left', 'L', 'The line on the face to the left of the drawing direction (the wall stays in place)'],
+    ['center', 'C', 'The line on the wall axis (the wall stays in place)'],
+    ['right', 'R', 'The line on the face to the right of the drawing direction (the wall stays in place)']
+];
+
 export default function WallPanel() {
     const isOpening = useStore((state) => state.selectedOpening != null);
     return isOpening ? <OpeningPanel /> : <WallsPanel />;
@@ -104,14 +111,18 @@ function WallsPanel() {
             <Field label="Length" value={length} onApply={(text) => applyLength(parse(text))} />
             <Field label="Thickness" value={wall.thickness} onApply={(text) => applyRange('thickness')(parse(text))} />
             <Field label="Height" value={height} onApply={(text) => applyRange('height')(parse(text))} />
-            {/* where the drawn line is: one face of the wall (side) or its axis (center); the line stays put */}
+            {/* where the drawn line (the corners' anchor) is: a face or the axis, L / C / R like the wall tool
+                (seen along the drawing direction); the WALL stays put, only its line moves (setWallJustify) */}
             <div className="wall-panel-field">
                 <span>Line</span>
                 <div className="wall-panel-toggle">
-                    <button className={wall.align !== 'center' ? 'is-active' : undefined}
-                        onClick={() => setActiveLevel(updateWall(level, wallId, { align: undefined }))} title="The line is a face of the wall">Face</button>
-                    <button className={wall.align === 'center' ? 'is-active' : undefined}
-                        onClick={() => setActiveLevel(updateWall(level, wallId, { align: 'center' }))} title="The line is the wall axis (half thickness each side)">Axis</button>
+                    {LINE_JUSTIFY.map(([justify, label, title]) => {
+                        const next = setWallJustify(level, wallId, justify);
+                        return (
+                            <button key={justify} className={wallJustify(wall) === justify ? 'is-active' : undefined}
+                                disabled={next == null} onClick={() => setActiveLevel(next)} title={title}>{label}</button>
+                        );
+                    })}
                 </div>
             </div>
             {(wall.openings ?? []).map((opening) => (

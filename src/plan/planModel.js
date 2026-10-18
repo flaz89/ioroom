@@ -8,7 +8,9 @@
 * wall:  { id, name?, a: [x, z], b: [x, z], thickness, height?, align? }
 *   a -> b is the wall's drawn line. align undefined: the line is the INNER face (the side the room sees)
 *   and the thickness grows on the side of the normal (dz, -dx) / length; align 'center': the line is the
-*   wall's axis (half thickness each side). Walls sharing an end point are mitered face by face
+*   wall's axis (half thickness each side); align 'right': the line is the OUTER face, the thickness grows
+*   towards -normal (setWallJustify moves the line between the three keeping the wall in place). Walls sharing
+*   an end point are mitered face by face
 *   (wallFootprint), so they meet cleanly at any angle; a free end is closed by an end face.
 *   Face ids: '<wall id>:inner' | ':outer' | ':edge' (top and free ends).
 *   openings?: [opening] — doors / windows cut in the wall (see OPENINGS below).
@@ -70,11 +72,14 @@ const dotp = (p, q) => p[0] * q[0] + p[1] * q[1];
 /*
 * Where a wall's two faces are, as signed distances from its drawn line along its normal (thickness side):
 * - align undefined ('side', default): the line IS the inner face, the thickness grows on the normal side;
-* - align 'center': the line is the wall's axis, half of the thickness on each side.
+* - align 'center': the line is the wall's axis, half of the thickness on each side;
+* - align 'right': the line is the outer face, the thickness grows towards -normal.
 * { inner, outer } (inner = the face towards -normal, the side the room sees for a side-aligned wall).
 */
+const ALIGN_SHARES = { left: 0, center: 0.5, right: 1 }; // share of the thickness on the -normal side of the line
+export const wallJustify = (wall) => wall.align ?? 'left';
 export function faceOffsets(wall) {
-    const share = wall.align === 'center' ? 0.5 : 0;
+    const share = ALIGN_SHARES[wallJustify(wall)];
     return { inner: -wall.thickness * share, outer: wall.thickness * (1 - share) };
 }
 
@@ -175,6 +180,68 @@ export function moveVertex(level, from, to) {
         ? { ...floor, points: floor.points.map(move) }
         : floor));
     return { ...level, walls, floors };
+}
+
+/*
+* The level with wall `wallId`'s drawn line moved to `justify` ('left' face | 'center' axis | 'right' face, seen
+* along a -> b) WITHOUT moving the wall: faces, materials and openings stay where they are, only the line (its
+* corners' anchor) changes. Walls continuing it straight (same thickness and axis: a split wall) get the same
+* line, so the straight run stays one wall. Each corner moves with the line: onto the crossing of the new line
+* with a non-parallel wall joined there (that wall's end slides along its own line), else just shifted.
+* Returns null if a wall would become shorter than MIN_WALL_LENGTH.
+* ponytail: a parallel wall of another thickness joined straight on is shifted with the corner (it tilts slightly).
+*/
+export function setWallJustify(level, wallId, justify) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    if (wall == null) return null;
+    const axisOf = (item) => { // a point of the wall's axis and its direction
+        const { dir, normal } = wallFrame(item);
+        const { inner, outer } = faceOffsets(item);
+        return { point: add(item.a, scale(normal, (inner + outer) / 2)), dir };
+    };
+    // the straight run: walls joined end to end, parallel, same thickness, same axis
+    const run = [wall];
+    for (let i = 0; i < run.length; i++) {
+        const base = axisOf(run[i]);
+        for (const other of level.walls) {
+            if (run.includes(other) || other.thickness !== wall.thickness) continue;
+            const joined = [run[i].a, run[i].b].some((end) => same(end, other.a) || same(end, other.b));
+            const o = axisOf(other);
+            if (joined && Math.abs(cross(base.dir, o.dir)) < 1e-6 && Math.abs(cross(sub(o.point, base.point), base.dir)) < JOIN_EPSILON) run.push(other);
+        }
+    }
+    // the new line of each run wall: the same place for all (seen from the selected wall's normal)
+    const { normal: n0 } = wallFrame(wall);
+    const target = ALIGN_SHARES[justify];
+    const shifts = new Map(run.map((item) => {
+        const { normal } = wallFrame(item);
+        const share = dotp(normal, n0) > 0 ? target : 1 - target; // 'left' of the opposite direction is the other face
+        const align = Object.keys(ALIGN_SHARES).find((key) => ALIGN_SHARES[key] === share);
+        const delta = item.thickness * (share - ALIGN_SHARES[wallJustify(item)]);
+        return [item, { shift: scale(normal, delta), align }];
+    }));
+    // corners: every end of the run moves to its new place, with the walls joined there
+    const moves = []; // [from, to]
+    for (const item of run) {
+        const { dir } = wallFrame(item);
+        for (const end of [item.a, item.b]) {
+            if (moves.some(([from]) => same(from, end))) continue;
+            const shifted = add(end, shifts.get(item).shift);
+            const across = level.walls.find((other) => !run.includes(other) && (same(other.a, end) || same(other.b, end))
+                && Math.abs(cross(dir, wallFrame(other).dir)) > 1e-6);
+            moves.push([end, across ? (intersect(shifted, dir, across.a, wallFrame(across).dir) ?? shifted) : shifted]);
+        }
+    }
+    const moveEnd = (point) => moves.find(([from]) => same(from, point))?.[1] ?? point;
+    const walls = level.walls.map((item) => {
+        const a = moveEnd(item.a), b = moveEnd(item.b);
+        if (!shifts.has(item)) return a === item.a && b === item.b ? item : { ...item, a, b };
+        const { align: _old, ...rest } = item;
+        const { align } = shifts.get(item);
+        return { ...rest, a, b, ...(align === 'left' ? {} : { align }) };
+    });
+    if (walls.some((item) => Math.hypot(item.b[0] - item.a[0], item.b[1] - item.a[1]) < MIN_WALL_LENGTH)) return null;
+    return { ...level, walls };
 }
 
 // Editable ranges of a wall (meters), shared by the plan editor's fields
@@ -526,19 +593,25 @@ export function closedLoops(walls) {
     // within the other wall's thickness (on its drawn line, on either face or between them): the end is
     // projected onto that wall's line. A partition drawn up to the far face of a wall, or traced on a CAD
     // drawing, still closes its rooms.
-    const attach = (p) => {
+    // An end lying within the END of another wall's footprint (a doorway that butts on a corner wall right where
+    // that wall ends) attaches to that wall's end point, so the corner closes the loop there too.
+    const attach = (p, owner) => {
         for (const wall of walls) {
+            if (wall === owner) continue;
             const { dir, normal, length } = wallFrame(wall);
             const rel = sub(p, wall.a);
             const t = dotp(rel, dir);
-            if (t <= JOIN_EPSILON || t >= length - JOIN_EPSILON) continue;
+            if (t < -JOIN_EPSILON || t > length + JOIN_EPSILON) continue;
             const across = dotp(rel, normal);
             const { inner, outer } = faceOffsets(wall);
-            if (across >= Math.min(inner, outer) - JOIN_EPSILON && across <= Math.max(inner, outer) + JOIN_EPSILON) return add(wall.a, scale(dir, t));
+            if (across < Math.min(inner, outer) - JOIN_EPSILON || across > Math.max(inner, outer) + JOIN_EPSILON) continue;
+            if (t <= JOIN_EPSILON) return wall.a;
+            if (t >= length - JOIN_EPSILON) return wall.b;
+            return add(wall.a, scale(dir, t));
         }
         return p;
     };
-    const attached = new Map(walls.map((wall) => [wall, [attach(wall.a), attach(wall.b)]]));
+    const attached = new Map(walls.map((wall) => [wall, [attach(wall.a, wall), attach(wall.b, wall)]]));
     const ends = [...attached.values()].flat();
     walls.forEach((wall) => {
         const { dir, length } = wallFrame(wall);
