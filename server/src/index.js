@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { getServerByName, routePartykitRequest } from 'partyserver';
 import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
+import { removeAwarenessStates } from 'y-protocols/awareness';
 import { handleMaterials } from './materials.js';
 
 /*
@@ -37,9 +38,62 @@ const OWNER_REGISTRY = 'owner';
 // Connections refused by onConnect: their messages are ignored until the socket is closed
 const refused = new WeakSet();
 
+// PRESENCE TIMEOUT (same values as the client, src/sync/presence.js): y-partyserver turns Yjs' awareness
+// timeout off and removes a presence only when its socket closes, so a client that vanished without a clean
+// close (headset asleep, browser killed) stayed in the room's memory and was handed to every newcomer.
+// Clients renew their presence every 15 s; a client not heard for PRESENCE_TIMEOUT_MS is removed here and
+// the removal is broadcast to everyone.
+const PRESENCE_CHECK_MS = 15000;
+const PRESENCE_TIMEOUT_MS = 75000;
+const PRESENCE_TIMEOUT_CODE = 4008;              // close code of a timed-out connection
+const AWARENESS_IDS_KEY = '__ypsAwarenessIds';   // y-partyserver: awareness ids controlled by a connection
+
 export class Room extends YServer {
     // onSave cadence: after edits settle (debounce), at most every 10 s while editing, and when the room empties
     static callbackOptions = { debounceWait: 2000, debounceMaxWait: 10000, timeout: 5000 };
+
+    // Presence timeout: tracks when each awareness client was last heard, once YServer has set the
+    // document (and its awareness) up; the periodic check runs only while someone is connected
+    async onStart() {
+        await super.onStart();
+        this.lastHeard = new Map(); // awareness client id -> ms
+        this.presenceTimer = null;
+        this.document.awareness.on('update', ({ added, updated }) => {
+            const now = Date.now();
+            for (const clientId of [...added, ...updated]) this.lastHeard.set(clientId, now);
+        });
+    }
+
+    // Checks the presences every PRESENCE_CHECK_MS; stops when the room is empty (it never keeps the
+    // Durable Object awake on its own), restarted by the next connection
+    startPresenceTimeout() {
+        if (this.presenceTimer != null) return;
+        const awareness = this.document.awareness;
+        const lastHeard = this.lastHeard;
+        this.presenceTimer = setInterval(() => {
+            if ([...this.getConnections()].length === 0) {
+                clearInterval(this.presenceTimer);
+                this.presenceTimer = null;
+                return;
+            }
+            const now = Date.now();
+            const stale = [...awareness.getStates().keys()].filter((clientId) => {
+                if (!lastHeard.has(clientId)) lastHeard.set(clientId, now);
+                return now - lastHeard.get(clientId) > PRESENCE_TIMEOUT_MS;
+            });
+            if (stale.length === 0) return;
+            stale.forEach((clientId) => lastHeard.delete(clientId));
+            // origin null: YServer's own awareness handler broadcasts the removal to every connection
+            removeAwarenessStates(awareness, stale, null);
+            // and the half-open sockets behind them are closed (a live client would just reconnect).
+            // ponytail: reads y-partyserver's internal per-connection key of the awareness ids it controls
+            const staleIds = new Set(stale);
+            for (const connection of this.getConnections()) {
+                const ids = connection.state?.[AWARENESS_IDS_KEY] ?? [];
+                if (ids.length > 0 && ids.every((id) => staleIds.has(id))) connection.close(PRESENCE_TIMEOUT_CODE, 'Presence timeout');
+            }
+        }, PRESENCE_CHECK_MS);
+    }
 
     // Called once when the first client connects: restore the saved document, if any
     async onLoad() {
@@ -59,6 +113,7 @@ export class Room extends YServer {
             connection.close(ROOM_NOT_FOUND, 'Room not found');
             return;
         }
+        this.startPresenceTimeout();
         return super.onConnect(connection, context);
     }
 

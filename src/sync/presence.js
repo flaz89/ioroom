@@ -35,6 +35,9 @@ import { removeAwarenessStates } from 'y-protocols/awareness';
 * server's memory and every other device too. The timeout is generous: browsers slow background tabs'
 * timers down to about once a minute, and a live hidden tab must not blink in and out of the list.
 *
+* A closed tab / browser removes its presence at once ('pagehide'); the timeout covers the rest (standby,
+* power off, lost network).
+*
 * Without a room (no awareness bound) everything is a no-op: nothing is published, nothing is locked.
 */
 // ~15 updates/s: receivers ease towards each pose (REMOTE_FOLLOW_RATE in SingleObject.jsx), so motion stays
@@ -146,7 +149,20 @@ export function staleClients(clientIds, selfId, lastHeard, now) {
 export function bindAwareness(roomAwareness) {
     awareness = roomAwareness;
     const { id, color } = deviceIdentity();
-    awareness.setLocalStateField('user', { id, name: deviceName(), color });
+    const user = { id, name: deviceName(), color };
+    awareness.setLocalStateField('user', user);
+
+    // LEAVING: 'pagehide' fires on tab / browser close and navigation (the provider listens to 'unload',
+    // which mobile and headset browsers often skip): this device's presence is removed for everyone at once.
+    // A page restored from the back-forward cache joins again ('pageshow' persisted).
+    const onPageHide = () => removeAwarenessStates(awareness, [awareness.clientID], 'pagehide');
+    // (the local state is null after the removal: setLocalStateField would do nothing, so a whole new state)
+    const onPageShow = (event) => { if (event.persisted) awareness.setLocalState({ user }); };
+    const hasWindow = typeof window !== 'undefined';
+    if (hasWindow) {
+        window.addEventListener('pagehide', onPageHide);
+        window.addEventListener('pageshow', onPageShow);
+    }
     awareness.on('change', readRemoteStates);
     readRemoteStates();
 
@@ -169,6 +185,10 @@ export function bindAwareness(roomAwareness) {
     }, HEARTBEAT_MS);
 
     return () => {
+        if (hasWindow) {
+            window.removeEventListener('pagehide', onPageHide);
+            window.removeEventListener('pageshow', onPageShow);
+        }
         clearInterval(heartbeat);
         awareness.off('update', onUpdate);
         awareness.off('change', readRemoteStates);
