@@ -46,6 +46,9 @@
 .plan-wall-preview { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .plan-chain-start { fill: #ff9a1a; stroke: white; stroke-width: 1.5; pointer-events: none; }
 .plan-snap-ring { fill: none; stroke: #ff9a1a; stroke-width: 2; pointer-events: none; }
+.plan-cad-snap { stroke: #0a1030; stroke-width: 1.5; pointer-events: none; }
+.plan-cad-snap.is-vertex { fill: #3ddc84; }
+.plan-cad-snap.is-edge { fill: #ffd23f; }
 /* angle indicator (wall tool, corner drag) */
 .plan-angle-arc { fill: none; stroke: #6fd3ff; stroke-width: 1.5; }
 /* alignment guides (wall tool, corner drag) */

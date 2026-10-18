@@ -1,6 +1,6 @@
 // Check for planView.js: node src/components/builder/planView.check.mjs
 import assert from 'node:assert/strict';
-import { fitView, toWorld, zoomAt, panBy, gridSteps, alignPoint, angleSnap, angleBetween, wallsInBox, rulerSnap2D, lockToPlanAxis, planMeasureList, MAX_SCALE } from './planView.js';
+import { fitView, toWorld, zoomAt, panBy, gridSteps, alignPoint, angleSnap, angleBetween, wallsInBox, rulerSnap2D, lockToPlanAxis, underlayTargets, snapWithUnderlay, NO_TARGETS, planMeasureList, MAX_SCALE } from './planView.js';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
 
@@ -59,4 +59,20 @@ assert.equal(seen.length, 1);
 assert.equal(seen[0].length, 5);
 // a vertex is projected on the axis
 assert.deepEqual(lockToPlanAxis([0, 0], [5, 0.4], { point: [5, 0.4], kind: 'vertex' }).point, [5, 0]);
+// CAD underlay targets: 1 unit = 1 cm, turned 90° clockwise on screen, centered on (10, 0)
+const cadUnderlay = { metersPerPixel: 0.01, rotation: Math.PI / 2, center: [10, 0], hiddenLayers: ['OFF'] };
+const cad = underlayTargets(cadUnderlay, [{ name: 'WALLS', segments: [0, 0, 100, 0] }, { name: 'OFF', segments: [0, 0, 0, 500] }]);
+assert.equal(cad.segments.length, 1); // hidden layer skipped
+const [ca, cb] = cad.segments[0];
+assert.ok(Math.hypot(ca[0] - 10, ca[1]) < 1e-9 && Math.hypot(cb[0] - 10, cb[1] - 1) < 1e-9, `${ca} ${cb}`); // +x turned to +z, 1 m long
+// priority: plan corner > CAD end > plan edge > CAD line
+const own = { vertices: [[10.05, 0.5]], segments: [[[9.9, 0.3], [10.1, 0.3]]] };
+assert.deepEqual(snapWithUnderlay([10.04, 0.5], own, cad, 0.1), { point: [10.05, 0.5], kind: 'vertex' });
+assert.equal(snapWithUnderlay([10.02, 0.98], own, cad, 0.1).cad, true);          // CAD end (10, 1)
+assert.equal(snapWithUnderlay([10.02, 0.98], own, cad, 0.1).kind, 'vertex');
+assert.equal(snapWithUnderlay([10.08, 0.3], own, cad, 0.1).cad, undefined);       // plan edge beats the CAD line
+const onLine = snapWithUnderlay([10.03, 0.7], NO_TARGETS, cad, 0.1);
+assert.ok(onLine.cad && onLine.kind === 'edge' && Math.abs(onLine.point[0] - 10) < 1e-9 && onLine.segment);
+assert.equal(snapWithUnderlay([12, 0.7], own, cad, 0.1).kind, null);
+
 console.log('planView.check: ok');

@@ -157,6 +157,50 @@ export function rulerSnap2D(point, vertices, segments, radius) {
     return edge ?? { point, kind: null };
 }
 
+/*
+* CAD SNAP TARGETS of a DXF underlay (planModel.js level.underlay, kind 'dxf'): its visible layers'
+* segments (drawing units, centered: dxfUnderlay.js) placed in the plan like the drawing (scaled by
+* metersPerPixel, turned by rotation, moved onto center) -> { vertices: [[x, z]], segments: [[[x, z], [x, z]]] }
+* (the segment ends are the vertices). Built once per underlay change (memoized by the caller).
+* ponytail: linear scans on every pointer move (fine up to ~100k segments); a grid index if bigger drawings lag.
+*/
+export function underlayTargets(underlay, layers) {
+    const hidden = new Set(underlay.hiddenLayers ?? []);
+    const k = underlay.metersPerPixel;
+    const c = Math.cos(underlay.rotation) * k, s = Math.sin(underlay.rotation) * k;
+    const [cx, cz] = underlay.center;
+    // same turn as the drawing (positive = clockwise on screen: x right, z down)
+    const place = (x, z) => [cx + x * c - z * s, cz + x * s + z * c];
+    const vertices = [], segments = [];
+    for (const { name, segments: list } of layers) {
+        if (hidden.has(name)) continue;
+        for (let i = 0; i < list.length; i += 4) {
+            const a = place(list[i], list[i + 1]), b = place(list[i + 2], list[i + 3]);
+            vertices.push(a, b);
+            segments.push([a, b]);
+        }
+    }
+    return { vertices, segments };
+}
+
+/*
+* Ruler / wall-tool snap with a CAD underlay: the plan's own targets (`own`: walls, openings, measures) and
+* the drawing's (`cad`, underlayTargets), all within `radius` meters. Priority: a plan corner > a CAD end
+* point > a plan edge > a CAD line (the plan being drawn wins; then the drawing's precise points).
+* Returns rulerSnap2D's { point, kind: 'vertex' | 'edge' | null, segment? } plus `cad: true` when it is the
+* drawing's.
+*/
+export function snapWithUnderlay(point, own, cad, radius) {
+    const plan = rulerSnap2D(point, own.vertices, own.segments, radius);
+    if (plan.kind === 'vertex') return plan;
+    const end = rulerSnap2D(point, cad.vertices, [], radius);
+    if (end.kind) return { ...end, cad: true };
+    if (plan.kind === 'edge') return plan;
+    const line = rulerSnap2D(point, [], cad.segments, radius);
+    return line.kind ? { ...line, cad: true } : line;
+}
+export const NO_TARGETS = { vertices: [], segments: [] };
+
 function nearestOnSegment(p, a, b) {
     const d = [b[0] - a[0], b[1] - a[1]];
     const lengthSq = d[0] * d[0] + d[1] * d[1];

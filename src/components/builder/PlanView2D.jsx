@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
 import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
-import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, rulerSnap2D, rulerTargets, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
+import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { publishCameraHeading } from '../scene/sun/cameraHeading';
@@ -15,6 +15,7 @@ const VERTEX_HIT_RADIUS = 14;    // px: touch-friendly invisible hit area around
 const LABEL_OFFSET = 14;         // px: length labels sit this far inside the room from the wall's inner line
 const VERTEX_SNAP_RADIUS = 12;   // px: the wall tool snaps to an existing corner closer than this
 const FLIP_GAP = 18;             // px: flip button center, beyond the wall's outer face
+const CAD_SNAP_MARK = 5;         // px: radius of the mark of a point snapped on a DXF underlay
 const ALIGN_SNAP_RADIUS = 8;     // px: a coordinate this close to another corner's lines up with it
 const ANGLE_SNAP_TOLERANCE = 2;  // degrees: a wall direction this close to a multiple of the step snaps to it
 const ANGLE_ARC_RADIUS = 28;     // px: angle indicator arc
@@ -44,7 +45,9 @@ const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall 
 *   line, planModel.addWall).
 * - ALIGNMENT GUIDES (wall tool and corner drag): a point that lines up horizontally / vertically with
 *   another corner (or the chain's last point) snaps to that line and shows it dashed (planView.alignPoint).
-*   Priority: exact corner > alignment (per axis) > angle snap > grid snap.
+*   Priority: exact corner > DXF underlay end point / line (CAD SNAP, below) > alignment (per axis) >
+*   angle snap > grid snap. CAD SNAP: a DXF underlay shown here lends its visible lines' end points (green
+*   mark) and lines (yellow) to the wall tool, the corner drag, the ruler and the underlay tools.
 * - ANGLE (wall tool): the wall being drawn shows its angle (arc + value at its start): the angle between
 *   it and the previous wall of the chain, or with the plan's horizontal for a first wall (hidden when
 *   straight). With rotation snap on (right toolbar), its direction snaps to multiples of the rotation step
@@ -130,6 +133,20 @@ export default function PlanView2D() {
     const gestureRef = useRef(null);
     const shown = draft?.level ?? slide?.level ?? level; // what is drawn: the draft while dragging
 
+    // Floor plan underlay: shown under the plan when this device shows it (store underlayVisible / Opacity)
+    const underlay = shown.underlay;
+    const isUnderlayVisible = useStore((state) => state.underlayVisible);
+    const underlayOpacity = useStore((state) => state.underlayOpacity);
+    // CAD SNAP (DXF underlay shown): its visible lines' end points and lines are snap targets of the wall
+    // tool, the corner drag, the ruler and the underlay tools (planView.snapWithUnderlay: the plan's own
+    // corners first). Placed in plan meters once per underlay change.
+    const cadTargets = useCadTargets(level.underlay, isUnderlayVisible); // drafts never change the underlay
+    // CAD point / line near a screen point (null when none): { point, kind: 'vertex' | 'edge', segment? }
+    const cadSnap = (point) => {
+        const snap = snapWithUnderlay(toWorld(view, size.w, size.h, point.x, point.y), NO_TARGETS, cadTargets, VERTEX_SNAP_RADIUS / view.scale);
+        return snap.kind ? snap : null;
+    };
+
     // WALL TOOL STATE
     const planTool = useStore((state) => state.planTool);
     const wallJustify = useStore((state) => state.wallJustify);
@@ -190,7 +207,8 @@ export default function PlanView2D() {
     }, [chain, isDrawing, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]);
 
     // UNDERLAY TOOL point under the pointer (screen point): the second point of 'move' snaps to a wall
-    // corner, else to the grid snap step; the other points are free (they pick a spot of the drawing)
+    // corner, else to the grid snap step; the other points pick a spot of the drawing: free, or on a DXF's
+    // end point / line (exact calibration, alignment and move)
     const underlayToolPoint = (point) => {
         if (underlayTool === 'move' && toolPoints.length === 1) {
             const raw = toWorld(view, size.w, size.h, point.x, point.y);
@@ -198,6 +216,8 @@ export default function PlanView2D() {
             if (vertex) return { point: vertex, kind: 'vertex' };
             return { point: snappedWorld(point), kind: 'grid' };
         }
+        const cad = cadSnap(point);
+        if (cad) return { point: cad.point, kind: cad.kind };
         return { point: toWorld(view, size.w, size.h, point.x, point.y), kind: 'free' };
     };
 
@@ -238,11 +258,14 @@ export default function PlanView2D() {
         return [Math.round(x / step) * step, Math.round(z / step) * step];
     };
 
-    // Wall tool point under the pointer: an existing corner nearby wins over the grid
+    // Wall tool point under the pointer: an existing corner nearby wins over the grid; then a DXF underlay's
+    // end point or line (kind 'cad': not a corner of the plan, the chain goes on; cadKind for the mark)
     const snapPoint = (point) => {
         const [x, z] = toWorld(view, size.w, size.h, point.x, point.y);
         const vertex = nearestVertex(level, [x, z], VERTEX_SNAP_RADIUS / view.scale);
         if (vertex) return { point: vertex, kind: 'vertex', guides: [] };
+        const cad = cadSnap(point);
+        if (cad) return { point: cad.point, kind: 'cad', cadKind: cad.kind, guides: [] };
         const { gridSnap, rotationSnap, rotationSnapStep } = useStore.getState().settings;
         const kind = gridSnap ? 'grid' : 'free';
         const targets = chain ? [...levelVertices(level), chain] : levelVertices(level);
@@ -275,7 +298,7 @@ export default function PlanView2D() {
         const state = useStore.getState();
         const others = planMeasureList(state.measures).filter((item) => item.id !== excludeId);
         const { vertices, segments } = rulerTargets(level, others);
-        const snap = rulerSnap2D(raw, vertices, segments, VERTEX_SNAP_RADIUS / view.scale);
+        const snap = snapWithUnderlay(raw, { vertices, segments }, cadTargets, VERTEX_SNAP_RADIUS / view.scale);
         if (snap.kind == null) snap.point = snappedWorld(point);
         const start = state.measures.start;
         const origin = from ?? (start ? [start.p[0], start.p[2]] : null);
@@ -354,7 +377,9 @@ export default function PlanView2D() {
         if (pointers.size === 1 && gesture?.kind === 'vertex') {
             // align with the other corners (never with the dragged one's own start position)
             const targets = levelVertices(level).filter((v) => v[0] !== gesture.from[0] || v[1] !== gesture.from[1]);
-            const { point: to, guides } = alignPoint(snappedWorld(point), targets, ALIGN_SNAP_RADIUS / view.scale);
+            // a DXF underlay's end point / line wins (moving a corner onto the drawing)
+            const cad = cadSnap(point);
+            const { point: to, guides } = cad ? { point: cad.point, guides: [] } : alignPoint(snappedWorld(point), targets, ALIGN_SNAP_RADIUS / view.scale);
             const next = moveVertex(level, gesture.from, to);
             // preview floors too (rebuilt like on commit; preview ids, never saved)
             let previewId = 0; // unique keys for the preview floors
@@ -449,11 +474,6 @@ export default function PlanView2D() {
         setIsPanning(false);
     };
 
-    // Floor plan underlay: shown under the plan when this device shows it (store underlayVisible / Opacity)
-    const underlay = shown.underlay;
-    const isUnderlayVisible = useStore((state) => state.underlayVisible);
-    const underlayOpacity = useStore((state) => state.underlayOpacity);
-
     const isReady = size != null && view != null;
     const steps = isReady ? gridSteps(view.scale) : null;
 
@@ -531,6 +551,10 @@ export default function PlanView2D() {
                     ))}
                     {isDrawing && hover?.kind === 'vertex' && (
                         <circle className="plan-snap-ring" cx={hover.point[0]} cy={hover.point[1]} r={VERTEX_SNAP_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
+                    )}
+                    {/* on the DXF: end point (green) or line (yellow), like the ruler's snap marks */}
+                    {isDrawing && hover?.kind === 'cad' && (
+                        <circle className={`plan-cad-snap is-${hover.cadKind}`} cx={hover.point[0]} cy={hover.point[1]} r={CAD_SNAP_MARK / view.scale} vectorEffect="non-scaling-stroke" />
                     )}
                 </g>
             )}
@@ -709,6 +733,15 @@ function UnderlayImage({ underlay, opacity }) {
             opacity={opacity}
             pointerEvents="none"
         />
+    );
+}
+
+// Snap targets of a DXF underlay shown on this device (planView.underlayTargets), NO_TARGETS otherwise
+function useCadTargets(underlay, isVisible) {
+    const layers = useUnderlayVectors(underlay);
+    return useMemo(
+        () => (isVisible && underlay?.kind === 'dxf' && layers ? underlayTargets(underlay, layers) : NO_TARGETS),
+        [isVisible, underlay, layers]
     );
 }
 

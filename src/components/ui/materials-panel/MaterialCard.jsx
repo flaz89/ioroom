@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { MATERIAL_KINDS, kindOf } from '../../../materials/grouping';
+import { usePanelInViewport } from '../usePanelInViewport';
 import { DEFAULT_VAT, formatEuro, priceBreakdown } from '../../../materials/pricing';
 
 /*
@@ -9,11 +11,14 @@ import { DEFAULT_VAT, formatEuro, priceBreakdown } from '../../../materials/pric
 * onPointerEnter / onPointerLeave: the panel keeps the card open while the pointer is on it (to click the link).
 */
 export default function MaterialCard({ material, onPointerEnter, onPointerLeave }) {
+    // centered on the panel like the panels on their button: kept above the settings button's bottom too
+    const cardRef = useRef();
+    usePanelInViewport(cardRef, material);
     const kind = MATERIAL_KINDS.find((item) => item.id === kindOf(material))?.label;
     const hasPrice = material.price != null;
     const perSqm = hasPrice ? priceBreakdown(1, material.price, material.vatRate) : null;
     return (
-        <div className="material-card" onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+        <div className="material-card" ref={cardRef} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
             <div className="material-card-preview" style={{ backgroundImage: `url(${material.maps.color})` }} />
             <div className="material-card-body">
                 <span className="material-card-name">{material.name}</span>

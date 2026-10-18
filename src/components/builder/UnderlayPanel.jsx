@@ -5,6 +5,7 @@ import { useStore } from '../../store/appStore';
 import { UNDERLAY_DEFAULTS, activeLevel, levelBounds, nominalMetersPerPixel } from '../../plan/planModel';
 import { UNDERLAY_ACCEPT, prepareUnderlay, uploadUnderlay } from '../../plan/underlayFile';
 import { UNIT_METERS } from '../../plan/dxfUnderlay';
+import { usePanelInViewport } from '../ui/usePanelInViewport';
 import './underlay-panel.css';
 
 const SCALE_RANGE = [1, 10000];  // 1:1 .. 1:10000
@@ -42,6 +43,8 @@ export default function UnderlayPanel() {
     const underlayTool = useStore((state) => state.underlayTool);
     const setUnderlayTool = useStore((state) => state.setUnderlayTool);
     const fileRef = useRef();
+    const panelRef = useRef();
+    usePanelInViewport(panelRef, isOpen); // never below the settings button
     const [status, setStatus] = useState(null); // null | 'loading' | error message
     const underlay = level.underlay;
 
@@ -117,7 +120,7 @@ export default function UnderlayPanel() {
         <div className="underlay-control">
             <CircleButton svg={svg.underlay} onClick={() => togglePanel('underlay')} isActive={isOpen} title="Floor plan underlay" />
             {isOpen && (
-                <div className="underlay-panel">
+                <div className="underlay-panel" ref={panelRef}>
                     <span className="underlay-title">Plan underlay</span>
                     <input ref={fileRef} type="file" accept={UNDERLAY_ACCEPT} hidden onChange={onFile} />
 
