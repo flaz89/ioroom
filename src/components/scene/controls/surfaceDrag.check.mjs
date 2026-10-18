@@ -1,7 +1,7 @@
 // Self-check for surfaceDrag.js. Run: node src/components/scene/controls/surfaceDrag.check.mjs
 import assert from 'node:assert/strict';
 import { BoxGeometry, Group, Mesh, PlaneGeometry, Quaternion, Ray, Raycaster, Vector3 } from 'three';
-import { startSurfaceDrag, updateSurfaceDrag, TWIST_TO_YAW } from './surfaceDrag.js';
+import { startSurfaceDrag, surfacesBehind, updateSurfaceDrag, TWIST_TO_YAW } from './surfaceDrag.js';
 
 const near = (a, b, msg, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${msg}: ${a} != ${b}`);
 
@@ -211,4 +211,21 @@ for (const [ms, detaches] of [[150, true], [2000, false]]) {
     const steps = target.rotation.y / ((15 * Math.PI) / 180);
     near(steps, Math.round(steps), 'yaw on 15° steps'); assert.ok(Math.round(steps) !== 0, 'twist still turns it');
 }
+// FOOTPRINT PROBES (surfacesBehind): only nearby surfaces are tested, same answers. Board scaled like the
+// tabletop: a 2 x 2 floor tile at the origin plus far meshes that no probe can reach.
+{
+    const board = new Group(); board.scale.setScalar(0.1); board.position.set(1, 0.8, -0.5);
+    const tile = new Mesh(new PlaneGeometry(2, 2)); tile.rotation.x = -Math.PI / 2; board.add(tile);
+    for (let i = 0; i < 50; i++) { const far = new Mesh(new BoxGeometry(1, 1, 1)); far.position.set(20 + i, 0.5, 20); board.add(far); }
+    const target = new Group(); board.add(target);
+    board.updateMatrixWorld(true);
+    // probes 2 cm above the floor, from x = -1.5 to 1.5 (off the tile past |x| > 1), looking down
+    const points = [-1.5, -0.5, 0.5, 1.5].map((x) => new Vector3(x, 0.02, 0));
+    const out = surfacesBehind(target, points, new Vector3(0, -1, 0), new Array(points.length).fill(-1));
+    assert.deepEqual(out, [0, 1, 1, 0]);
+    // nothing reachable at all (probes far from every surface): all off
+    const away = surfacesBehind(target, [new Vector3(-50, 5, -50)], new Vector3(1, 0, 0), [-1]);
+    assert.deepEqual(away, [0]);
+}
+
 console.log('surfaceDrag: ok');

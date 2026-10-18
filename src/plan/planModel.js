@@ -305,7 +305,8 @@ export function openingRects(wall, height) {
 
 /*
 * The level with a new opening of `type` (OPENING_DEFAULTS size) on wall `wallId`, centered in the widest
-* free stretch of the wall (between its ends and the other openings). Null when it does not fit.
+* free stretch of the wall (between its ends and the other openings). Narrower than the default when the
+* stretch is shorter (a 90 cm wall gets a door that fills it, to be resized); null below MIN_OPENING_SIZE.
 */
 export function addOpening(level, wallId, type, id = newOpeningId()) {
     const wall = level.walls.find((item) => item.id === wallId);
@@ -318,8 +319,9 @@ export function addOpening(level, wallId, type, id = newOpeningId()) {
         if (from - cursor > best[1] - best[0]) best = [cursor, from];
         cursor = Math.max(cursor, to);
     }
-    if (best[1] - best[0] < size.width) return null;
-    const opening = { id, type, offset: (best[0] + best[1]) / 2, ...size };
+    const free = best[1] - best[0];
+    if (free < MIN_OPENING_SIZE) return null;
+    const opening = { id, type, offset: (best[0] + best[1]) / 2, ...size, width: Math.min(size.width, free) };
     return updateWall(level, wallId, { openings: [...(wall.openings ?? []), opening] });
 }
 
@@ -456,9 +458,25 @@ export function closedLoops(walls) {
         if (!neighbors.has(kq)) neighbors.set(kq, new Set());
         neighbors.get(kp).add(kq); neighbors.get(kq).add(kp);
     };
-    // T-joints: a wall ending ON another wall's line (not at its ends) splits that edge in the graph there,
-    // so the two rooms on its sides are separate loops (the walls themselves are not modified)
-    const ends = walls.flatMap((wall) => [wall.a, wall.b]);
+    // T-joints: a wall ending ON another wall (not at its ends) splits that edge in the graph there, so the
+    // two rooms on its sides are separate loops (the walls themselves are not modified). "On" = anywhere
+    // within the other wall's thickness (on its drawn line, on either face or between them): the end is
+    // projected onto that wall's line. A partition drawn up to the far face of a wall, or traced on a CAD
+    // drawing, still closes its rooms.
+    const attach = (p) => {
+        for (const wall of walls) {
+            const { dir, normal, length } = wallFrame(wall);
+            const rel = sub(p, wall.a);
+            const t = dotp(rel, dir);
+            if (t <= JOIN_EPSILON || t >= length - JOIN_EPSILON) continue;
+            const across = dotp(rel, normal);
+            const { inner, outer } = faceOffsets(wall);
+            if (across >= Math.min(inner, outer) - JOIN_EPSILON && across <= Math.max(inner, outer) + JOIN_EPSILON) return add(wall.a, scale(dir, t));
+        }
+        return p;
+    };
+    const attached = new Map(walls.map((wall) => [wall, [attach(wall.a), attach(wall.b)]]));
+    const ends = [...attached.values()].flat();
     walls.forEach((wall) => {
         const { dir, length } = wallFrame(wall);
         const stops = ends
@@ -467,7 +485,8 @@ export function closedLoops(walls) {
                 && Math.abs((p[0] - wall.a[0]) * dir[1] - (p[1] - wall.a[1]) * dir[0]) < JOIN_EPSILON)
             .sort((s1, s2) => s1.t - s2.t)
             .map(({ p }) => p);
-        [wall.a, ...stops, wall.b].forEach((point, i, chain) => { if (i > 0) link(chain[i - 1], point); });
+        const [a, b] = attached.get(wall);
+        [a, ...stops, b].forEach((point, i, chain) => { if (i > 0) link(chain[i - 1], point); });
     });
 
     // neighbors of each corner sorted by direction angle
@@ -532,13 +551,16 @@ function interiorPoint(polygon) {
     return polygon[0];
 }
 
-// The wall whose drawn line holds the segment p-q (a loop edge; with T-joints an edge can be part of a wall)
+// The wall whose drawn line holds the segment p-q (a loop edge; with T-joints an edge can be part of a wall).
+// The line may run past the wall's ends by up to a wall thickness: an end attached to another wall's line
+// (closedLoops) is projected there from within that wall's thickness.
 function wallOnSegment(walls, p, q) {
+    const slack = Math.max(0, ...walls.map((wall) => wall.thickness)) + JOIN_EPSILON;
     return walls.find((wall) => {
         const { dir, length } = wallFrame(wall);
         const along = (r) => (r[0] - wall.a[0]) * dir[0] + (r[1] - wall.a[1]) * dir[1];
         const off = (r) => Math.abs((r[0] - wall.a[0]) * dir[1] - (r[1] - wall.a[1]) * dir[0]);
-        const within = (r) => off(r) < JOIN_EPSILON && along(r) > -JOIN_EPSILON && along(r) < length + JOIN_EPSILON;
+        const within = (r) => off(r) < JOIN_EPSILON && along(r) > -slack && along(r) < length + slack;
         return within(p) && within(q);
     });
 }

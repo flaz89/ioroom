@@ -47,4 +47,10 @@ assert.equal(curves.units, 'm'); // no $INSUNITS, 2 units wide: meters
 assert.equal(dxfUnitsGuess(12000), 'mm');
 assert.equal(dxfUnitsGuess(1200), 'cm');
 assert.throws(() => dxfVectors({ entities: [] }), /No lines/);
+// a stray line far away does not move the center: 1000 short lines around (0, 0) + one at (1e6, 1e6)
+const many = Array.from({ length: 1000 }, (_, i) => ({ type: 'LINE', layer: 'A', vertices: [{ x: i % 10, y: 0 }, { x: i % 10, y: 10 }] }));
+const stray = dxfVectors({ header: { $INSUNITS: 6 }, entities: [...many, { type: 'LINE', layer: 'B', vertices: [{ x: 1e6, y: 1e6 }, { x: 1e6 + 1, y: 1e6 }] }] });
+const first = stray.layers.find((l) => l.name === 'A').segments;
+assert.ok(Math.abs(first[0] + 4.5) < 1e-6 && Math.abs(first[1] - 5) < 1e-6, String(first.slice(0, 2))); // (0, 0) -> centered on (4.5, 5)
+assert.ok(stray.width < 10, String(stray.width));
 console.log('dxfUnderlay ok');

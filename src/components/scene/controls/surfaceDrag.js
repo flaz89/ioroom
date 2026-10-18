@@ -1,4 +1,4 @@
-import { Box3, Matrix4, Plane, Quaternion, Ray, Raycaster, Vector3 } from 'three';
+import { Box3, Matrix4, Plane, Quaternion, Ray, Raycaster, Sphere, Vector3 } from 'three';
 import { getPointerRay } from './pointerRay.js';
 
 /*
@@ -198,14 +198,36 @@ export function surfaceAlong(target, body, direction) {
 export function surfacesBehind(target, points, direction, out) {
     const parent = target.parent;
     if (parent == null) return out.fill(0);
-    const surfaces = collectSurfaces(parent, target);
     _raycaster.ray.direction.copy(direction).transformDirection(parent.matrixWorld);
+    // probe origins in world space, and the sphere around them
+    _probeBox.makeEmpty();
     for (let i = 0; i < points.length; i++) {
-        _raycaster.ray.origin.copy(points[i]).applyMatrix4(parent.matrixWorld);
+        if (_probeOrigins.length <= i) _probeOrigins.push(new Vector3());
+        _probeBox.expandByPoint(_probeOrigins[i].copy(points[i]).applyMatrix4(parent.matrixWorld));
+    }
+    _probeBox.getBoundingSphere(_probeSphere);
+    // only the surfaces some probe ray can reach: a surface's world box grown by the probes' radius, crossed
+    // by the central ray (a superset: the result is the same). Testing every probe against every mesh of
+    // the board (~300 rays x all the room's faces) was the frame cost of a drag on the headset.
+    _centerRay.set(_probeSphere.center, _raycaster.ray.direction);
+    const surfaces = collectSurfaces(parent, target).filter((surface) => {
+        const geometry = surface.geometry;
+        if (geometry.boundingBox == null) geometry.computeBoundingBox();
+        _surfaceBox.copy(geometry.boundingBox).applyMatrix4(surface.matrixWorld).expandByScalar(_probeSphere.radius);
+        return _centerRay.intersectsBox(_surfaceBox);
+    });
+    for (let i = 0; i < points.length; i++) {
+        if (surfaces.length === 0) { out[i] = 0; continue; }
+        _raycaster.ray.origin.copy(_probeOrigins[i]);
         out[i] = _raycaster.intersectObjects(surfaces, false).some((hit) => hit.face != null) ? 1 : 0;
     }
     return out;
 }
+const _probeOrigins = [];
+const _probeBox = new Box3();
+const _probeSphere = new Sphere();
+const _centerRay = new Ray();
+const _surfaceBox = new Box3();
 
 // Surface straight below the body center (DROP rule, room bounds, footprint), or null
 export function surfaceBelow(target, body = target) {

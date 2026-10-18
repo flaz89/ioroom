@@ -183,8 +183,7 @@ export default function DragFootprint({ targetRef, bodyRef, getSupportNormal }) 
         mesh.scale.set(extent, extent, 1);
 
         // Per-dot probes: from each probe cell (just in front of the plane) towards the surface.
-        // ponytail: ~300 raycasts per frame against the whole board; throttle or test against the room
-        // outline if big scenes make it costly.
+        // ~300 raycasts per frame, each only against the surfaces near the footprint (surfaceDrag.surfacesBehind).
         if (patternRef.current?.grid !== grid) {
             patternRef.current?.texture.dispose();
             patternRef.current = createPattern(grid);

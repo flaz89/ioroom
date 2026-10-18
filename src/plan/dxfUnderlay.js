@@ -6,8 +6,9 @@
 * - Kept: LINE, LWPOLYLINE / POLYLINE (bulges = arcs, tessellated), ARC, CIRCLE, and INSERT (blocks: doors,
 *   furniture, symbols are often blocks) expanded with their position, scale and rotation, nested blocks too.
 *   Skipped: texts, dimensions, hatches, splines, ellipses, points, 3D faces (not needed to trace walls).
-* - segments: flat [x1, z1, x2, z2, ...] in DRAWING UNITS, centered on the drawing's bounds (so the underlay's
-*   `center` is the drawing center, like an image), plan axes: the CAD's +Y (up on paper) becomes -Z (up on
+* - segments: flat [x1, z1, x2, z2, ...] in DRAWING UNITS, centered on the drawing (so the underlay's `center`
+*   is the drawing center, like an image). Center and size come from the bulk of the points (2nd..98th
+*   percentile of each axis): a few stray entities far away (a title block, leftovers) do not pull it off; plan axes: the CAD's +Y (up on paper) becomes -Z (up on
 *   the plan). Rounded to 1e-4 units (smaller JSON).
 * - units: from the header ($INSUNITS) when declared, else guessed from the drawing's size (dxfUnitsGuess).
 * ponytail: a whole drawing in one JSON (fine up to ~100k segments); tile / simplify if huge drawings show up.
@@ -17,6 +18,8 @@ const INSUNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };
 const ARC_STEP = Math.PI / 24;      // tessellation: 7.5° per segment
 const MAX_BLOCK_DEPTH = 8;          // nested blocks deeper than this are ignored (cycles, broken files)
 const ROUND = 1e4;
+const BULK_CUT = 0.02;              // share of the points left out at each end when centering
+const BULK_MIN_POINTS = 1000;       // fewer points: exact bounds (a real plan has many thousands)
 
 // Units of a drawing that does not declare them, from its largest extent (a building is 5-100 m):
 // thousands of units = mm, hundreds = cm, else m
@@ -73,6 +76,13 @@ function polylinePoints(vertices, closed) {
     return points;
 }
 
+// [low, high] of the bulk of the values: 2nd and 98th percentiles (exact bounds for small drawings)
+function bulk(values) {
+    const sorted = Float64Array.from(values).sort();
+    const cut = sorted.length >= BULK_MIN_POINTS ? Math.floor(sorted.length * BULK_CUT) : 0;
+    return [sorted[cut], sorted[sorted.length - 1 - cut]];
+}
+
 export function dxfVectors(dxf) {
     const byLayer = new Map(); // layer -> flat [x1, y1, x2, y2, ...] (DXF axes, units)
     const add = (layer, m, points) => {
@@ -123,17 +133,13 @@ export function dxfVectors(dxf) {
     };
     walk(dxf.entities, IDENTITY, 0, null);
 
-    // bounds -> centered, plan axes (z = -y), rounded
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    // robust bounds (percentiles: stray far entities ignored) -> centered, plan axes (z = -y), rounded
+    const xs = [], ys = [];
     for (const list of byLayer.values()) {
-        for (let i = 0; i < list.length; i += 2) {
-            if (list[i] < minX) minX = list[i];
-            if (list[i] > maxX) maxX = list[i];
-            if (list[i + 1] < minY) minY = list[i + 1];
-            if (list[i + 1] > maxY) maxY = list[i + 1];
-        }
+        for (let i = 0; i < list.length; i += 2) { xs.push(list[i]); ys.push(list[i + 1]); }
     }
-    if (!Number.isFinite(minX)) throw new Error('No lines found in this DXF');
+    if (xs.length === 0) throw new Error('No lines found in this DXF');
+    const [minX, maxX] = bulk(xs), [minY, maxY] = bulk(ys);
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     const round = (value) => Math.round(value * ROUND) / ROUND;
     const layers = [...byLayer.entries()]

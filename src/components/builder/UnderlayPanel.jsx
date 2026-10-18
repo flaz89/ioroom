@@ -23,7 +23,7 @@ const TOOLS = [
 * (planModel.js level.underlay, saved with the environment: one undo step per change).
 * - No underlay: "Load a plan" (image, PDF first page, or DXF): prepared in the browser, uploaded to R2
 *   (plan/underlayFile.js), placed with its center on the plan's center at the default nominal scale (a DXF:
-*   at its exact size, from its units).
+*   at its exact size, from its units, centered on the grid's origin).
 * - Underlay: Show / Hide and Opacity (this device only, store underlayVisible / underlayOpacity), nominal
 *   scale 1:N ("calibrated" once Calibrate is used) and, for images, the scan resolution (dpi: a PDF knows
 *   its paper size); for a DXF instead: its units (read from the file, can be corrected) and its layers, each
@@ -66,10 +66,12 @@ export default function UnderlayPanel() {
         try {
             const prepared = await prepareUnderlay(file);
             const url = await uploadUnderlay(prepared.blob);
-            const placement = {
-                center: underlay?.center ?? levelBounds(activeLevel(useStore.getState().plan)).center,
-                rotation: underlay?.rotation ?? 0
-            };
+            // a replaced underlay keeps its place when it is the same kind of file (a revised drawing); a new
+            // DXF goes on the grid's origin (its drawing's center), an image / PDF on the plan's center
+            const keep = underlay?.kind === prepared.kind || (underlay?.kind !== 'dxf' && prepared.kind !== 'dxf' && underlay != null);
+            const placement = keep
+                ? { center: underlay.center, rotation: underlay.rotation }
+                : { center: prepared.kind === 'dxf' ? [0, 0] : levelBounds(activeLevel(useStore.getState().plan)).center, rotation: 0 };
             if (prepared.kind === 'dxf') {
                 const { blob: _blob, ...info } = prepared; // the blob is uploaded, not saved
                 saveUnderlay({ ...info, url, metersPerPixel: UNIT_METERS[prepared.units], hiddenLayers: [], ...placement });

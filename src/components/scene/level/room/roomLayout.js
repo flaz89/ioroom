@@ -19,6 +19,7 @@ import { faceOffsets, openingRects, polygonArea, wallFootprint, wallFrame } from
 */
 const FLOOR_COLOR = '#d4d4d4'; // plain material colors
 const WALL_COLOR = '#ffffff';
+const THRESHOLD_LIFT = 0.003; // meters (enough for the headset's depth precision at room distances): a door threshold above the floors it overlaps (no z-fighting)
 
 const wallHeight = (wall, level) => wall.height ?? level.wallHeight;
 
@@ -103,7 +104,9 @@ function wallGeometries(wall, level) {
             { part: 'edge', vertical: true, geometry: jamb(from, 1) },
             { part: 'edge', vertical: true, geometry: jamb(to, -1) },
             { part: 'edge', vertical: false, geometry: flat(top, -1) },
-            { part: 'edge', vertical: false, geometry: flat(bottom, 1) }
+            // a door's threshold on the floor level is lifted a hair: at y = 0 it is coplanar with the ground
+            // and the floors meeting it (z-fighting, worst on the headset's depth buffer)
+            { part: 'edge', vertical: false, geometry: flat(Math.max(bottom, THRESHOLD_LIFT), 1) }
         );
     }
     return faces;

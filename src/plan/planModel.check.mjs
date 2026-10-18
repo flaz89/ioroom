@@ -81,6 +81,10 @@ assert.equal(polygonArea(room.floors[0].points), 36);
 const halves = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid'), () => 'new-floor');
 assert.deepEqual(halves.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [18, 17.1]);
 assert.deepEqual(halves.inherited, { 'new-floor': 'floor' });
+// a partition ending INSIDE the other walls' thickness (far face / between the faces), not on their lines,
+// splits the room the same way (traced on a CAD drawing)
+const inBand = rebuildFloors(addWall(room, [0, -3.15], [0, 3.05], 'mid'), () => 'new-floor');
+assert.deepEqual(inBand.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [18, 17.1]);
 // ...a centered one half of it from each: two equal rooms
 const centered = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid', 'center'), () => 'new-floor');
 assert.deepEqual(centered.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [17.55, 17.55]);
@@ -97,7 +101,8 @@ const withWindow = addOpening(level, 'wall-back', 'window', 'o1');
 assert.equal(withWindow.walls[1].openings[0].offset, 3);
 const withTwo = addOpening(withWindow, 'wall-back', 'window', 'o2');
 assert.ok(Math.abs(withTwo.walls[1].openings[1].offset - 1.2) < 1e-9); // gap 0..2.4
-assert.equal(addOpening(updateWall(level, 'wall-back', { b: [-2.5, -3] }), 'wall-back', 'door'), null); // 0.5 m wall: no door
+assert.equal(addOpening(updateWall(level, 'wall-back', { b: [-2.5, -3] }), 'wall-back', 'door', 'd0').walls[1].openings[0].width, 0.5); // 0.5 m wall: a door that fills it
+assert.equal(addOpening(updateWall(level, 'wall-back', { b: [-2.8, -3] }), 'wall-back', 'door'), null); // 0.2 m wall: no door
 assert.equal(removeOpening(withTwo, 'wall-back', 'o1').walls[1].openings.length, 1);
 // editing: valid patches apply, invalid ones (overlap, past the wall's end, through the top, too small) give null
 assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { width: 2 }).walls[1].openings[0].width, 2); // 2..4: free
