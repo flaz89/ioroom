@@ -15,6 +15,6 @@ export default function CircleButton({svg, onClick, title, style, isDisabled = f
             title={title}
             disabled = {isDisabled}
             style={style}
-        >{svg}{text}</button>
+        >{svg}{text != null && <span className="circleBtn-text">{text}</span>}</button>
     );
 }

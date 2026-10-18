@@ -43,3 +43,15 @@
     display: flex;
     fill: currentColor;
 }
+
+/* TEXT label instead of a logo: same 20 x 20 box as the svg logos, so the button stays a circle */
+.circleBtn-text {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+}

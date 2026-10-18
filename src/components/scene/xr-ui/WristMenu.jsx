@@ -30,6 +30,7 @@ const BUTTON_STEP = BUTTON_SIZE[1] + 0.008; // meters between stacked buttons (h
 const SIDE_PANEL_X = 0.115;  // meters: catalog panel center, to the side of the button column
 const SPAWN_DISTANCE = 1.2;  // meters in front of the user for objects added at 1:1 scale
 const STEP_X = BUTTON_SIZE[0] + 0.006; // meters: snap step buttons, to the right of their snap toggle
+const BUTTONS_X = -STEP_X;   // meters: the button columns sit one column left, clear of the catalog panel
 
 // Next step in the list (wraps around); a value not in the list restarts from the first
 const nextStep = (steps, current) => steps[(steps.indexOf(current) + 1) % steps.length];
@@ -122,27 +123,30 @@ export default function WristMenu() {
                 <group visible={isVisible} pointerEvents={isVisible ? 'listener' : 'none'}>
                     <PointerFilterContext.Provider value={acceptsWristPointer}>
                         {/* Buttons stacked along the menu's local +Y (the palm becomes the control board) */}
-                        <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
-                        <VRButton svg={svg.sun} active={isSunOpen} onClick={() => togglePanel('sun')} position={[STEP_X, 0, 0]} />
-                        <VRButton icon={tabletopIcon} active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
-                        <VRButton svg={svg.materials} active={isMaterialsOpen} onClick={() => togglePanel('materials')} position={[STEP_X, BUTTON_STEP, 0]} />
-                        <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
-                        <VRButton svg={svg.note} active={isPlacingNote} onClick={() => setPlacingNote(!isPlacingNote)} position={[STEP_X, BUTTON_STEP * 2, 0]} />
-                        <VRButton svg={svg.ruler} active={isMeasuring} onClick={() => setMeasuring(!isMeasuring)} position={[STEP_X * 2, BUTTON_STEP * 2, 0]} />
-                        {/* ruler on: free direction instead of the axis lock (the desktop Shift) */}
-                        {isMeasuring && <VRButton label="Free" active={isMeasureFree} onClick={() => setMeasureFree(!isMeasureFree)} position={[STEP_X * 2, BUTTON_STEP * 3, 0]} />}
-                        {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
-                        <VRButton svg={svg.gridSnap} active={gridSnap} onClick={toggleGridSnap} position={[0, BUTTON_STEP * 3, 0]} />
-                        <VRButton label={`${gridSnapStep}cm`} active={gridSnap} onClick={() => setGridSnapStep(nextStep(GRID_SNAP_STEPS, gridSnapStep))} position={[STEP_X, BUTTON_STEP * 3, 0]} />
-                        <VRButton svg={svg.rotationSnap} active={rotationSnap} onClick={toggleRotationSnap} position={[0, BUTTON_STEP * 4, 0]} />
-                        <VRButton label={`${rotationSnapStep}°`} active={rotationSnap} onClick={() => setRotationSnapStep(nextStep(ROTATION_SNAP_STEPS, rotationSnapStep))} position={[STEP_X, BUTTON_STEP * 4, 0]} />
-                        {/* undo / redo (sync/history.js), in the free slots of the third column */}
-                        {/* ponytail: always pressable (no-op on an empty history); dim them if that confuses */}
-                        <VRButton svg={svg.undo} onClick={undo} position={[STEP_X * 2, 0, 0]} />
-                        <VRButton svg={svg.redo} onClick={redo} position={[STEP_X * 2, BUTTON_STEP, 0]} />
-                        {/* debug: whole scene in wireframe (scene/perf/Wireframe.jsx) */}
-                        <VRButton label="Wire" active={isWireframe} onClick={toggleWireframe} position={[STEP_X * 2, BUTTON_STEP * 4, 0]} />
-                        {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
+                        <group position={[BUTTONS_X, 0, 0]}>
+                            <VRButton svg={svg.performance} active={isPerfVisible} onClick={togglePerf} />
+                            <VRButton svg={svg.sun} active={isSunOpen} onClick={() => togglePanel('sun')} position={[STEP_X, 0, 0]} />
+                            <VRButton icon={tabletopIcon} active={isTabletop} onClick={toggleTabletop} position={[0, BUTTON_STEP, 0]} />
+                            <VRButton svg={svg.materials} active={isMaterialsOpen} onClick={() => togglePanel('materials')} position={[STEP_X, BUTTON_STEP, 0]} />
+                            <VRButton svg={svg.add} active={isCatalogOpen} onClick={() => setIsCatalogOpen(!isCatalogOpen)} position={[0, BUTTON_STEP * 2, 0]} />
+                            <VRButton svg={svg.note} active={isPlacingNote} onClick={() => setPlacingNote(!isPlacingNote)} position={[STEP_X, BUTTON_STEP * 2, 0]} />
+                            <VRButton svg={svg.ruler} active={isMeasuring} onClick={() => setMeasuring(!isMeasuring)} position={[STEP_X * 2, BUTTON_STEP * 2, 0]} />
+                            {/* ruler on: free direction instead of the axis lock (the desktop Shift) */}
+                            {isMeasuring && <VRButton label="Free" active={isMeasureFree} onClick={() => setMeasureFree(!isMeasureFree)} position={[STEP_X * 2, BUTTON_STEP * 3, 0]} />}
+                            {/* Snaps: toggle on the left, current step on the right (press = next step, turns the snap on) */}
+                            <VRButton svg={svg.gridSnap} active={gridSnap} onClick={toggleGridSnap} position={[0, BUTTON_STEP * 3, 0]} />
+                            <VRButton label={`${gridSnapStep}cm`} active={gridSnap} onClick={() => setGridSnapStep(nextStep(GRID_SNAP_STEPS, gridSnapStep))} position={[STEP_X, BUTTON_STEP * 3, 0]} />
+                            <VRButton svg={svg.rotationSnap} active={rotationSnap} onClick={toggleRotationSnap} position={[0, BUTTON_STEP * 4, 0]} />
+                            <VRButton label={`${rotationSnapStep}°`} active={rotationSnap} onClick={() => setRotationSnapStep(nextStep(ROTATION_SNAP_STEPS, rotationSnapStep))} position={[STEP_X, BUTTON_STEP * 4, 0]} />
+                            {/* undo / redo (sync/history.js), in the free slots of the third column */}
+                            {/* ponytail: always pressable (no-op on an empty history); dim them if that confuses */}
+                            <VRButton svg={svg.undo} onClick={undo} position={[STEP_X * 2, 0, 0]} />
+                            <VRButton svg={svg.redo} onClick={redo} position={[STEP_X * 2, BUTTON_STEP, 0]} />
+                            {/* debug: whole scene in wireframe (scene/perf/Wireframe.jsx) */}
+                            <VRButton label="Wire" active={isWireframe} onClick={toggleWireframe} position={[STEP_X * 2, BUTTON_STEP * 4, 0]} />
+                            {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
+                        </group>
+                        {/* catalog: NOT shifted with the buttons (it overlapped them in its old relative place) */}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </PointerFilterContext.Provider>
                 </group>
