@@ -151,7 +151,7 @@ export default function Room() {
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerUp={onDragDrop} onPointerDown={onBuilderPress} onClick={onBuilderClick}>
+        <group name="Room" userData={ROOM_USER_DATA} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerUp={onDragDrop} onPointerDown={onBuilderPress} onClick={onBuilderClick}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh

@@ -15,7 +15,7 @@ export default function SceneGrid({ visible }) {
 
     if (isWebGPU) {
         // Slightly below y=0 so the room floor hides it, as drei's Grid does on WebGL (avoids z-fighting)
-        return <gridHelper args={[SIZE, SIZE / CELL_SIZE, '#888888', '#555555']} position-y={-0.005} visible={visible} />;
+        return <gridHelper args={[SIZE, SIZE / CELL_SIZE, '#888888', '#555555']} position-y={-0.005} visible={visible} name="Grid" />;
     }
     return (
         <Grid
@@ -31,6 +31,7 @@ export default function SceneGrid({ visible }) {
             followCamera={false}
             infiniteGrid={false}
             visible={visible}
+            name="Grid"
         />
     );
 }
