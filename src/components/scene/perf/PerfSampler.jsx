@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { Frustum, Matrix4 } from 'three';
 import { addAfterEffect, useThree } from '@react-three/fiber';
 import { useStore } from '../../../store/appStore';
 
@@ -28,37 +27,6 @@ function describeGpu(gl) {
 function backendLabel(gl) {
     const backend = gl.isWebGPURenderer ? (gl.backend.isWebGPUBackend ? 'WebGPU' : 'WebGPU on WebGL2') : 'WebGL';
     return gl.xr?.isPresenting ? `${backend} · XR` : backend;
-}
-
-/*
-* Which objects the triangles come from: every visible mesh inside the camera frustum, grouped by label
-* (its name, else the nearest named ancestor, else its geometry type), sorted by triangles, top TOP_MESHES.
-* Counts what the CAMERA view draws once: renderer.info also counts shadow passes and, in XR, both eyes.
-* Line2 / instanced meshes count their instances. Lines and points draw no triangles: skipped.
-*/
-const TOP_MESHES = 8;
-const _frustum = new Frustum();
-const _viewProjection = new Matrix4();
-function triangleBreakdown(scene, camera) {
-    camera.updateMatrixWorld();
-    _frustum.setFromProjectionMatrix(_viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-    const totals = new Map(); // label -> { triangles, meshes }
-    scene.traverseVisible((object) => {
-        if (!object.isMesh || object.geometry == null) return;
-        if (object.frustumCulled && !_frustum.intersectsObject(object)) return;
-        const geometry = object.geometry;
-        const vertices = geometry.index ? geometry.index.count : (geometry.attributes.position?.count ?? 0);
-        const instances = object.isInstancedMesh ? object.count : (Number.isFinite(geometry.instanceCount) ? geometry.instanceCount : 1);
-        const triangles = Math.floor(Math.min(vertices, geometry.drawRange.count) / 3) * instances;
-        let named = object;
-        while (named != null && !named.name) named = named.parent;
-        const label = named?.name || geometry.type;
-        const entry = totals.get(label) ?? { label, triangles: 0, meshes: 0 };
-        entry.triangles += triangles;
-        entry.meshes++;
-        totals.set(label, entry);
-    });
-    return [...totals.values()].sort((a, b) => b.triangles - a.triangles).slice(0, TOP_MESHES);
 }
 
 /*
@@ -131,9 +99,7 @@ export default function PerfSampler() {
         if (elapsed < SAMPLE_INTERVAL_MS) return;
 
         const gpuMs = acc.gpuSamples > 0 ? acc.gpuMsSum / acc.gpuSamples : null;
-        const { scene, camera } = getThree();
-        const viewCamera = gl.xr?.isPresenting ? gl.xr.getCamera() : camera;
-        setPerfStats({ ...readStats(gl, acc.frames, elapsed, gpuMs, acc.gpuName), topMeshes: triangleBreakdown(scene, viewCamera) });
+        setPerfStats(readStats(gl, acc.frames, elapsed, gpuMs, acc.gpuName));
 
         acc.frames = 0;
         acc.start = now;

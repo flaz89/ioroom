@@ -19,6 +19,14 @@
 /* DXF underlay (CAD lines): thin orange lines (the app's accent) under the plan, never interactive */
 .plan-underlay-dxf { fill: none; stroke: #ff9a1a; stroke-width: 1; pointer-events: none; }
 
+/* automatic walls found on the DXF (preview): green, see-through */
+.plan-detected-walls polygon { fill: rgba(80, 220, 120, 0.35); stroke: #50dc78; stroke-width: 1; pointer-events: none; }
+.plan-detected-walls polygon.is-door { fill: rgba(77, 163, 255, 0.55); stroke: #4da3ff; }
+.plan-detected-walls polygon.is-window { fill: rgba(179, 136, 255, 0.55); stroke: #b388ff; }
+.plan-detected-walls.is-pickable polygon { pointer-events: visiblePainted; cursor: pointer; }
+.plan-detected-walls.is-pickable polygon:hover { stroke-width: 2; }
+.plan-detected-walls .is-excluded polygon { fill: rgba(255, 70, 60, 0.12); stroke: #ff463c; stroke-dasharray: 4 3; }
+
 .plan-floor { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
 
 /* walls: solid, like a drafting plan; selected = the app's orange */

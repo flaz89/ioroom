@@ -6,6 +6,7 @@ import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { publishCameraHeading } from '../scene/sun/cameraHeading';
 import { useUnderlayVectors } from '../../plan/underlayFile';
+import { detectedWallShapes, placeDetectedWalls } from '../../plan/dxfWalls';
 import './plan-view.css';
 
 const WHEEL_ZOOM_SPEED = 0.0015; // zoom factor per wheel delta unit (exp scale: same feel in and out)
@@ -352,7 +353,7 @@ export default function PlanView2D() {
         }
         const dataset = event.target.dataset ?? {};
         // ruler: only measure labels are picked (corners, walls and openings are snap targets)
-        const { vertex, wallId, openingId, measureId, measureEnd } = isDrawing || underlayTool ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
+        const { vertex, wallId, openingId, measureId, measureEnd, detected } = isDrawing || underlayTool ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
         // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
         const wall = openingId ? level.walls.find((item) => item.id === wallId) : null;
         const opening = wall?.openings.find((item) => item.id === openingId);
@@ -363,7 +364,7 @@ export default function PlanView2D() {
             : opening
             // grab: where along the wall the opening was taken, relative to its center (it slides, no jump)
             ? { kind: 'opening', wallId, openingId, start: point, moved: false, grab: alongWall(wall, toWorld(view, size.w, size.h, point.x, point.y)) - opening.offset }
-            : { kind: 'pan', wallId: wallId ?? null, openingId: openingId ?? null, measureId: measureId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing && !isRuler && !underlayTool, shift: event.shiftKey };
+            : { kind: 'pan', wallId: wallId ?? null, openingId: openingId ?? null, measureId: measureId ?? null, detected: detected ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing && !isRuler && !underlayTool, shift: event.shiftKey };
     };
 
     // One pointer: corner drag or pan. Two pointers: zoom by the change of their distance, at their
@@ -456,6 +457,7 @@ export default function PlanView2D() {
             else if (gesture.measureId) selectMeasure(current.selectedId === gesture.measureId ? null : gesture.measureId);
             else if (isRuler) placeRulerPoint(rulerPoint(localPoint(event), event.shiftKey));
             else if (isDrawing) placePoint(snapPoint(localPoint(event)));
+            else if (gesture.detected != null) useStore.getState().toggleDetectedWall(Number(gesture.detected)); // automatic walls preview
             else if (gesture.shift && gesture.wallId) useStore.getState().toggleSelectedWall(gesture.wallId);
             else setSelectedWallId(gesture.wallId);
         }
@@ -513,6 +515,8 @@ export default function PlanView2D() {
                     {underlay && isUnderlayVisible && (underlay.kind === 'dxf'
                         ? <UnderlayVectors underlay={underlay} opacity={underlayOpacity} />
                         : <UnderlayImage underlay={underlay} opacity={underlayOpacity} />)}
+                    {/* automatic walls found on the DXF (UnderlayPanel "Detect walls"): preview, over the drawing */}
+                    {underlay?.kind === 'dxf' && <DetectedWalls underlay={underlay} pickable={!isDrawing && !isRuler && !underlayTool} />}
                     <path className="plan-grid-minor" d={gridPath(view, size.w, size.h, steps.minor)} vectorEffect="non-scaling-stroke" />
                     <path className="plan-grid-major" d={gridPath(view, size.w, size.h, steps.major)} vectorEffect="non-scaling-stroke" />
 
@@ -819,6 +823,41 @@ function UnderlayVectors({ underlay, opacity }) {
             opacity={opacity}
         >
             {paths.map(({ name, d }) => !hidden.has(name) && <path key={name} d={d} vectorEffect="non-scaling-stroke" />)}
+        </g>
+    );
+}
+
+/*
+* Preview of the automatic walls (store wallDetection, plan/dxfWalls.js) of this DXF underlay, exactly as
+* "Add walls" will build them: placed in plan meters (placeDetectedWalls) and drawn with the plan model's
+* footprints (detectedWallShapes: mitered corners, T joints on faces). Walls green, doors blue, windows violet.
+* A click on a wall leaves it out (store excluded, red dashed; the click is handled by the plan view's gesture
+* code through data-detected) or takes it back; the kept walls are joined among themselves only.
+* `pickable`: clicks reach the walls (not while a tool owns the clicks).
+*/
+function DetectedWalls({ underlay, pickable }) {
+    const detection = useStore((state) => (state.wallDetection?.url === underlay.url ? state.wallDetection : null));
+    const shapes = useMemo(() => {
+        if (detection == null) return [];
+        const placed = placeDetectedWalls(detection.walls, underlay, (index) => `detected-${index}`);
+        const kept = placed.filter((_, index) => !detection.excluded.includes(index));
+        const keptShapes = detectedWallShapes(kept);
+        const allShapes = detectedWallShapes(placed); // left-out walls: their shape among all the walls
+        return placed.map((wall, index) => (detection.excluded.includes(index)
+            ? { ...allShapes[index], excluded: true }
+            : keptShapes[kept.indexOf(wall)]));
+    }, [detection, underlay]);
+    if (detection == null) return null;
+    return (
+        <g className={`plan-detected-walls${pickable ? ' is-pickable' : ''}`}>
+            {shapes.map(({ wall, openings, excluded }, index) => (
+                <g key={index} className={excluded ? 'is-excluded' : undefined}>
+                    <polygon points={wall.join(' ')} data-detected={index} vectorEffect="non-scaling-stroke" />
+                    {!excluded && openings.map((opening, i) => (
+                        <polygon key={i} className={`is-${opening.type}`} points={opening.points.join(' ')} data-detected={index} vectorEffect="non-scaling-stroke" />
+                    ))}
+                </g>
+            ))}
         </g>
     );
 }

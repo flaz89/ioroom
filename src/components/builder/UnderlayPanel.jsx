@@ -3,7 +3,8 @@ import CircleButton from '../ui/circle-button/CircleButton';
 import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
 import { UNDERLAY_DEFAULTS, activeLevel, levelBounds, nominalMetersPerPixel } from '../../plan/planModel';
-import { UNDERLAY_ACCEPT, prepareUnderlay, uploadUnderlay } from '../../plan/underlayFile';
+import { UNDERLAY_ACCEPT, prepareUnderlay, uploadUnderlay, useUnderlayVectors } from '../../plan/underlayFile';
+import { placeDetectedWalls, wallCandidates } from '../../plan/dxfWalls';
 import { UNIT_METERS } from '../../plan/dxfUnderlay';
 import { usePanelInViewport } from '../ui/usePanelInViewport';
 import './underlay-panel.css';
@@ -49,6 +50,31 @@ export default function UnderlayPanel() {
     usePanelInViewport(panelRef, isOpen); // never below the settings button
     const [status, setStatus] = useState(null); // null | 'loading' | error message
     const underlay = level.underlay;
+
+    // AUTOMATIC WALLS (DXF): walls found on the chosen layer (plan/dxfWalls.js), previewed in the 2D plan.
+    // Default layer: the first whose name says "walls" (English / Italian), else the first one.
+    const vectors = useUnderlayVectors(underlay);
+    const wallDetection = useStore((state) => state.wallDetection);
+    const setWallDetection = useStore((state) => state.setWallDetection);
+    const [wallLayer, setWallLayer] = useState(null);
+    const layerNames = underlay?.kind === 'dxf' ? underlay.layers : [];
+    const detectLayer = layerNames.includes(wallLayer) ? wallLayer : (layerNames.find((name) => /wall|mur|paret/i.test(name)) ?? layerNames[0]);
+    const detection = wallDetection?.url === underlay?.url ? wallDetection : null; // a replaced drawing drops it
+    const detectWalls = () => {
+        const segments = vectors.find((layer) => layer.name === detectLayer)?.segments ?? [];
+        // the visible layers tell doors from windows (glass lines, door / window layer names)
+        const context = vectors.filter((layer) => !underlay.hiddenLayers?.includes(layer.name));
+        setWallDetection({ url: underlay.url, layer: detectLayer, walls: wallCandidates(segments, underlay.metersPerPixel, { context }) });
+        setUnderlayVisible(true);
+    };
+    // The previewed walls added to the level (one undo step), then the preview is cleared: from here they are
+    // ordinary walls and openings, edited with the plan tools (sizes, door / window type, delete)
+    const addDetectedWalls = () => {
+        const current = activeLevel(useStore.getState().plan);
+        const kept = detection.walls.filter((_, index) => !detection.excluded.includes(index));
+        setActiveLevel({ ...current, walls: [...current.walls, ...placeDetectedWalls(kept, underlay)] });
+        setWallDetection(null);
+    };
 
     // Writes the underlay into the level being worked on (the store's current one: no stale closure)
     const saveUnderlay = (next) => {
@@ -172,6 +198,34 @@ export default function UnderlayPanel() {
                                             ))}
                                         </div>
                                     </div>
+                                    {/* automatic walls: the faces' layer, then Detect (preview only, nothing is added yet) */}
+                                    <label className="underlay-row underlay-number">
+                                        <span>Walls layer</span>
+                                        <select value={detectLayer} onChange={(event) => setWallLayer(event.target.value)}>
+                                            {layerNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                                        </select>
+                                    </label>
+                                    <div className="underlay-actions">
+                                        <button disabled={vectors == null} onClick={detectWalls}>Detect walls</button>
+                                        {detection && <button onClick={() => setWallDetection(null)}>Clear</button>}
+                                    </div>
+                                    {detection && (
+                                        <span className="underlay-hint">
+                                            {detection.walls.length} walls found on {detection.layer} (green, in the 2D plan), with{' '}
+                                            {countOpenings(detection, 'door')} doors (blue) and {countOpenings(detection, 'window')} windows (violet).
+                                        </span>
+                                    )}
+                                    {detection?.walls.length > 0 && (
+                                        <>
+                                            <span className="underlay-hint">
+                                                Click a wall in the 2D plan to leave it out (red), again to keep it.
+                                                {detection.excluded.length > 0 && ` ${detection.excluded.length} left out.`}
+                                            </span>
+                                            <button className="underlay-primary" disabled={detection.excluded.length === detection.walls.length} onClick={addDetectedWalls}>
+                                                Add {detection.walls.length - detection.excluded.length} walls
+                                            </button>
+                                        </>
+                                    )}
                                 </>
                             ) : (
                                 <NumberRow label="Scale 1:" value={underlay.scale} placeholder="calibrated" onApply={applyNominal('scale', SCALE_RANGE)} />
@@ -203,6 +257,9 @@ export default function UnderlayPanel() {
         </div>
     );
 }
+
+// Openings of one kind among the detected walls
+const countOpenings = (detection, kind) => detection.walls.reduce((sum, wall) => sum + wall.openings.filter((opening) => opening.kind === kind).length, 0);
 
 /*
 * Number field, applied on Enter or blur (one undo step per change). Re-created (key) when the value

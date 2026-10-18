@@ -26,3 +26,6 @@ dist-ssr
 
 # Texture staging for scripts/seed-materials.mjs (the library lives in R2)
 scripts/.textures
+
+# Local test files (DXF / plans tried before uploading to R2)
+/test

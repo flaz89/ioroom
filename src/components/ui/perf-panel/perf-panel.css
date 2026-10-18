@@ -50,15 +50,6 @@
 }
 
 .perf-panel-row dt { opacity: .65; }
-
-/* triangle breakdown under the stats */
-.perf-panel-meshes {
-    margin: .5em 0 0;
-    padding-top: .4em;
-    border-top: 1px solid rgba(255,255,255,0.15);
-    display: grid;
-    row-gap: .2em;
-}
 .perf-panel-row dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 /* Desktop: stacked in the bottom bar (ui.css), above the grid scale and the buttons */

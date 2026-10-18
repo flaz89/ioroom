@@ -20,6 +20,9 @@
 *   see the drawing through the walls while tracing (their outline stays).
 * underlayTool: active underlay adjustment of the 2D plan (two clicks each, PlanView2D.jsx): null |
 *   'calibrate' (a known length) | 'align' (a line onto an axis) | 'move' (a point onto a plan point).
+* wallDetection: automatic walls found on a DXF underlay layer (plan/dxfWalls.js), previewed in the 2D plan:
+*   null | { url, layer, walls, excluded } (url: the underlay they belong to; excluded: indices of the walls the
+*   user left out, toggleDetectedWall). Per device, never synced nor undoable.
 * Not to be confused with view.mode (viewSlice.js: 'life' / 'tabletop' presentation in XR).
 */
 
@@ -64,6 +67,16 @@ export const createWorkspaceSlice = (set, get) => ({
     setUnderlayTool: (underlayTool) => set(underlayTool
         ? { underlayTool, builderView: '2d', planTool: 'select', selectedWallIds: [], selectedOpening: null }
         : { underlayTool: null }),
+
+    wallDetection: null,
+    setWallDetection: (wallDetection) => set({ wallDetection: wallDetection && { excluded: [], ...wallDetection } }),
+    // A detected wall left out of "Add walls" (or taken back)
+    toggleDetectedWall: (index) => set((state) => {
+        const detection = state.wallDetection;
+        if (detection == null) return {};
+        const excluded = detection.excluded.includes(index) ? detection.excluded.filter((i) => i !== index) : [...detection.excluded, index];
+        return { wallDetection: { ...detection, excluded } };
+    }),
 
     planGrid: null,
     setPlanGrid: (planGrid) => set({ planGrid }),

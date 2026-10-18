@@ -42,17 +42,6 @@ export default function PerfPanel() {
                     </div>
                 ))}
             </dl>
-            {/* where the triangles come from (camera view only, PerfSampler.triangleBreakdown) */}
-            {stats.topMeshes?.length > 0 && (
-                <dl className="perf-panel-meshes">
-                    {stats.topMeshes.map(({ label, triangles, meshes }) => (
-                        <div key={label} className="perf-panel-row">
-                            <dt>{label}{meshes > 1 ? ` ×${meshes}` : ''}</dt>
-                            <dd>{count(triangles)}</dd>
-                        </div>
-                    ))}
-                </dl>
-            )}
         </div>
     );
 }
