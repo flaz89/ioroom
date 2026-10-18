@@ -64,7 +64,8 @@ export const adminToken = readAdminToken();
 // Whether this device belongs to the owner (can create rooms and share them)
 export const isAdmin = adminToken != null && adminToken !== '';
 
-// ROOM STATUS (React: useRoomStatus): 'local' (no room) | 'connecting' | 'connected' | 'not-found'
+// ROOM STATUS (React: useRoomStatus): 'local' (no room) | 'connecting' | 'connected' | 'not-found' |
+// 'elsewhere' (the room was opened in another tab of this browser: this one disconnected)
 let roomStatus = 'local';
 const statusListeners = new Set();
 function setRoomStatus(status) {
@@ -147,6 +148,21 @@ export function connectRoom(room) {
             setRoomStatus('not-found');
         });
     }
+    /*
+    * ONE CONNECTION PER DEVICE: a tab joining a room tells the other tabs of this browser (same origin,
+    * BroadcastChannel) that already have it open; they disconnect (their presence leaves the room) and show
+    * a notice. Old tabs left open (e.g. the headset browser keeps one per opened link) no longer show up
+    * as extra users. The newest tab always wins: reloading an old tab takes the room back.
+    */
+    const tabs = provider && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`ioroom.room.${room}`) : null;
+    if (tabs) {
+        tabs.onmessage = () => {
+            provider.disconnect();
+            setRoomStatus('elsewhere');
+        };
+        tabs.postMessage('joined');
+    }
+
     const unbindObjects = bindInstances(doc, doc.getMap('objects'),
         (state) => state.objects.instances, (list) => useStore.getState().setInstances(list));
     const unbindNotes = bindInstances(doc, doc.getMap('notes'),
@@ -186,6 +202,7 @@ export function connectRoom(room) {
         unbindObjects();
         unbindNotes();
         unbindMeasures();
+        tabs?.close();
         provider?.destroy();
         doc.destroy();
     };

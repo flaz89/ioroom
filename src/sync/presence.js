@@ -20,7 +20,11 @@ import { useSyncExternalStore } from 'react';
 * plus the avatar scale = 1 / their board scale, so a tabletop user appears as a "giant" over the room);
 * remoteAvatars (client id -> { h, l, r, s }) is read by the in-scene avatars.
 *
-* USERS: each device shares { name, color } (name = device type for now); useRoomUsers() lists them.
+* USERS: each device shares { id, name, color } (name = device type for now); useRoomUsers() lists them,
+* ONE entry per device (several tabs / reconnections of the same browser share its id).
+* DEVICE IDENTITY (deviceIdentity): id and color are picked once per browser and kept in localStorage, so a
+* device keeps its color across reloads, tabs and visits (notes and measures are signed with it). The Yjs
+* client id changes at every connection and is only used for the live data (poses, locks, avatars).
 *
 * Without a room (no awareness bound) everything is a no-op: nothing is published, nothing is locked.
 */
@@ -30,8 +34,28 @@ const PUBLISH_INTERVAL_MS = 66;
 const MIN_MOVE = 0.001;      // board meters: smaller position changes are not sent (object held still)
 const MIN_TURN = 0.0005;     // 1 - |dot(q, last q)|: smaller rotation changes are not sent
 
-// Per-device colors (outline of the objects it holds, later its cursor/avatar): picked from the client id
+// Per-device colors (outline of the objects it holds, cursor, avatar, notes and measures it signs)
 const USER_COLORS = ['#4fc3f7', '#81c784', '#ba68c8', '#f06292', '#ffd54f', '#4db6ac', '#9575cd', '#e57373'];
+const DEVICE_KEY = 'ioroom.device'; // localStorage: { id, color } of this browser
+
+/*
+* This browser's identity { id, color }: read from localStorage, or created once (random id, random palette
+* color) and saved. Storage blocked (private mode): a new identity for this visit only.
+* ponytail: a random color, two devices can get the same one; with accounts the color becomes the user's.
+*/
+let identity = null;
+export function deviceIdentity() {
+    if (identity != null) return identity;
+    try {
+        const saved = JSON.parse(localStorage.getItem(DEVICE_KEY));
+        if (typeof saved?.id === 'string' && USER_COLORS.includes(saved.color)) identity = saved;
+    } catch { /* storage blocked or corrupted: a new identity below */ }
+    if (identity == null) {
+        identity = { id: crypto.randomUUID(), color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)] };
+        try { localStorage.setItem(DEVICE_KEY, JSON.stringify(identity)); } catch { /* this visit only */ }
+    }
+    return identity;
+}
 
 let awareness = null;
 let lastPublish = 0;
@@ -71,10 +95,13 @@ function readRemoteStates() {
     remoteHolders.clear();
     remotePointers.clear();
     remoteAvatars.clear();
-    const users = [];
+    const users = new Map(); // device id (older clients without one: client id) -> user, one per device
     for (const [clientId, state] of awareness.getStates()) {
         if (state.user != null) {
-            users.push({ clientId, name: state.user.name, color: state.user.color, isSelf: clientId === awareness.clientID });
+            const key = state.user.id ?? `client:${clientId}`;
+            const isSelf = clientId === awareness.clientID;
+            // one entry per device: this connection for its own device, else the first one seen
+            if (isSelf || !users.has(key)) users.set(key, { clientId, name: state.user.name, color: state.user.color, isSelf });
         }
         if (clientId === awareness.clientID) continue;
         if (state.live != null) remotePoses.set(state.live.id, state.live);
@@ -85,14 +112,15 @@ function readRemoteStates() {
             remoteHolders.set(held, { clientId, color: state.user?.color ?? '#ffffff' });
         }
     }
-    roomUsers = users.sort((a, b) => (b.isSelf - a.isSelf) || (a.clientId - b.clientId));
+    roomUsers = [...users.values()].sort((a, b) => (b.isSelf - a.isSelf) || (a.clientId - b.clientId));
     for (const listener of listeners) listener();
 }
 
 // Called by connectRoom: starts sharing poses through this awareness; returns the unbind function
 export function bindAwareness(roomAwareness) {
     awareness = roomAwareness;
-    awareness.setLocalStateField('user', { name: deviceName(), color: USER_COLORS[awareness.clientID % USER_COLORS.length] });
+    const { id, color } = deviceIdentity();
+    awareness.setLocalStateField('user', { id, name: deviceName(), color });
     awareness.on('change', readRemoteStates);
     readRemoteStates();
     return () => {
@@ -224,15 +252,18 @@ export function useObjectLock(id) {
 
 // USERS ------------------------------------------------------------------------------------------
 
-// This device's { name, color }: the shared one in a room, else the device name in post-it yellow
+// This device's { id, name, color }: the same in a room and in local mode (deviceIdentity)
 export function getSelfUser() {
-    return awareness?.getLocalState()?.user ?? { name: deviceName(), color: USER_COLORS[4] };
+    return awareness?.getLocalState()?.user ?? { id: deviceIdentity().id, name: deviceName(), color: deviceIdentity().color };
 }
 
 // React: this device's presence color, or null without a room
 export function useSelfColor() {
     return useSyncExternalStore(subscribe, () => roomUsers.find((user) => user.isSelf)?.color ?? null);
 }
+
+// Everyone in the room right now, one entry per device, this device first (non-React reads, checks)
+export const getRoomUsers = () => roomUsers;
 
 // React: everyone in the room, this device first ([] without a room)
 export function useRoomUsers() {

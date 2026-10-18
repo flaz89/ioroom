@@ -1,6 +1,6 @@
 // Run: node src/sync/presence.check.mjs — lock rules of presence.js with a fake Yjs awareness
 import assert from 'node:assert/strict';
-import { bindAwareness, holdObject, isLockedByOther, releaseObject } from './presence.js';
+import { bindAwareness, holdObject, isLockedByOther, releaseObject, getRoomUsers, deviceIdentity } from './presence.js';
 
 // Minimal awareness: this client + other clients' states, 'change' fired on every local update
 function fakeAwareness(clientID) {
@@ -32,6 +32,14 @@ releaseObject('a');
 awareness.setRemote(2, {});
 awareness.setRemote(9, {});
 assert.equal(isLockedByOther('a'), false, 'released everywhere');
+// users: one entry per DEVICE (two tabs of the same browser share its id), this device first, own color
+awareness.setRemote(20, { user: { id: 'quest', name: 'Quest 2', color: '#e57373' } });
+awareness.setRemote(21, { user: { id: 'quest', name: 'Quest 2', color: '#e57373' } });
+awareness.setRemote(22, { user: { name: 'old client' } }); // no device id (older version): its own entry
+const users = getRoomUsers();
+assert.equal(users.length, 3, 'self + one Quest + the old client');
+assert.ok(users[0].isSelf && users[0].color === deviceIdentity().color, 'self first, with the saved device color');
+assert.equal(deviceIdentity(), deviceIdentity(), 'identity created once');
 unbind();
 assert.equal(isLockedByOther('a'), false, 'no room: never locked');
 console.log('presence: ok');
