@@ -1,20 +1,23 @@
 // Run: node src/sync/presence.check.mjs — lock rules of presence.js with a fake Yjs awareness
 import assert from 'node:assert/strict';
-import { bindAwareness, holdObject, isLockedByOther, releaseObject, getRoomUsers, deviceIdentity } from './presence.js';
+import { bindAwareness, holdObject, isLockedByOther, releaseObject, getRoomUsers, deviceIdentity, staleClients } from './presence.js';
 
 // Minimal awareness: this client + other clients' states, 'change' fired on every local update
 function fakeAwareness(clientID) {
     const states = new Map([[clientID, {}]]);
-    const handlers = new Set();
-    const fire = () => handlers.forEach((handler) => handler());
+    const handlers = new Map([['change', new Set()], ['update', new Set()]]);
+    const fire = (changed = [clientID]) => {
+        handlers.get('change').forEach((handler) => handler());
+        handlers.get('update').forEach((handler) => handler({ added: [], updated: changed, removed: [] }));
+    };
     return {
         clientID,
         getStates: () => states,
         getLocalState: () => states.get(clientID),
         setLocalStateField: (key, value) => { states.set(clientID, { ...states.get(clientID), [key]: value }); fire(); },
-        on: (_event, handler) => handlers.add(handler),
-        off: (_event, handler) => handlers.delete(handler),
-        setRemote: (id, state) => { states.set(id, state); fire(); }
+        on: (event, handler) => handlers.get(event).add(handler),
+        off: (event, handler) => handlers.get(event).delete(handler),
+        setRemote: (id, state) => { states.set(id, state); fire([id]); }
     };
 }
 
@@ -42,4 +45,8 @@ assert.ok(users[0].isSelf && users[0].color === deviceIdentity().color, 'self fi
 assert.equal(deviceIdentity(), deviceIdentity(), 'identity created once');
 unbind();
 assert.equal(isLockedByOther('a'), false, 'no room: never locked');
+// timeout: self never stale; unknown clients start counting now; silent for > 75 s = stale
+const heard = new Map([[7, 0], [8, 70000]]);
+assert.deepEqual(staleClients([5, 7, 8, 9], 5, heard, 80000), [7]);
+assert.ok(heard.has(9), 'a client known before binding starts counting now');
 console.log('presence: ok');

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { removeAwarenessStates } from 'y-protocols/awareness';
 
 /*
 * Presence in a shared room, through the room's Yjs AWARENESS (ephemeral: never saved, gone when the
@@ -26,6 +27,14 @@ import { useSyncExternalStore } from 'react';
 * device keeps its color across reloads, tabs and visits (notes and measures are signed with it). The Yjs
 * client id changes at every connection and is only used for the live data (poses, locks, avatars).
 *
+* HEARTBEAT + TIMEOUT: y-partyserver turns off Yjs' own awareness renewal and timeout (server AND provider),
+* so a connection that dies without a clean close (headset asleep, browser killed) would stay in the room
+* forever, and the server hands it to every newcomer. Here each device renews its presence every
+* HEARTBEAT_MS (a changed field: the provider only sends changes) and drops other clients not heard for
+* PRESENCE_TIMEOUT_MS; the removal is sent to the server like any awareness change, so it leaves the
+* server's memory and every other device too. The timeout is generous: browsers slow background tabs'
+* timers down to about once a minute, and a live hidden tab must not blink in and out of the list.
+*
 * Without a room (no awareness bound) everything is a no-op: nothing is published, nothing is locked.
 */
 // ~15 updates/s: receivers ease towards each pose (REMOTE_FOLLOW_RATE in SingleObject.jsx), so motion stays
@@ -37,6 +46,8 @@ const MIN_TURN = 0.0005;     // 1 - |dot(q, last q)|: smaller rotation changes a
 // Per-device colors (outline of the objects it holds, cursor, avatar, notes and measures it signs)
 const USER_COLORS = ['#4fc3f7', '#81c784', '#ba68c8', '#f06292', '#ffd54f', '#4db6ac', '#9575cd', '#e57373'];
 const DEVICE_KEY = 'ioroom.device'; // localStorage: { id, color } of this browser
+const HEARTBEAT_MS = 15000;          // presence renewal (also how often stale clients are checked)
+const PRESENCE_TIMEOUT_MS = 75000;   // a client not heard for this long is gone
 
 /*
 * This browser's identity { id, color }: read from localStorage, or created once (random id, random palette
@@ -116,6 +127,21 @@ function readRemoteStates() {
     for (const listener of listeners) listener();
 }
 
+/*
+* The other clients not heard for more than PRESENCE_TIMEOUT_MS at `now` (ms), from `lastHeard` (client id
+* -> ms). A client never heard yet (known before this device bound the awareness) starts counting now:
+* it is added to `lastHeard`.
+*/
+export function staleClients(clientIds, selfId, lastHeard, now) {
+    const stale = [];
+    for (const clientId of clientIds) {
+        if (clientId === selfId) continue;
+        if (!lastHeard.has(clientId)) lastHeard.set(clientId, now);
+        else if (now - lastHeard.get(clientId) > PRESENCE_TIMEOUT_MS) stale.push(clientId);
+    }
+    return stale;
+}
+
 // Called by connectRoom: starts sharing poses through this awareness; returns the unbind function
 export function bindAwareness(roomAwareness) {
     awareness = roomAwareness;
@@ -123,7 +149,28 @@ export function bindAwareness(roomAwareness) {
     awareness.setLocalStateField('user', { id, name: deviceName(), color });
     awareness.on('change', readRemoteStates);
     readRemoteStates();
+
+    // heartbeat + timeout (see the header): last time each client was heard ('update' also fires for
+    // unchanged renewals)
+    const lastHeard = new Map();
+    const onUpdate = ({ added, updated }) => {
+        const now = Date.now();
+        for (const clientId of [...added, ...updated]) lastHeard.set(clientId, now);
+    };
+    awareness.on('update', onUpdate);
+    const heartbeat = setInterval(() => {
+        const now = Date.now();
+        awareness.setLocalStateField('seen', now); // renews this device
+        const stale = staleClients([...awareness.getStates().keys()], awareness.clientID, lastHeard, now);
+        if (stale.length > 0) {
+            stale.forEach((clientId) => lastHeard.delete(clientId));
+            removeAwarenessStates(awareness, stale, 'timeout'); // also sent to the server and the others
+        }
+    }, HEARTBEAT_MS);
+
     return () => {
+        clearInterval(heartbeat);
+        awareness.off('update', onUpdate);
         awareness.off('change', readRemoteStates);
         awareness.setLocalStateField('live', null);
         awareness.setLocalStateField('holding', null);
