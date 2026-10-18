@@ -14,7 +14,7 @@ import { getSelfUser } from '../../sync/presence';
 * Per device: `active` (ruler mode: clicks place points), `start` (first point of the measure being
 *   taken, null = none), `selectedId` (measure whose actions are shown), `free` (VR: free direction
 *   instead of the axis lock; on desktop Shift does it).
-* ponytail: anyone deletes any saved measure (no accounts), like the notes.
+* ponytail: anyone deletes or edits (moveMeasureEnd) any saved measure (no accounts), like the notes.
 */
 export const createMeasuresSlice = (set) => ({
     measures: {
@@ -61,11 +61,12 @@ export const createMeasuresSlice = (set) => ({
         };
     }),
 
-    // MOVE an end ('a' | 'b') of one of MY temporary measures (saved ones are shared: not editable here).
-    // end: { p } (a moved end is not anchored on an object anymore)
-    moveMeasureEnd: (id, which, end) => set((state) => ({
-        measures: { ...state.measures, local: state.measures.local.map((m) => (m.id === id ? { ...m, [which]: end } : m)) }
-    })),
+    // MOVE an end ('a' | 'b') of a measure: my temporary ones, and the SAVED ones too (anyone can edit them,
+    // like deleting; the change syncs to the room: Y.Map "measures"). end: { p, objectId?, local? }
+    moveMeasureEnd: (id, which, end) => set((state) => {
+        const move = (list) => list.map((m) => (m.id === id ? { ...m, [which]: end } : m));
+        return { measures: { ...state.measures, local: move(state.measures.local), items: move(state.measures.items) } };
+    }),
 
     // DELETE a measure (local or saved)
     removeMeasure: (id) => set((state) => ({

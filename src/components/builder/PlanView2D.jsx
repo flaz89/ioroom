@@ -61,9 +61,9 @@ const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall 
 *   (planView.rulerSnap2D), else to the grid snap step; after the first point the measure is locked to the
 *   plan's X or Z axis (planView.lockToPlanAxis), Shift = free. Label click = select (Save / Delete). The
 *   ruler wins over the wall tool; Esc is handled by the 3D ruler (Measures.jsx: first point, then off).
-*   MY temporary (orange) measure, once selected, shows a handle on each end (ruler on or off): dragging
+*   A selected measure (mine or saved: anyone can edit) shows a handle on each end (ruler on or off): dragging
 *   one moves that end with the same snaps, locked to the axis through the other end (Shift = free); the
-*   end keeps its height; saved on release (store moveMeasureEnd). Saved (shared) measures are not editable.
+*   end keeps its height; saved on release (store moveMeasureEnd; a saved measure syncs to the room).
 *
 * Navigation: right (or middle) mouse drag = pan, like the 3D view (OrbitControls); left mouse drag pans
 * nothing (clicks only). Touch / pen: one finger drag = pan. Wheel = zoom at the cursor, two fingers = pinch
@@ -133,8 +133,8 @@ export default function PlanView2D() {
     const isDrawing = planTool === 'wall' && !isRuler;
     const [rulerHover, setRulerHover] = useState(null); // { point, kind, axis } snapped ruler point under the mouse
     const [endDrag, setEndDrag] = useState(null); // { id, which, point, kind, axis } while a measure end is dragged: preview
-    // the selected measure, if it is one of MY temporary ones: its ends get drag handles (PlanMeasures.jsx)
-    const editableId = measures.local.some((m) => m.id === measures.selectedId) ? measures.selectedId : null;
+    // the selected measure (mine or saved: anyone can edit it): its ends get drag handles (PlanMeasures.jsx)
+    const editableId = measureList.some((m) => m.id === measures.selectedId) ? measures.selectedId : null;
     // what is drawn: the dragged end at its preview position (true 3D length: heights kept)
     const shownMeasures = endDrag == null ? measureList : measureList.map((item) => {
         if (item.id !== endDrag.id) return item;

@@ -27,11 +27,11 @@ import './measures.css';
 *   mine). A press that drags orbits
 *   the camera as usual (only a still click places a point). Esc: drop the first point, then leave the mode.
 *   Objects are not selected or grabbed while the ruler is on (SingleObject.jsx).
-* - MOVING ENDS (desktop): my selected temporary (orange) measure shows bigger, grabbable end dots;
+* - MOVING ENDS (desktop): the selected measure (mine or saved: anyone can edit) shows bigger, grabbable end dots;
 *   dragging one moves that end with the ruler's snaps, locked to the axis through the other end (Shift =
 *   free), anchored on the object it lands on (if any); saved on release (store moveMeasureEnd). The press
 *   on a handle never orbits the camera nor places a ruler point (MeasureEndDragger, handleAt).
-* - XR (first person, not on the tabletop): same handles on my selected temporary measure; pressing the
+* - XR (first person, not on the tabletop): same handles on the selected measure; pressing the
 *   trigger / pinching while aiming at one (handleUnderRay) drags that end along the ray with the ruler's
 *   snaps until release (XRMeasurePlacer). That press is not a ruler point nor a label selection.
 * - Label hover (mouse, XR ray): grows to LABEL_HOVER_SCALE like the notes, hand cursor on desktop.
@@ -122,8 +122,9 @@ export default function BoardMeasures() {
             {!isXR && !isPlanView && <MeasureEndDragger rootRef={rootRef} onDraft={setDraft} />}
             {draft && <Dot position={draft.end.p} color={SNAP_COLORS[draft.kind] ?? SNAP_COLORS.surface} scale={1.4} />}
             {items.map((measure) => (
-                <MeasureLine key={measure.id} measure={measure} color={measure.author?.color ?? LOCAL_COLOR} boost={boost}
-                    selected={selectedId === measure.id} saved />
+                <MeasureLine key={measure.id} measure={draft?.id === measure.id ? { ...measure, [draft.which]: draft.end } : measure}
+                    color={measure.author?.color ?? LOCAL_COLOR} boost={boost}
+                    selected={selectedId === measure.id} saved editable={selectedId === measure.id && canEdit} />
             ))}
             {local.map((measure) => (
                 <MeasureLine key={measure.id} measure={draft?.id === measure.id ? { ...measure, [draft.which]: draft.end } : measure}
@@ -376,7 +377,8 @@ function MeasureEndDragger({ rootRef, onDraft }) {
         const down = (event) => {
             if (event.button !== 0 || event.target !== element) return;
             const handle = handleAt(event, element, camera, rootRef.current);
-            const measure = handle && useStore.getState().measures.local.find((item) => item.id === handle.id);
+            const { local, items } = useStore.getState().measures;
+            const measure = handle && [...local, ...items].find((item) => item.id === handle.id);
             if (measure == null) return;
             event.stopPropagation();
             drag = { ...handle, other: toEnd(handle.which === 'a' ? measure.b : measure.a), draft: null };
@@ -481,7 +483,8 @@ function XRMeasurePlacer({ rootRef, boost, onDraft }) {
             if (useStore.getState().view.handMenuVisible || rootRef.current == null) return;
             if (!aim(event.frame, event.inputSource)) return;
             const handle = handleUnderRay(_raycaster.ray, rootRef.current);
-            const measure = handle && useStore.getState().measures.local.find((item) => item.id === handle.id);
+            const { local, items } = useStore.getState().measures;
+            const measure = handle && [...local, ...items].find((item) => item.id === handle.id);
             if (measure == null) return;
             dragRef.current = { source: event.inputSource, ...handle, other: toEnd(handle.which === 'a' ? measure.b : measure.a), draft: null };
         };
@@ -672,6 +675,9 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
                     geometry={labelPlane}
                     dispose={null}
                     renderOrder={11}
+                    // drawn over everything, so it also WINS the pointer events (like the notes' cards and the gizmo):
+                    // a measure taken on a wall has its label flush with the wall, which would be hit first
+                    pointerEventsOrder={1}
                     userData={isLocked ? undefined : { measureId: measure.id }}
                     raycast={isLocked ? noRaycast : undefined}
                     // XR: selection comes from the session's select (XRMeasurePlacer), not this click (no double toggle)
