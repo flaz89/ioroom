@@ -52,13 +52,14 @@ export default function UnderlayPanel() {
     const underlay = level.underlay;
 
     // AUTOMATIC WALLS (DXF): walls found on the chosen layer (plan/dxfWalls.js), previewed in the 2D plan.
-    // Default layer: the first whose name says "walls" (English / Italian), else the first one.
+    // Default layer: the first whose name says walls (English / Italian) or section cut (SketchUp exports:
+    // SectionCutEdges holds the cut walls), else the first one.
     const vectors = useUnderlayVectors(underlay);
     const wallDetection = useStore((state) => state.wallDetection);
     const setWallDetection = useStore((state) => state.setWallDetection);
     const [wallLayer, setWallLayer] = useState(null);
     const layerNames = underlay?.kind === 'dxf' ? underlay.layers : [];
-    const detectLayer = layerNames.includes(wallLayer) ? wallLayer : (layerNames.find((name) => /wall|mur|paret/i.test(name)) ?? layerNames[0]);
+    const detectLayer = layerNames.includes(wallLayer) ? wallLayer : (layerNames.find((name) => /wall|mur|paret|section|cut/i.test(name)) ?? layerNames[0]);
     const detection = wallDetection?.url === underlay?.url ? wallDetection : null; // a replaced drawing drops it
     const detectWalls = () => {
         const segments = vectors.find((layer) => layer.name === detectLayer)?.segments ?? [];

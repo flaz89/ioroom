@@ -18,7 +18,7 @@ if (!file) throw new Error('usage: node scripts/dxf-walls-preview.mjs <file.dxf>
 
 const vectors = dxfVectors(new DxfParser().parseSync(readFileSync(file, 'utf8')));
 const units = unitsArg ?? vectors.units;
-const layer = layerArg ?? vectors.layers.find(({ name }) => /wall|mur|paret/i.test(name))?.name ?? vectors.layers[0].name;
+const layer = layerArg ?? vectors.layers.find(({ name }) => /wall|mur|paret|section|cut/i.test(name))?.name ?? vectors.layers[0].name;
 const segments = vectors.layers.find(({ name }) => name === layer)?.segments ?? [];
 const unitMeters = UNIT_METERS[units] ?? Number(units);
 const walls = wallCandidates(segments, unitMeters, { context: vectors.layers });

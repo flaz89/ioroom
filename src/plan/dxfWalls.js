@@ -72,16 +72,14 @@ export function wallCandidates(segments, unitMeters, options = {}) {
     }
     lines.sort((p, q) => p.angle - q.angle);
 
-    // direction groups: consecutive angles within the tolerance
+    // direction groups: angles within 2 x the tolerance of the group's FIRST angle (never chained from line to
+    // line: a drawing with many directions, e.g. tessellated arcs, would chain into one group spanning many
+    // degrees, and walls measured in its mean frame came out skewed)
     const groups = [];
     for (const line of lines) {
         const group = groups[groups.length - 1];
-        if (group && line.angle - group.last <= ANGLE_TOLERANCE) {
-            group.lines.push(line);
-            group.last = line.angle;
-        } else {
-            groups.push({ lines: [line], last: line.angle });
-        }
+        if (group && line.angle - group.first <= 2 * ANGLE_TOLERANCE) group.lines.push(line);
+        else groups.push({ lines: [line], first: line.angle });
     }
 
     const walls = [];
