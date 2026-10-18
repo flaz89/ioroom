@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import DxfParser from 'dxf-parser';
 import { UNIT_METERS, dxfVectors } from '../src/plan/dxfUnderlay.js';
 import { detectedWallShapes, placeDetectedWalls, wallCandidates } from '../src/plan/dxfWalls.js';
+import { closedLoops } from '../src/plan/planModel.js';
 
 const [file, layerArg, unitsArg] = process.argv.slice(2);
 if (!file) throw new Error('usage: node scripts/dxf-walls-preview.mjs <file.dxf> [WALL_LAYER] [units]');
@@ -36,6 +37,7 @@ const lines = vectors.layers.map(({ segments: s }) => {
 }).join('');
 // the walls as the plan model will build them, in drawing units (identity placement)
 const planWalls = placeDetectedWalls(walls, { metersPerPixel: 1, rotation: 0, center: [0, 0] }, (index) => `w${index}`);
+console.log(`closed rooms (floors): ${closedLoops(placeDetectedWalls(walls, { metersPerPixel: unitMeters, rotation: 0, center: [0, 0] })).length}`);
 const shapes = detectedWallShapes(planWalls).map(({ wall, openings }, index) => {
     const w = planWalls[index];
     const label = `<text x="${(w.a[0] + w.b[0]) / 2}" y="${(w.a[1] + w.b[1]) / 2}">${index}</text>`;

@@ -240,8 +240,8 @@ function extendEnds(walls, maxGap, tolerance, context) {
 *   corner, the first wall's face is at most `maxGap` away: the door continues the wall (red B in the test plan);
 * - between two FREE ENDS of parallel walls that overlap along their direction by about one thickness and face
 *   each other across at most `maxGap`: the door is a short wall across, through that overlap (red A).
-* Each adds a wall { a, b, thickness, openings: [the door, its whole length] } from FACE to face (the walls
-* around keep their thickness whole: T joints at both ends of the doorway).
+* Each adds a wall { a, b, thickness, openings: [the door] }: past a corner from the corner point (it continues
+* the corner's wall straight through the corner) to the face ahead; between free ends from face to face.
 * Both only with something drawn in the gap (gapEvidence: a door frame, a leaf), never for pillars.
 */
 function addDoorways(walls, maxGap, tolerance, context) {
@@ -274,8 +274,10 @@ function addDoorways(walls, maxGap, tolerance, context) {
                 if (best == null || face < best.face) best = { ...hit, face };
             }
             if (best && gapEvidence(context, wall[key], dir, wall.thickness, startGap, startGap + best.face, tolerance)) {
-                const start = [wall[key][0] + dir[0] * startGap, wall[key][1] + dir[1] * startGap];
-                doorway(start, dir, wall.thickness, 0, best.face, best.face);
+                // from the corner point itself (shared with the two corner walls: the plan model joins it there,
+                // so the rooms on its sides close; a doorway starting on the corner wall's face would sit on
+                // that wall's END, where no T joint is attached), the door past the corner wall's thickness
+                doorway(wall[key], dir, wall.thickness, startGap, startGap + best.face, startGap + best.face);
             }
         }
     }
