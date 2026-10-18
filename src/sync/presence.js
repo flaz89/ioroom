@@ -35,6 +35,11 @@ import { removeAwarenessStates } from 'y-protocols/awareness';
 * server's memory and every other device too. The timeout is generous: browsers slow background tabs'
 * timers down to about once a minute, and a live hidden tab must not blink in and out of the list.
 *
+* AWAY: a device whose page is hidden (tab in the background, phone locked, headset in standby) or whose
+* immersive session is hidden (headset taken off) is shown as away to the others at once (state field
+* `away`, dimmed in the users list); after AWAY_DISCONNECT_MS it leaves the room (roomSync.js disconnects,
+* onAwayChange) and joins again by itself when it is back. Sources: setAwaySource ('page' here, 'xr' from
+* xr/xrStore.js).
 * A closed tab / browser removes its presence at once ('pagehide'); the timeout covers the rest (standby,
 * power off, lost network).
 *
@@ -51,6 +56,28 @@ const USER_COLORS = ['#4fc3f7', '#81c784', '#ba68c8', '#f06292', '#ffd54f', '#4d
 const DEVICE_KEY = 'ioroom.device'; // localStorage: { id, color } of this browser
 const HEARTBEAT_MS = 15000;          // presence renewal (also how often stale clients are checked)
 const PRESENCE_TIMEOUT_MS = 75000;   // a client not heard for this long is gone
+export const AWAY_DISCONNECT_MS = 60000; // away this long: the device leaves the room until it is back
+
+// AWAY ------------------------------------------------------------------------------------------
+const awaySources = new Set();       // 'page' | 'xr' currently hidden
+const awayListeners = new Set();     // roomSync.js: disconnect / reconnect
+const isAwayNow = () => awaySources.size > 0;
+
+// A source of "away" changed (page hidden, immersive session hidden): published and announced
+export function setAwaySource(source, isAway) {
+    const before = isAwayNow();
+    if (isAway) awaySources.add(source); else awaySources.delete(source);
+    const after = isAwayNow();
+    if (before === after) return;
+    if (awareness?.getLocalState() != null) awareness.setLocalStateField('away', after);
+    awayListeners.forEach((listener) => listener(after));
+}
+
+// Subscribe to this device going away / coming back (returns the unsubscribe function)
+export function onAwayChange(listener) {
+    awayListeners.add(listener);
+    return () => awayListeners.delete(listener);
+}
 
 /*
 * This browser's identity { id, color }: read from localStorage, or created once (random id, random palette
@@ -115,7 +142,7 @@ function readRemoteStates() {
             const key = state.user.id ?? `client:${clientId}`;
             const isSelf = clientId === awareness.clientID;
             // one entry per device: this connection for its own device, else the first one seen
-            if (isSelf || !users.has(key)) users.set(key, { clientId, name: state.user.name, color: state.user.color, isSelf });
+            if (isSelf || !users.has(key)) users.set(key, { clientId, name: state.user.name, color: state.user.color, isSelf, away: state.away === true });
         }
         if (clientId === awareness.clientID) continue;
         if (state.live != null) remotePoses.set(state.live.id, state.live);
@@ -151,17 +178,22 @@ export function bindAwareness(roomAwareness) {
     const { id, color } = deviceIdentity();
     const user = { id, name: deviceName(), color };
     awareness.setLocalStateField('user', user);
+    awareness.setLocalStateField('away', isAwayNow());
 
     // LEAVING: 'pagehide' fires on tab / browser close and navigation (the provider listens to 'unload',
     // which mobile and headset browsers often skip): this device's presence is removed for everyone at once.
     // A page restored from the back-forward cache joins again ('pageshow' persisted).
     const onPageHide = () => removeAwarenessStates(awareness, [awareness.clientID], 'pagehide');
     // (the local state is null after the removal: setLocalStateField would do nothing, so a whole new state)
-    const onPageShow = (event) => { if (event.persisted) awareness.setLocalState({ user }); };
+    const onPageShow = (event) => { if (event.persisted) awareness.setLocalState({ user, away: isAwayNow() }); };
+    // page visibility: hidden tab, locked phone, headset standby
+    const onVisibility = () => setAwaySource('page', document.visibilityState === 'hidden');
     const hasWindow = typeof window !== 'undefined';
     if (hasWindow) {
         window.addEventListener('pagehide', onPageHide);
         window.addEventListener('pageshow', onPageShow);
+        document.addEventListener('visibilitychange', onVisibility);
+        onVisibility();
     }
     awareness.on('change', readRemoteStates);
     readRemoteStates();
@@ -188,6 +220,7 @@ export function bindAwareness(roomAwareness) {
         if (hasWindow) {
             window.removeEventListener('pagehide', onPageHide);
             window.removeEventListener('pageshow', onPageShow);
+            document.removeEventListener('visibilitychange', onVisibility);
         }
         clearInterval(heartbeat);
         awareness.off('update', onUpdate);

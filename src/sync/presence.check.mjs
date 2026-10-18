@@ -1,6 +1,6 @@
 // Run: node src/sync/presence.check.mjs — lock rules of presence.js with a fake Yjs awareness
 import assert from 'node:assert/strict';
-import { bindAwareness, holdObject, isLockedByOther, releaseObject, getRoomUsers, deviceIdentity, staleClients } from './presence.js';
+import { bindAwareness, holdObject, isLockedByOther, releaseObject, getRoomUsers, deviceIdentity, staleClients, setAwaySource, onAwayChange } from './presence.js';
 
 // Minimal awareness: this client + other clients' states, 'change' fired on every local update
 function fakeAwareness(clientID) {
@@ -49,4 +49,13 @@ assert.equal(isLockedByOther('a'), false, 'no room: never locked');
 const heard = new Map([[7, 0], [8, 70000]]);
 assert.deepEqual(staleClients([5, 7, 8, 9], 5, heard, 80000), [7]);
 assert.ok(heard.has(9), 'a client known before binding starts counting now');
+// away: announced once when the first source goes away and once when the last one comes back
+const changes = [];
+const stop = onAwayChange((isAway) => changes.push(isAway));
+setAwaySource('page', true);
+setAwaySource('xr', true);      // already away: no new announcement
+setAwaySource('page', false);   // still away (xr)
+setAwaySource('xr', false);
+stop();
+assert.deepEqual(changes, [true, false]);
 console.log('presence: ok');

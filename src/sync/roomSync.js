@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
-import { bindAwareness } from './presence';
+import { AWAY_DISCONNECT_MS, bindAwareness, onAwayChange } from './presence';
 import { bindSun } from './sunSync';
 import { bindFieldMap } from './fieldMapSync';
 import { LOCAL, SEED, isOwnOrigin, startHistory } from './history';
@@ -163,6 +163,27 @@ export function connectRoom(room) {
         tabs.postMessage('joined');
     }
 
+    /*
+    * AWAY (presence.js): away for AWAY_DISCONNECT_MS (hidden page, headset in standby or off the head) =
+    * leave the room (the server removes this presence at once); back = join again (Yjs merges whatever
+    * was edited meanwhile). A tab taken over by another one ('elsewhere') stays out.
+    */
+    let awayTimer = null;
+    let leftWhileAway = false;
+    const unsubscribeAway = provider ? onAwayChange((isAway) => {
+        clearTimeout(awayTimer);
+        if (isAway) {
+            awayTimer = setTimeout(() => {
+                if (roomStatus === 'elsewhere') return;
+                leftWhileAway = true;
+                provider.disconnect();
+            }, AWAY_DISCONNECT_MS);
+        } else if (leftWhileAway && roomStatus !== 'elsewhere') {
+            leftWhileAway = false;
+            provider.connect();
+        }
+    }) : () => {};
+
     const unbindObjects = bindInstances(doc, doc.getMap('objects'),
         (state) => state.objects.instances, (list) => useStore.getState().setInstances(list));
     const unbindNotes = bindInstances(doc, doc.getMap('notes'),
@@ -203,6 +224,8 @@ export function connectRoom(room) {
         unbindNotes();
         unbindMeasures();
         tabs?.close();
+        clearTimeout(awayTimer);
+        unsubscribeAway();
         provider?.destroy();
         doc.destroy();
     };

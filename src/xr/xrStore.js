@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createXRStore } from '@react-three/xr';
 import { useStore } from '../store/appStore';
+import { setAwaySource } from '../sync/presence';
 
 /*
 * Single XR store shared by the UI (enter buttons) and the <XR> component inside the Canvas.
@@ -45,6 +46,20 @@ export const xrStore = createXRStore({
     emulate: false,
     hand: handOptions(CURSOR_SIZE),
     controller: controllerOptions(CURSOR_SIZE)
+});
+
+/*
+* AWAY in VR (sync/presence.js): the immersive session reports 'hidden' when the headset is taken off /
+* goes to standby ('visible-blurred' = a system menu over the app: still here). Session end = not away.
+*/
+let watchedSession = null;
+const onSessionVisibility = () => setAwaySource('xr', watchedSession?.visibilityState === 'hidden');
+xrStore.subscribe((state) => {
+    if (state.session === watchedSession) return;
+    watchedSession?.removeEventListener('visibilitychange', onSessionVisibility);
+    watchedSession = state.session ?? null;
+    watchedSession?.addEventListener('visibilitychange', onSessionVisibility);
+    onSessionVisibility();
 });
 
 // Tabletop on/off: resize the ray cursors (setHand/setController swap the pmndrs input implementation options)

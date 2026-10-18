@@ -9,6 +9,7 @@ const MAX_DOTS = 4; // overlapping color dots shown in the collapsed group; the 
 * number of people. Tap/click it to open the list: one row per device with its presence color (the same
 * color outlines the objects it is holding); this device comes first, marked "you". The list is one of
 * the toolbar panels (store openPanel 'users'): opening another panel closes it. Hidden without a room.
+* Away devices (page hidden, headset off: presence.js) are dimmed, marked "away".
 * Names are device types for now (sync/presence.js deviceName); accounts will replace them.
 */
 export default function RoomUsers() {
@@ -36,9 +37,10 @@ export default function RoomUsers() {
             {isOpen && (
                 <div className="room-users-list" aria-label="People in this room">
                     {users.map((user) => (
-                        <div key={user.clientId} className="room-user" title={user.isSelf ? 'This device' : user.name}>
+                        <div key={user.clientId} className={user.away ? 'room-user is-away' : 'room-user'}
+                            title={user.isSelf ? 'This device' : user.away ? `${user.name} is away` : user.name}>
                             <span className="room-user-dot" style={{ background: user.color }} />
-                            <span>{user.name}{user.isSelf && <span className="room-user-self"> (you)</span>}</span>
+                            <span>{user.name}{user.isSelf && <span className="room-user-self"> (you)</span>}{user.away && <span className="room-user-self"> · away</span>}</span>
                         </div>
                     ))}
                 </div>

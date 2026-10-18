@@ -59,3 +59,6 @@
 .room-user-self {
     opacity: .6;
 }
+
+/* away device (page hidden, headset off): dimmed until it is back or leaves the room */
+.room-user.is-away { opacity: .45; }
