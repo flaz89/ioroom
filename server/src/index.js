@@ -4,6 +4,7 @@ import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
 import { removeAwarenessStates } from 'y-protocols/awareness';
 import { handleMaterials } from './materials.js';
+import { handleUnderlays } from './underlays.js';
 
 /*
 * ioroom shared room = one saved environment (level).
@@ -26,6 +27,7 @@ import { handleMaterials } from './materials.js';
 * The list lives in the RoomRegistry Durable Object (rooms cannot be enumerated otherwise).
 *
 * MATERIAL LIBRARY API (/api/materials, /files/materials/...): see materials.js (R2 storage).
+* FLOOR PLAN UNDERLAYS (/api/underlays, /files/underlays/...): see underlays.js (R2 storage).
 */
 const STORAGE_KEY = 'document';
 const CREATED_KEY = 'created';     // set when the owner creates the room
@@ -141,6 +143,16 @@ export class Room extends YServer {
         await this.onSave();
     }
 
+    // R2 keys of the floor plan underlays this room's document uses (plan levels: src/plan/planModel.js
+    // level.underlay.url = <origin>/files/<key>). Read from the live document: always current, also while
+    // people are editing. Used by the storage cleanup (underlays.js).
+    underlayKeys() {
+        const levels = this.document.getMap('plan').get('levels');
+        return (Array.isArray(levels) ? levels : [])
+            .map((level) => level?.underlay?.url?.match(/\/files\/(underlays\/[^/?#]+)$/)?.[1])
+            .filter(Boolean);
+    }
+
     // Current scene as a single Yjs update (used to duplicate the room)
     exportState() {
         return Y.encodeStateAsUpdate(this.document);
@@ -184,6 +196,14 @@ export class RoomRegistry extends DurableObject {
 
 const registry = (env) => env.RoomRegistry.get(env.RoomRegistry.idFromName(OWNER_REGISTRY));
 const room = (env, id) => getServerByName(env.Rooms, id);
+
+// Every underlay file any registered environment uses (storage cleanup). Throws if a room cannot be read:
+// the cleanup then deletes nothing (a room it could not check might use any file).
+async function usedUnderlayKeys(env) {
+    const entries = await registry(env).list();
+    const keys = await Promise.all(entries.map(async (entry) => (await room(env, entry.id)).underlayKeys()));
+    return keys.flat();
+}
 
 // CORS: the app runs on another origin (Vercel, localhost). Bearer token, no cookies, so "*" is fine.
 const CORS = {
@@ -255,6 +275,7 @@ export default {
     async fetch(request, env) {
         return (await handleApi(request, env))
             ?? (await handleMaterials(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
+            ?? (await handleUnderlays(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env), usedKeys: () => usedUnderlayKeys(env) }))
             ?? (await routePartykitRequest(request, env))
             ?? new Response('Not Found', { status: 404 });
     }

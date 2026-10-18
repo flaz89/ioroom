@@ -21,6 +21,7 @@
     "@react-three/fiber": "^9.8.1",
     "@react-three/handle": "^6.6.31",
     "@react-three/xr": "^6.6.31",
+    "pdfjs-dist": "^5.7.284",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

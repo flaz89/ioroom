@@ -84,6 +84,13 @@ export const svg = {
         <path d="M7.5 6.5h5M7.5 9.5h5M7.5 12.5h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // sheet with a drawn room and a folded corner (floor plan underlay)
+    underlay: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 2.5h8.5L16 6v11.5H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+        <path d="M12.5 2.5V6H16" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+        <path d="M6.5 9h7v6h-7zM10 9v3.5" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>,
+
     // brick courses (wall drawing tool)
     wall: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="2.5" y="4" width="15" height="12" rx="1" stroke="currentColor" strokeWidth="1.6"/>

@@ -14,6 +14,10 @@
 * wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
 * planGrid: { minor, major } grid steps (meters) of the open 2D plan view, null when it is closed
 *   (published by PlanView2D.jsx, shown by PlanGridLegend.jsx in the bottom bar).
+* underlayVisible / underlayOpacity: how this device shows the floor plan underlay (planModel.js level.underlay):
+*   a view preference, per device, never synced nor undoable. Hidden = the floor is back in the 3D view.
+* underlayTool: active underlay adjustment of the 2D plan (two clicks each, PlanView2D.jsx): null |
+*   'calibrate' (a known length) | 'align' (a line onto an axis) | 'move' (a point onto a plan point).
 * Not to be confused with view.mode (viewSlice.js: 'life' / 'tabletop' presentation in XR).
 */
 
@@ -42,10 +46,20 @@ export const createWorkspaceSlice = (set, get) => ({
     setSelectedOpening: (selectedOpening) => set({ selectedOpening, selectedWallIds: [] }),
 
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, underlayTool: null }),
 
     wallJustify: 'left',
     setWallJustify: (wallJustify) => set({ wallJustify }),
+
+    underlayVisible: true,
+    underlayOpacity: 0.5,
+    setUnderlayVisible: (underlayVisible) => set({ underlayVisible }),
+    setUnderlayOpacity: (underlayOpacity) => set({ underlayOpacity }),
+    underlayTool: null,
+    // an underlay tool works in the 2D plan: it switches the view there, and owns the clicks (no wall tool)
+    setUnderlayTool: (underlayTool) => set(underlayTool
+        ? { underlayTool, builderView: '2d', planTool: 'select', selectedWallIds: [], selectedOpening: null }
+        : { underlayTool: null }),
 
     planGrid: null,
     setPlanGrid: (planGrid) => set({ planGrid }),
@@ -60,7 +74,8 @@ export const createWorkspaceSlice = (set, get) => ({
             if (state.notes.placing) state.setPlacingNote(false);
             if (DESIGNER_PANELS.includes(state.openPanel)) state.closePanel();
         }
-        set({ workspace, selectedWallIds: [], selectedOpening: null });
+        if (workspace === 'designer' && get().openPanel === 'underlay') get().closePanel(); // builder-only panel
+        set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null });
     }
 });
 

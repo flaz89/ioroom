@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addOpening, updateOpening, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
+import { DEFAULT_PLAN, addOpening, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -118,4 +118,19 @@ assert.equal(flipWall(door, 'wall-back').walls[1].openings[0].hinge, 'end');
 const pieces = splitWall(shifted, 'wall-back', 'w-new').walls;
 assert.equal(pieces[1].openings.length, 0);
 assert.equal(pieces[2].openings[0].offset, 1);
+// underlay nominal scale: an A4 PDF page (595 pt wide) rendered 2 px per point, at 1:100 = 21 m wide
+assert.ok(Math.abs(595 * 2 * nominalMetersPerPixel({ dpi: 72, downscale: 2, scale: 100 }) - 20.99) < 0.01);
+// a 300 dpi scan of a 1:50 drawing, kept at full size: 1 px = 0.0254 / 300 * 50 m
+assert.ok(Math.abs(nominalMetersPerPixel({ dpi: 300, downscale: 1, scale: 50 }) - 0.0254 / 6) < 1e-12);
+// underlay tools: calibrate keeps the first point, align turns a line onto the nearest axis around its
+// first point, move translates
+const u0 = { metersPerPixel: 0.01, scale: 100, center: [2, 0], rotation: 0 };
+const cal = calibrateUnderlay(u0, [0, 0], [1, 0], 3); // 1 m measured, really 3 m: x3 around (0, 0)
+assert.ok(cal.scale === null && Math.abs(cal.metersPerPixel - 0.03) < 1e-12 && near(cal.center, [6, 0]));
+assert.equal(calibrateUnderlay(u0, [1, 1], [1, 1], 2), null);
+const aligned = alignUnderlay(u0, [0, 0], [1, 0.1]);   // ~5.7° below the horizontal: turned back to 0°
+assert.ok(Math.abs(aligned.rotation + Math.atan2(0.1, 1)) < 1e-12);
+assert.ok(Math.abs(aligned.center[1] - 2 * Math.sin(-Math.atan2(0.1, 1))) < 1e-12); // center turned around a
+assert.ok(Math.abs(alignUnderlay(u0, [0, 0], [0.1, 1]).rotation - (Math.PI / 2 - Math.atan2(1, 0.1))) < 1e-12); // to vertical
+assert.ok(near(moveUnderlay(u0, [1, 1], [3, 0]).center, [4, -1]));
 console.log('planModel: ok');

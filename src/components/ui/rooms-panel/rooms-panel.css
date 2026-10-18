@@ -115,3 +115,14 @@
 
 .rooms-panel .rooms-actions button { flex: 1; font-size: .9em; }
 .rooms-panel .rooms-actions .danger { color: #ffb0b0; }
+
+/* footer: storage maintenance ("Clean storage") */
+.rooms-panel .rooms-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .6em;
+    padding-top: .6em;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.rooms-panel .rooms-clean-result { flex: 1; opacity: .8; font-size: .9em; }

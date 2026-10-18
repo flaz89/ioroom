@@ -10,6 +10,7 @@ import BillPanel from "./bill-panel/BillPanel";
 import RoomUsers from "./room-users/RoomUsers";
 import SnapControl from "./snap-control/SnapControl";
 import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
+import UnderlayPanel from "../builder/UnderlayPanel";
 
 // Wall tool thickness side (store wallJustify), seen along the drawing direction
 const JUSTIFY_STEPS = ['left', 'center', 'right'];
@@ -41,6 +42,7 @@ export default function LeftToolBar() {
     const isDesigner = useStore((state) => state.workspace === 'designer');
     // Plan tools: builder mode, 2D view only (components/builder/PlanView2D.jsx)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
+    const isBuilder = useStore((state) => state.workspace === 'builder');
     const planTool = useStore((state) => state.planTool);
     const setPlanTool = useStore((state) => state.setPlanTool);
     const wallJustify = useStore((state) => state.wallJustify);
@@ -72,6 +74,11 @@ export default function LeftToolBar() {
                         onToggle={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')}
                         onPick={(justify) => { setWallJustify(justify); setPlanTool('wall'); }}
                     />
+                </div>}
+
+                {/* floor plan underlay (builder, 2D and 3D views): uploads need the owner's token */}
+                {isBuilder && SYNC_HOST && isAdmin && <div className="scene-settings">
+                    <UnderlayPanel />
                 </div>}
 
                 {isDesigner && <div className="scene-settings">

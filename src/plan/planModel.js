@@ -12,6 +12,7 @@
 *   (wallFootprint), so they meet cleanly at any angle; a free end is closed by an end face.
 *   Face ids: '<wall id>:inner' | ':outer' | ':edge' (top and free ends).
 *   openings?: [opening] — doors / windows cut in the wall (see OPENINGS below).
+* level.underlay?: background drawing traced in the builder (see UNDERLAY below).
 * ponytail: one level for now.
 */
 export const DEFAULT_WALL_HEIGHT = 2.7;
@@ -342,6 +343,60 @@ export function updateOpening(level, wallId, openingId, patch) {
 export function removeOpening(level, wallId, openingId) {
     const wall = level.walls.find((item) => item.id === wallId);
     return updateWall(level, wallId, { openings: (wall?.openings ?? []).filter((o) => o.id !== openingId) });
+}
+
+// ---------------------------------------------------------------------------------------------------
+// UNDERLAY: a floor plan drawing (image or PDF page) shown under the plan to trace walls over it.
+// level.underlay = { url, kind: 'image' | 'pdf', width, height (pixels of the stored image), dpi, downscale,
+//   scale, metersPerPixel, center: [x, z] (plan point under the image center), rotation (radians) }
+// - Nominal scale (default): the drawing is at 1:`scale` on paper; a stored pixel is 1 / (dpi x downscale)
+//   inches of paper (dpi: of the original image, or 72 for a PDF, whose units are points; downscale: stored
+//   pixels per original pixel / point). metersPerPixel = 0.0254 / (dpi x downscale) x scale.
+// - Two-point calibration (next step) sets metersPerPixel directly (scale = null).
+// The image file lives in R2 (server/src/underlays.js); visibility and opacity are per device (workspace).
+// ---------------------------------------------------------------------------------------------------
+export const UNDERLAY_DEFAULTS = { scale: 100, dpi: 150 };
+
+// Meters per stored pixel at the nominal scale ({ dpi, downscale, scale })
+export const nominalMetersPerPixel = ({ dpi, downscale, scale }) => (0.0254 / (dpi * downscale)) * scale;
+
+/*
+* Underlay adjustments (builder tools, two clicks each, plan points [x, z]); each returns the new underlay.
+* Rotations follow the plan's axes (x right, z down on screen): a positive angle turns clockwise on screen,
+* like the 2D view's SVG rotate().
+*/
+const turn = (p, origin, angle) => {
+    const dx = p[0] - origin[0], dz = p[1] - origin[1];
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return [origin[0] + dx * c - dz * s, origin[1] + dx * s + dz * c];
+};
+
+// CALIBRATE: the drawing's a -> b is really `length` meters: rescaled around a (a stays put); the nominal
+// scale no longer applies (scale null = calibrated). Null for coincident points or a non-positive length.
+export function calibrateUnderlay(underlay, a, b, length) {
+    const measured = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!(measured > 1e-6) || !(length > 0)) return null;
+    const k = length / measured;
+    return {
+        ...underlay,
+        scale: null,
+        metersPerPixel: underlay.metersPerPixel * k,
+        center: [a[0] + (underlay.center[0] - a[0]) * k, a[1] + (underlay.center[1] - a[1]) * k]
+    };
+}
+
+// ALIGN: turns the drawing around a so that its line a -> b lies on the nearest plan axis (horizontal or
+// vertical). Null for coincident points.
+export function alignUnderlay(underlay, a, b) {
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-6) return null;
+    const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const delta = Math.round(angle / (Math.PI / 2)) * (Math.PI / 2) - angle;
+    return { ...underlay, rotation: underlay.rotation + delta, center: turn(underlay.center, a, delta) };
+}
+
+// MOVE: the drawing's point `from` goes to `to`
+export function moveUnderlay(underlay, from, to) {
+    return { ...underlay, center: [underlay.center[0] + to[0] - from[0], underlay.center[1] + to[1] - from[1]] };
 }
 
 // Face ids of a wall (keys of its materials in the store `surfaces`)

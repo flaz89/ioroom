@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addWall, faceOffsets, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, rulerSnap2D, rulerTargets, toScreen, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -64,6 +64,12 @@ const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall 
 *   A selected measure (mine or saved: anyone can edit) shows a handle on each end (ruler on or off): dragging
 *   one moves that end with the same snaps, locked to the axis through the other end (Shift = free); the
 *   end keeps its height; saved on release (store moveMeasureEnd; a saved measure syncs to the room).
+* - UNDERLAY TOOLS (store underlayTool, from UnderlayPanel.jsx; they own the clicks while active):
+*   'calibrate' = two points of the drawing, then their real length (field at the middle) -> rescaled around
+*   the first point; 'align' = two points along a drawing line -> turned onto the nearest axis around the
+*   first point; 'move' = a point of the drawing, then where it goes (snapped to wall corners, else to the
+*   grid snap step). One undo step each (planModel calibrateUnderlay / alignUnderlay / moveUnderlay). Esc
+*   drops the first point, then leaves the tool.
 *
 * Navigation: right (or middle) mouse drag = pan, like the 3D view (OrbitControls); left mouse drag pans
 * nothing (clicks only). Touch / pen: one finger drag = pan. Wheel = zoom at the cursor, two fingers = pinch
@@ -127,10 +133,23 @@ export default function PlanView2D() {
     const planTool = useStore((state) => state.planTool);
     const wallJustify = useStore((state) => state.wallJustify);
     const setPlanTool = useStore((state) => state.setPlanTool);
-    const isRuler = useStore((state) => state.measures.active);
+    // underlay adjustment tool: wins over the ruler and the wall tool (it needs an underlay)
+    const underlayTool = useStore((state) => (activeLevel(state.plan).underlay ? state.underlayTool : null));
+    const setUnderlayTool = useStore((state) => state.setUnderlayTool);
+    const [toolPoints, setToolPoints] = useState([]);   // [x, z] points placed with the underlay tool
+    const [lengthAsk, setLengthAsk] = useState(null);   // { a, b } calibration waiting for its real length
+    const [toolHover, setToolHover] = useState(null);   // { point, kind } under the mouse with the underlay tool
+    const [underlayToolSeen, setUnderlayToolSeen] = useState(underlayTool);
+    if (underlayToolSeen !== underlayTool) { // tool changed: start clean (state reset during render)
+        setUnderlayToolSeen(underlayTool);
+        setToolPoints([]);
+        setLengthAsk(null);
+        setToolHover(null);
+    }
+    const isRuler = useStore((state) => state.measures.active) && underlayTool == null;
     const measures = useStore((state) => state.measures);
     const measureList = planMeasureList(measures);
-    const isDrawing = planTool === 'wall' && !isRuler;
+    const isDrawing = planTool === 'wall' && !isRuler && underlayTool == null;
     const [rulerHover, setRulerHover] = useState(null); // { point, kind, axis } snapped ruler point under the mouse
     const [endDrag, setEndDrag] = useState(null); // { id, which, point, kind, axis } while a measure end is dragged: preview
     // the selected measure (mine or saved: anyone can edit it): its ends get drag handles (PlanMeasures.jsx)
@@ -157,13 +176,51 @@ export default function PlanView2D() {
     useEffect(() => {
         const onKey = (event) => {
             if (event.key !== 'Escape') return;
+            if (underlayTool) {
+                if (toolPoints.length > 0 || lengthAsk) { setToolPoints([]); setLengthAsk(null); } else setUnderlayTool(null);
+                return;
+            }
             if (chain) setChain(null);
             else if (isDrawing) setPlanTool('select');
             else setSelectedWallId(null);
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [chain, isDrawing, setPlanTool, setSelectedWallId]);
+    }, [chain, isDrawing, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]);
+
+    // UNDERLAY TOOL point under the pointer (screen point): the second point of 'move' snaps to a wall
+    // corner, else to the grid snap step; the other points are free (they pick a spot of the drawing)
+    const underlayToolPoint = (point) => {
+        if (underlayTool === 'move' && toolPoints.length === 1) {
+            const raw = toWorld(view, size.w, size.h, point.x, point.y);
+            const vertex = nearestVertex(level, raw, VERTEX_SNAP_RADIUS / view.scale);
+            if (vertex) return { point: vertex, kind: 'vertex' };
+            return { point: snappedWorld(point), kind: 'grid' };
+        }
+        return { point: toWorld(view, size.w, size.h, point.x, point.y), kind: 'free' };
+    };
+
+    // Underlay tool click: first point, then the second one applies the tool ('calibrate' asks the length first)
+    const placeUnderlayPoint = ({ point }) => {
+        if (lengthAsk) return; // waiting for the length field
+        if (toolPoints.length === 0) { setToolPoints([point]); return; }
+        const [a] = toolPoints;
+        const underlay = level.underlay;
+        if (underlayTool === 'calibrate') { setLengthAsk({ a, b: point }); setToolPoints([a, point]); return; }
+        const next = underlayTool === 'align' ? alignUnderlay(underlay, a, point) : moveUnderlay(underlay, a, point);
+        if (next) setActiveLevel({ ...level, underlay: next });
+        setUnderlayTool(null);
+    };
+
+    // Calibration length entered (meters; "4,20" or "4.20"): applied, tool done; invalid = asked again
+    const applyCalibration = (text) => {
+        const length = Number(String(text).replace(',', '.'));
+        const next = lengthAsk && calibrateUnderlay(level.underlay, lengthAsk.a, lengthAsk.b, length);
+        if (!next) return false;
+        setActiveLevel({ ...level, underlay: next });
+        setUnderlayTool(null);
+        return true;
+    };
 
     // Pointer position relative to the view
     const localPoint = (event) => {
@@ -267,7 +324,7 @@ export default function PlanView2D() {
         }
         const dataset = event.target.dataset ?? {};
         // ruler: only measure labels are picked (corners, walls and openings are snap targets)
-        const { vertex, wallId, openingId, measureId, measureEnd } = isDrawing ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
+        const { vertex, wallId, openingId, measureId, measureEnd } = isDrawing || underlayTool ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
         // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
         const wall = openingId ? level.walls.find((item) => item.id === wallId) : null;
         const opening = wall?.openings.find((item) => item.id === openingId);
@@ -278,7 +335,7 @@ export default function PlanView2D() {
             : opening
             // grab: where along the wall the opening was taken, relative to its center (it slides, no jump)
             ? { kind: 'opening', wallId, openingId, start: point, moved: false, grab: alongWall(wall, toWorld(view, size.w, size.h, point.x, point.y)) - opening.offset }
-            : { kind: 'pan', wallId: wallId ?? null, openingId: openingId ?? null, measureId: measureId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing && !isRuler, shift: event.shiftKey };
+            : { kind: 'pan', wallId: wallId ?? null, openingId: openingId ?? null, measureId: measureId ?? null, start: point, moved: false, pans: !isMouse, boxes: isMouse && !isDrawing && !isRuler && !underlayTool, shift: event.shiftKey };
     };
 
     // One pointer: corner drag or pan. Two pointers: zoom by the change of their distance, at their
@@ -290,6 +347,7 @@ export default function PlanView2D() {
         const point = localPoint(event);
         if (isDrawing && pointers.size <= 1) setHover(snapPoint(point)); // preview of the next point (mouse)
         if (isRuler && pointers.size <= 1) setRulerHover(rulerPoint(point, event.shiftKey));
+        if (underlayTool && pointers.size <= 1) setToolHover(underlayToolPoint(point));
         if (previous == null) return;
         const gesture = gestureRef.current;
         if (pointers.size === 1 && gesture?.kind === 'vertex') {
@@ -364,7 +422,8 @@ export default function PlanView2D() {
             setSelectedWallIds(gesture.shift ? [...new Set([...current, ...ids])] : ids);
         } else if (gesture.kind === 'pan' && !gesture.moved) {
             const { measures: current, selectMeasure } = useStore.getState();
-            if (gesture.measureId) selectMeasure(current.selectedId === gesture.measureId ? null : gesture.measureId);
+            if (underlayTool) placeUnderlayPoint(underlayToolPoint(localPoint(event)));
+            else if (gesture.measureId) selectMeasure(current.selectedId === gesture.measureId ? null : gesture.measureId);
             else if (isRuler) placeRulerPoint(rulerPoint(localPoint(event), event.shiftKey));
             else if (isDrawing) placePoint(snapPoint(localPoint(event)));
             else if (gesture.shift && gesture.wallId) useStore.getState().toggleSelectedWall(gesture.wallId);
@@ -389,6 +448,11 @@ export default function PlanView2D() {
         setIsPanning(false);
     };
 
+    // Floor plan underlay: shown under the plan when this device shows it (store underlayVisible / Opacity)
+    const underlay = shown.underlay;
+    const isUnderlayVisible = useStore((state) => state.underlayVisible);
+    const underlayOpacity = useStore((state) => state.underlayOpacity);
+
     const isReady = size != null && view != null;
     const steps = isReady ? gridSteps(view.scale) : null;
 
@@ -408,7 +472,7 @@ export default function PlanView2D() {
         <>
         <svg
             ref={svgRef}
-            className={`plan-view${isDrawing ? ' is-drawing' : ''}${isRuler ? ' is-measuring' : ''}${isPanning ? ' is-panning' : ''}`}
+            className={`plan-view${isDrawing ? ' is-drawing' : ''}${isRuler || underlayTool ? ' is-measuring' : ''}${isPanning ? ' is-panning' : ''}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -419,6 +483,8 @@ export default function PlanView2D() {
                 // world (meters) -> screen: view center at the middle, `scale` px per meter.
                 // Strokes use vector-effect="non-scaling-stroke": widths stay in pixels at any zoom.
                 <g transform={`translate(${size.w / 2} ${size.h / 2}) scale(${view.scale}) translate(${-view.cx} ${-view.cz})`}>
+                    {/* floor plan underlay (planModel.js level.underlay), under everything; this device's visibility / opacity */}
+                    {underlay && isUnderlayVisible && <UnderlayImage underlay={underlay} opacity={underlayOpacity} />}
                     <path className="plan-grid-minor" d={gridPath(view, size.w, size.h, steps.minor)} vectorEffect="non-scaling-stroke" />
                     <path className="plan-grid-major" d={gridPath(view, size.w, size.h, steps.major)} vectorEffect="non-scaling-stroke" />
 
@@ -502,7 +568,12 @@ export default function PlanView2D() {
                 .map((wall) => lengthLabel(view, size, wall))}
 
         </svg>
-        {isReady && !endDrag && <PlanMeasureActions view={view} size={size} list={measureList} />}
+        {isReady && !endDrag && !underlayTool && <PlanMeasureActions view={view} size={size} list={measureList} />}
+        {/* underlay tool: points, live line, snapped target; calibration length field */}
+        {isReady && underlayTool && (
+            <UnderlayToolOverlay view={view} size={size} points={toolPoints} hover={lengthAsk ? null : toolHover} />
+        )}
+        {isReady && lengthAsk && <CalibrationField view={view} size={size} ask={lengthAsk} onApply={applyCalibration} />}
         {selectedWallId && !isDrawing && !draft && !slide && isReady && (
             <FlipButton view={view} size={size} wall={level.walls.find((wall) => wall.id === selectedWallId)} />
         )}
@@ -580,6 +651,63 @@ function openingDistances(view, size, level, wallId, openingId) {
 }
 
 const lineAt = (p, q) => ({ x1: p[0], y1: p[1], x2: q[0], y2: q[1] });
+
+// Underlay tool marks (screen space, constant size): placed points, the line to the pointer, the hovered point
+function UnderlayToolOverlay({ view, size, points, hover }) {
+    const screen = (p) => toScreen(view, size.w, size.h, p[0], p[1]);
+    const ends = hover ? [...points, hover.point] : points;
+    const shown = ends.map(screen);
+    return (
+        <svg className="plan-underlay-tool">
+            {shown.length === 2 && <line x1={shown[0][0]} y1={shown[0][1]} x2={shown[1][0]} y2={shown[1][1]} />}
+            {shown.map(([x, y], index) => (
+                <circle key={index} cx={x} cy={y} r={hover?.kind === 'vertex' && index === shown.length - 1 ? 7 : 4.5} />
+            ))}
+        </svg>
+    );
+}
+
+// Real length of the calibration segment: a small field at its middle (Enter applies, Esc cancels)
+function CalibrationField({ view, size, ask, onApply }) {
+    const [x, y] = toScreen(view, size.w, size.h, (ask.a[0] + ask.b[0]) / 2, (ask.a[1] + ask.b[1]) / 2);
+    return (
+        <div className="plan-calibration" style={{ left: x, top: y }} onPointerDown={(event) => event.stopPropagation()}>
+            <span>Real length</span>
+            <input
+                autoFocus
+                type="text"
+                inputMode="decimal"
+                placeholder="m"
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !onApply(event.target.value)) event.target.select();
+                    if (event.key === 'Escape') { event.stopPropagation(); useStore.getState().setUnderlayTool(null); }
+                }}
+            />
+            <span>m</span>
+        </div>
+    );
+}
+
+/*
+* The underlay image in plan meters: width x height pixels x metersPerPixel, its center on underlay.center,
+* turned by underlay.rotation (radians, plan axes: x right, z down, so positive = clockwise on screen).
+* Not interactive (the plan's gestures go through it).
+*/
+function UnderlayImage({ underlay, opacity }) {
+    const w = underlay.width * underlay.metersPerPixel;
+    const h = underlay.height * underlay.metersPerPixel;
+    const [cx, cz] = underlay.center;
+    return (
+        <image
+            href={underlay.url}
+            x={cx - w / 2} y={cz - h / 2} width={w} height={h}
+            transform={`rotate(${underlay.rotation * 180 / Math.PI} ${cx} ${cz})`}
+            preserveAspectRatio="none"
+            opacity={opacity}
+            pointerEvents="none"
+        />
+    );
+}
 
 // Same corner (exact: the dragged point is copied into the walls by moveVertex)
 const samePoint = (p, q) => p[0] === q[0] && p[1] === q[1];

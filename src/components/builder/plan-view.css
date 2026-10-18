@@ -204,3 +204,31 @@
 .plan-measure-actions .measure-actions { transform: none; }
 .plan-measure-handle { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2.5; cursor: move; }
 .plan-view.is-measuring .plan-measure-handle { cursor: move; }
+
+/* underlay tools (PlanView2D.jsx): points and line in the selection orange, over the plan, not interactive */
+.plan-underlay-tool { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.plan-underlay-tool line { stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: 6 4; }
+.plan-underlay-tool circle { fill: #0a1030; stroke: #ff9a1a; stroke-width: 2.5; }
+.plan-calibration {
+    position: absolute;
+    transform: translate(-50%, -150%);
+    display: flex;
+    align-items: center;
+    gap: .4em;
+    padding: .35em .6em;
+    border: 1px solid #ff9a1a;
+    border-radius: 10px;
+    background: rgba(10, 16, 32, 0.92);
+    color: white;
+    font: 12px "SUSE Mono", monospace;
+}
+.plan-calibration input {
+    width: 5em;
+    padding: .2em .4em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    color: white;
+    font: inherit;
+    text-align: right;
+}

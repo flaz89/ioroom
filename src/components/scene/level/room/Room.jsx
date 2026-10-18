@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
+import UnderlayPlane from './UnderlayPlane';
 import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { polygonGeometry, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
@@ -87,12 +88,22 @@ const ROOM_USER_DATA = { isRoom: true };
 export default function Room() {
     const level = useStore((state) => activeLevel(state.plan));
 
+    // Builder with a floor plan UNDERLAY shown (this device: store underlayVisible): the drawing lies on the
+    // floor (UnderlayPlane) and the floors are not drawn; hidden = the floors are back
+    const underlayOpacity = useStore((state) => state.underlayOpacity);
+    const showUnderlay = useStore((state) => state.workspace === 'builder' && state.underlayVisible) && level.underlay != null;
+
     // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
-    const faces = useMemo(() => roomFaces(level), [level]);
+    const allFaces = useMemo(() => roomFaces(level), [level]);
+    const faces = useMemo(() => {
+        if (!showUnderlay) return allFaces;
+        const floorIds = new Set(level.floors.map((floor) => floor.id));
+        return allFaces.filter((face) => !floorIds.has(face.surfaceId));
+    }, [allFaces, showUnderlay, level]);
     // Ceiling: the floor polygons at wall height, facing down (no ceiling material yet: not drawn)
     const ceilings = useMemo(() => level.floors.map((floor) => polygonGeometry(floor.points, level.wallHeight, true)), [level]);
     useEffect(() => () => ceilings.forEach((geometry) => geometry.dispose()), [ceilings]);
-    useEffect(() => () => faces.forEach((face) => face.geometry.dispose()), [faces]);
+    useEffect(() => () => allFaces.forEach((face) => face.geometry.dispose()), [allFaces]);
 
     // Material of each face: saved, or previewed while a material is dragged over it
     const surfaces = useStore((state) => state.surfaces);
@@ -154,6 +165,9 @@ export default function Room() {
                     receiveShadow
                 />
             ))}
+
+            {/* ------------- FLOOR PLAN UNDERLAY (builder) ------------------ */}
+            {showUnderlay && <UnderlayPlane underlay={level.underlay} opacity={underlayOpacity} />}
 
             {/* ------------- CEILING (invisible) ------------------ */}
             {/* Not rendered: only a surface for placing objects (lamps) with surfaceDrag. Faces down. */}

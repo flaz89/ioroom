@@ -5,6 +5,7 @@ import { svg } from '../../../utils/svg-logos';
 import { getRoomId } from '../../../sync/roomSync';
 import { createRoom, deleteRoom, duplicateRoom, listRooms, renameRoom } from '../../../sync/roomsApi';
 import './rooms-panel.css';
+import { cleanUnderlayStorage } from '../../../plan/underlayFile';
 
 // Opens an environment: full reload on ?room=<id> (the sync connects once per page load, and the
 // previous room's scene must not be merged into the next one)
@@ -22,6 +23,8 @@ const formatDate = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: '
 * (shared rooms), most recently edited first. Click a name to open it; per row: rename (inline field),
 * duplicate, delete (second click confirms). "New" creates an empty environment and opens it.
 * Closed by default; a click on the dimmed backdrop closes it.
+* "Clean storage" (bottom, second click confirms): deletes the floor plan underlay files that no environment
+* uses anymore (server/src/underlays.js; files uploaded in the last 24 h are always kept).
 * Server side: server/src/index.js; requests: sync/roomsApi.js.
 */
 export default function RoomsPanel() {
@@ -35,6 +38,23 @@ export default function RoomsPanel() {
     const [busy, setBusy] = useState(false);        // a request is running: actions disabled
     const [editing, setEditing] = useState(null);   // { id, name } of the row being renamed
     const [confirmDelete, setConfirmDelete] = useState(null); // id waiting for the confirming click
+    const [confirmClean, setConfirmClean] = useState(false);  // "Clean storage" waiting for the confirming click
+    const [cleanResult, setCleanResult] = useState(null);     // message after a cleanup
+
+    const cleanStorage = async () => {
+        if (!confirmClean) return setConfirmClean(true);
+        setConfirmClean(false);
+        setBusy(true);
+        setError(null);
+        try {
+            const { kept, deleted } = await cleanUnderlayStorage();
+            setCleanResult(`Removed ${deleted} unused plan file${deleted === 1 ? '' : 's'}, ${kept} kept.`);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
 
     // Runs an API action, then reloads the list; errors are shown in the panel. Resolves true on success.
     const run = async (action) => {
@@ -58,6 +78,8 @@ export default function RoomsPanel() {
         if (isOpen) return;
         setEditing(null);
         setConfirmDelete(null);
+        setConfirmClean(false);
+        setCleanResult(null);
         run(async () => {});
     };
 
@@ -133,6 +155,15 @@ export default function RoomsPanel() {
                             </li>
                         ))}
                     </ul>
+
+                    {/* storage maintenance: unused floor plan files (underlays) */}
+                    <div className="rooms-footer">
+                        {cleanResult && <span className="rooms-clean-result">{cleanResult}</span>}
+                        <button onClick={cleanStorage} disabled={busy}
+                            title="Delete the floor plan images / PDFs no environment uses anymore (files from the last 24 hours are kept)">
+                            {confirmClean ? 'Confirm clean?' : 'Clean storage'}
+                        </button>
+                    </div>
                 </div>
                 </div>
             )}
