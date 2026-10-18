@@ -34,8 +34,9 @@ import './measures.css';
 * - XR (first person, not on the tabletop): same handles on my selected temporary measure; pressing the
 *   trigger / pinching while aiming at one (handleUnderRay) drags that end along the ray with the ruler's
 *   snaps until release (XRMeasurePlacer). That press is not a ruler point nor a label selection.
+* - Label hover (mouse, XR ray): grows to LABEL_HOVER_SCALE like the notes, hand cursor on desktop.
 * - Labels are flat cards in 3D lying ALONG the measure line, turned around it to face the eye (never upside
-*   down), sized with the distance so they keep a constant size on screen (bigger on the tabletop,
+*   down), with a REAL size in board meters like the notes' tags (twice as big on the tabletop,
 *   TABLETOP_LABEL_BOOST). A real 3D orientation: stays on the line in VR too, whatever the head does.
 * - TABLETOP: labels not clickable, no handles.
 * - ANCHORED ENDS: a point taken on an object is stored in the object's local space (measuresSlice.js) and
@@ -49,8 +50,12 @@ const AXIS_COLORS = { x: '#ff5252', y: '#4d8dff', z: '#3ddc84' }; // SketchUp-li
 const LINE_RADIUS = 0.004;           // meters (board space)
 const TABLETOP_BOOST = 6;            // thicker line on the tabletop model (1/12 scale)
 const DOT_SIZE = 0.012;              // screen fraction (sprites without size attenuation)
-const LABEL_SIZE = [0.1, 0.032];
-const TABLETOP_LABEL_BOOST = 1.6; // tabletop: labels this much bigger on screen (not clickable there)
+// Label card in BOARD meters (real size, like the notes' author tags): text 45% of the card height
+// (drawLabel) = 0.066 m, the same text height as a note tag (Notes.jsx: TAG_SIZE x bar 0.5 x text 0.6);
+// 320 x 96 canvas aspect
+const LABEL_SIZE = [0.49, 0.147];
+const LABEL_HOVER_SCALE = 1.12;    // label scale while hovered (mouse or XR ray), like the notes' markers
+const TABLETOP_LABEL_BOOST = 2;   // tabletop: labels this much bigger, like the notes (Notes.jsx TABLETOP_BOOST)
 const HANDLE_AIM = 0.04; // XR: a handle is aimed at within this angle (radians, ~2.3°) of the ray
 const SNAP_SCREEN = 0.02;            // snap distance = 2% of the camera distance (same feel at any zoom)
 const HANDLE_SCALE = 2;              // end dots of an editable measure (grab handles)
@@ -209,11 +214,11 @@ function measureSnap(ray, root, excludeId = null) {
 }
 
 /*
-* XR: the measure label a ray aims at, or null. Not three's sprite raycast (unreliable for screen-sized
-* sprites with the XR camera): a label counts as aimed at when the ray passes within half its on-screen
-* width (a constant screen fraction, so LABEL_SIZE[0] / 2 x its distance from the eyes) of its center;
-* the nearest one along the ray wins. Labels are drawn over everything, so they win over surfaces.
+* XR: the measure label a ray aims at, or null: the ray passes within half the card's real width (its
+* world scale) of its center, whatever the card's turn; the nearest one along the ray wins. Labels are
+* drawn over everything, so they win over surfaces.
 */
+const _labelScale = new THREE.Vector3();
 const _toLabel = new THREE.Vector3(), _labelPosition = new THREE.Vector3(), _eye = new THREE.Vector3();
 function labelUnderRay(ray, root, camera) {
     camera.getWorldPosition(_eye);
@@ -226,7 +231,7 @@ function labelUnderRay(ray, root, camera) {
         const along = _toLabel.dot(ray.direction);
         if (along <= 0) return;
         const off = _toLabel.addScaledVector(ray.direction, -along).length();
-        if (off > (LABEL_SIZE[0] / 2) * _labelPosition.distanceTo(_eye)) return;
+        if (off > object.getWorldScale(_labelScale).x / 2) return; // within the card's real half width
         if (best == null || along < best.along) best = { measureId, along };
     });
     return best?.measureId ?? null;
@@ -593,6 +598,15 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
     const isLocked = preview || isTabletop;
     const labelBoost = isTabletop ? TABLETOP_LABEL_BOOST : 1;
+    // HOVER (mouse or XR ray: pmndrs pointer events, the ray stops on the card): grows like a note marker,
+    // hand cursor on desktop (sceneCursor.js)
+    const [isHovered, setIsHovered] = useState(false);
+    const hovered = isHovered && !isLocked;
+    const hoverScaleRef = useRef(1);
+    useEffect(() => {
+        setCursorHover(`measure:${measure.id}`, hovered && !isXR);
+        return () => setCursorHover(`measure:${measure.id}`, false);
+    }, [measure.id, hovered, isXR]);
     // 2D plan open: its own actions (builder/PlanMeasures.jsx); this Html would float over the plan
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const a = toEnd(measure.a), b = toEnd(measure.b);
@@ -601,7 +615,7 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     const textRef = useRef(text);
     const radius = LINE_RADIUS * boost;
 
-    useFrame(({ camera }) => {
+    useFrame(({ camera }, delta) => {
         const space = groupRef.current?.parent;
         if (space == null) return;
         const start = resolveEnd(a, space, _start), end = resolveEnd(b, space, _end);
@@ -617,21 +631,21 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         // LABEL: a flat card in 3D, its long side ALONG the line, turned around the line to face the eye as
         // much as it can, text never upside down (its up has a positive world-up component; the board only
         // turns around Y, so local up = world up). Stereo-safe: a real 3D orientation, not a screen-space one.
-        // Sized like a sprite without size attenuation: LABEL_SIZE x distance (constant size on screen).
         const card = labelMeshRef.current;
         if (card != null && length > 1e-6) {
             camera.getWorldPosition(_eyeLocal);
             space.worldToLocal(_eyeLocal);
             _axisX.copy(_direction); // unit, start -> end (normalized above)
             _axisZ.subVectors(_eyeLocal, _middle);
-            const distance = _axisZ.length();
             _axisZ.addScaledVector(_axisX, -_axisZ.dot(_axisX)); // towards the eye, square to the line
             if (_axisZ.lengthSq() < 1e-10) _axisZ.set(0, 1, 0).cross(_axisX); // looking straight along the line
             _axisZ.normalize();
             _axisY.crossVectors(_axisZ, _axisX);
             if (_axisY.y < 0) { _axisX.negate(); _axisY.negate(); } // text upright (turned 180° around Z)
             card.quaternion.setFromRotationMatrix(_basis.makeBasis(_axisX, _axisY, _axisZ));
-            card.scale.set(LABEL_SIZE[0] * labelBoost * distance, LABEL_SIZE[1] * labelBoost * distance, 1);
+            hoverScaleRef.current = THREE.MathUtils.damp(hoverScaleRef.current, hovered ? LABEL_HOVER_SCALE : 1, 12, delta);
+            const size = labelBoost * hoverScaleRef.current;
+            card.scale.set(LABEL_SIZE[0] * size, LABEL_SIZE[1] * size, 1);
         }
         const shown = formatLength(length);
         if (shown !== textRef.current) {
@@ -660,7 +674,10 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
                     renderOrder={11}
                     userData={isLocked ? undefined : { measureId: measure.id }}
                     raycast={isLocked ? noRaycast : undefined}
-                    onClick={isLocked ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
+                    // XR: selection comes from the session's select (XRMeasurePlacer), not this click (no double toggle)
+                    onClick={isLocked || isXR ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
+                    onPointerEnter={isLocked ? undefined : () => setIsHovered(true)}
+                    onPointerLeave={isLocked ? undefined : () => setIsHovered(false)}
                 >
                     <meshBasicMaterial map={label} side={THREE.DoubleSide} depthTest={false} depthWrite={false} transparent toneMapped={false} />
                 </mesh>
