@@ -197,12 +197,16 @@ export class RoomRegistry extends DurableObject {
 const registry = (env) => env.RoomRegistry.get(env.RoomRegistry.idFromName(OWNER_REGISTRY));
 const room = (env, id) => getServerByName(env.Rooms, id);
 
-// Every underlay file any registered environment uses (storage cleanup). Throws if a room cannot be read:
-// the cleanup then deletes nothing (a room it could not check might use any file).
+// Every underlay file any registered environment uses (storage cleanup). If some rooms cannot be read it
+// throws, naming them and why: the cleanup then deletes nothing (a room it could not check might use any file).
 async function usedUnderlayKeys(env) {
     const entries = await registry(env).list();
-    const keys = await Promise.all(entries.map(async (entry) => (await room(env, entry.id)).underlayKeys()));
-    return keys.flat();
+    const results = await Promise.allSettled(entries.map(async (entry) => (await room(env, entry.id)).underlayKeys()));
+    const failed = results
+        .map((result, index) => (result.status === 'rejected' ? `"${entries[index].name}" (${result.reason?.message ?? result.reason})` : null))
+        .filter(Boolean);
+    if (failed.length > 0) throw new Error(`Cannot read ${failed.join(', ')}`);
+    return results.flatMap((result) => result.value);
 }
 
 // CORS: the app runs on another origin (Vercel, localhost). Bearer token, no cookies, so "*" is fine.

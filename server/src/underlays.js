@@ -57,7 +57,7 @@ export async function handleUnderlays(request, env, { cors, isOwner, usedKeys })
             used = new Set(await usedKeys());
         } catch (cause) {
             console.error('underlay cleanup: cannot read the environments', cause);
-            return error('Could not check every environment: nothing was deleted', 500);
+            return error(`Nothing was deleted: ${cause.message}`, 500);
         }
         const cutoff = Date.now() - CLEANUP_GRACE_MS;
         let kept = 0, deleted = 0, cursor;
