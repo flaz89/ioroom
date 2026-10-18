@@ -53,7 +53,7 @@ function UnderlayImage({ underlay, opacity }) {
 /*
 * DXF underlay: the visible layers' segments (drawing units, centered) as one line set on the floor, placed
 * like the image: scaled by metersPerPixel (meters per unit), turned, moved onto underlay.center.
-* Dark lines: they lie on the (light) floors, which stay visible under a DXF (Room.jsx).
+* Orange lines (the app's accent, as in the 2D plan) on the floors, which stay visible under a DXF (Room.jsx).
 * ponytail: 1 px lines (WebGL / WebXR have no thick lines); fat lines (Line2) if they read too thin in VR.
 */
 const noRaycast = () => null;
@@ -83,7 +83,7 @@ function UnderlayLines({ underlay, opacity }) {
             scale={[mpp, 1, mpp]}
             raycast={noRaycast} // lines hit within a 1 m threshold by default: they would steal the clicks
         >
-            <lineBasicMaterial color="#1c2a78" transparent opacity={opacity} depthWrite={false} toneMapped={false} />
+            <lineBasicMaterial color="#ff9a1a" transparent opacity={opacity} depthWrite={false} toneMapped={false} />
         </lineSegments>
     );
 }

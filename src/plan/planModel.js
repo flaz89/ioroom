@@ -95,7 +95,10 @@ function sidesAt(wall, end) {
 * Corners where walls meet are MITERED face by face: going around the corner, a wall's left face meets the
 * next wall's right face (and its right face the previous wall's left face), whatever the walls' drawing
 * direction, thickness side or alignment (side / center), and with any number of walls at the corner.
-* Parallel faces (straight continuation) are cut square.
+* Parallel faces (straight continuation) are cut square. A wall that CONTINUES STRAIGHT through the corner
+* (another wall leaves it in the opposite direction: a split wall, a T or X junction) is cut square on both
+* faces: the through walls stay one straight wall and a branch butts against their faces (mitering the
+* through wall with the branch left a triangular hole on the far face).
 */
 export function wallFootprint(wall, walls) {
     const corner = (end) => {
@@ -104,7 +107,8 @@ export function wallFootprint(wall, walls) {
         const square = (offset) => add(end, scale(R, offset));
         const others = walls.filter((item) => item !== wall && (same(item.a, end) || same(item.b, end))).map((item) => sidesAt(item, end));
         let left = square(mine.left), right = square(mine.right);
-        if (others.length > 0) {
+        const isThrough = others.some((other) => Math.abs(cross(mine.away, other.away)) < 1e-6 && dotp(mine.away, other.away) < 0);
+        if (others.length > 0 && !isThrough) {
             // angle from this wall to each other wall, counter-clockwise in (0, 2π]
             const base = Math.atan2(mine.away[1], mine.away[0]);
             const turn = (other) => {

@@ -40,6 +40,8 @@ export default function UnderlayPanel() {
     const opacity = useStore((state) => state.underlayOpacity);
     const setUnderlayVisible = useStore((state) => state.setUnderlayVisible);
     const setUnderlayOpacity = useStore((state) => state.setUnderlayOpacity);
+    const wallOpacity = useStore((state) => state.planWallOpacity);
+    const setWallOpacity = useStore((state) => state.setPlanWallOpacity);
     const underlayTool = useStore((state) => state.underlayTool);
     const setUnderlayTool = useStore((state) => state.setUnderlayTool);
     const fileRef = useRef();
@@ -141,6 +143,12 @@ export default function UnderlayPanel() {
                                 <span>Opacity <b>{Math.round(opacity * 100)}%</b></span>
                                 <input type="range" min={0.1} max={1} step={0.05} value={opacity}
                                     onChange={(event) => setUnderlayOpacity(Number(event.target.value))} />
+                            </label>
+                            {/* walls of the 2D plan made see-through, to trace over the drawing (this device only) */}
+                            <label className="underlay-row">
+                                <span>Wall opacity (2D) <b>{Math.round(wallOpacity * 100)}%</b></span>
+                                <input type="range" min={0} max={1} step={0.05} value={wallOpacity}
+                                    onChange={(event) => setWallOpacity(Number(event.target.value))} />
                             </label>
                             {underlay.kind === 'dxf' ? (
                                 <>

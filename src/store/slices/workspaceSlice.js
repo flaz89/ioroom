@@ -16,6 +16,8 @@
 *   (published by PlanView2D.jsx, shown by PlanGridLegend.jsx in the bottom bar).
 * underlayVisible / underlayOpacity: how this device shows the floor plan underlay (planModel.js level.underlay):
 *   a view preference, per device, never synced nor undoable. Hidden = the floor is back in the 3D view.
+* planWallOpacity: fill opacity of the walls in the 2D plan (per device, from the underlay panel): lowered to
+*   see the drawing through the walls while tracing (their outline stays).
 * underlayTool: active underlay adjustment of the 2D plan (two clicks each, PlanView2D.jsx): null |
 *   'calibrate' (a known length) | 'align' (a line onto an axis) | 'move' (a point onto a plan point).
 * Not to be confused with view.mode (viewSlice.js: 'life' / 'tabletop' presentation in XR).
@@ -55,6 +57,8 @@ export const createWorkspaceSlice = (set, get) => ({
     underlayOpacity: 0.5,
     setUnderlayVisible: (underlayVisible) => set({ underlayVisible }),
     setUnderlayOpacity: (underlayOpacity) => set({ underlayOpacity }),
+    planWallOpacity: 1,
+    setPlanWallOpacity: (planWallOpacity) => set({ planWallOpacity }),
     underlayTool: null,
     // an underlay tool works in the 2D plan: it switches the view there, and owns the clicks (no wall tool)
     setUnderlayTool: (underlayTool) => set(underlayTool

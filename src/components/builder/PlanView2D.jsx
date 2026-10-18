@@ -137,6 +137,7 @@ export default function PlanView2D() {
     const underlay = shown.underlay;
     const isUnderlayVisible = useStore((state) => state.underlayVisible);
     const underlayOpacity = useStore((state) => state.underlayOpacity);
+    const wallOpacity = useStore((state) => state.planWallOpacity); // css --wall-opacity: wall and opening fills
     // CAD SNAP (DXF underlay shown): its visible lines' end points and lines are snap targets of the wall
     // tool, the corner drag, the ruler and the underlay tools (planView.snapWithUnderlay: the plan's own
     // corners first). Placed in plan meters once per underlay change.
@@ -493,6 +494,7 @@ export default function PlanView2D() {
         <>
         <svg
             ref={svgRef}
+            style={{ '--wall-opacity': wallOpacity }}
             className={`plan-view${isDrawing ? ' is-drawing' : ''}${isRuler || underlayTool ? ' is-measuring' : ''}${isPanning ? ' is-panning' : ''}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}

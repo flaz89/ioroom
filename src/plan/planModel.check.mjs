@@ -133,4 +133,16 @@ assert.ok(Math.abs(aligned.rotation + Math.atan2(0.1, 1)) < 1e-12);
 assert.ok(Math.abs(aligned.center[1] - 2 * Math.sin(-Math.atan2(0.1, 1))) < 1e-12); // center turned around a
 assert.ok(Math.abs(alignUnderlay(u0, [0, 0], [0.1, 1]).rotation - (Math.PI / 2 - Math.atan2(1, 0.1))) < 1e-12); // to vertical
 assert.ok(near(moveUnderlay(u0, [1, 1], [3, 0]).center, [4, -1]));
+// T on a split wall: the through walls stay square (no hole), the branch butts against their face
+{
+    const up = { id: 'up', a: [0, 0], b: [0, -2], thickness: 0.2 };   // split wall: up and down are collinear
+    const down = { id: 'down', a: [0, 2], b: [0, 0], thickness: 0.2 };
+    const branch = { id: 'br', a: [-3, 0], b: [0, 0], thickness: 0.2 };
+    const t = [up, down, branch];
+    const fu = wallFootprint(up, t), fd = wallFootprint(down, t), fb = wallFootprint(branch, t);
+    // both through walls end square at the corner (z = 0 on both faces)
+    for (const p of [fu.a, fu.aOut, fd.b, fd.bOut]) assert.ok(Math.abs(p[1]) < 1e-9, `through wall not square: ${p}`);
+    // the branch ends on the through walls' face on the branch side (x = 0 or x = ±0.2, never a miter)
+    assert.ok(Math.abs(fb.b[0] - fb.bOut[0]) < 1e-9, `branch end not square: ${fb.b} ${fb.bOut}`);
+}
 console.log('planModel: ok');

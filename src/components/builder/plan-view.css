@@ -16,17 +16,17 @@
 .plan-grid-minor { stroke: rgba(255, 255, 255, 0.05); stroke-width: 1; fill: none; }
 .plan-grid-major { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; fill: none; }
 
-/* DXF underlay (CAD lines): thin light lines under the plan, never interactive */
-.plan-underlay-dxf { fill: none; stroke: #c8d4ff; stroke-width: 1; pointer-events: none; }
+/* DXF underlay (CAD lines): thin orange lines (the app's accent) under the plan, never interactive */
+.plan-underlay-dxf { fill: none; stroke: #ff9a1a; stroke-width: 1; pointer-events: none; }
 
 .plan-floor { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.25); stroke-width: 1; stroke-dasharray: 4 4; }
 
 /* walls: solid, like a drafting plan; selected = the app's orange */
-.plan-wall { fill: #d9dcea; stroke: #ffffff; stroke-width: 1; stroke-linejoin: miter; cursor: pointer; }
+.plan-wall { fill: #d9dcea; fill-opacity: var(--wall-opacity, 1); stroke: #ffffff; stroke-width: 1; stroke-linejoin: miter; cursor: pointer; }
 .plan-wall.is-selected { fill: #ff9a1a; stroke: #ffd29a; }
 
 /* doors / windows: a dark gap through the wall + the drafting symbol; selected = orange */
-.plan-opening-gap { fill: #0a1030; stroke: #ffffff; stroke-width: 1; cursor: grab; }
+.plan-opening-gap { fill: #0a1030; fill-opacity: var(--wall-opacity, 1); stroke: #ffffff; stroke-width: 1; cursor: grab; }
 .plan-opening-mark { stroke: #ffffff; stroke-width: 1.5; pointer-events: none; }
 .plan-opening-swing { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
 .plan-opening.is-selected .plan-opening-gap { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; }
