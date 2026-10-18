@@ -47,8 +47,9 @@ export default function RoomsPanel() {
         setBusy(true);
         setError(null);
         try {
-            const { kept, deleted } = await cleanUnderlayStorage();
-            setCleanResult(`Removed ${deleted} unused plan file${deleted === 1 ? '' : 's'}, ${kept} kept.`);
+            const { deleted, inUse, recent } = await cleanUnderlayStorage();
+            const files = (n) => `${n} plan file${n === 1 ? '' : 's'}`;
+            setCleanResult(`Removed ${files(deleted)}. Kept ${inUse} in use` + (recent > 0 ? `, ${recent} unused but uploaded in the last 24 h (removed by a later clean).` : '.'));
         } catch (err) {
             setError(err.message);
         } finally {

@@ -3,7 +3,7 @@
 * the material library: binding MATERIALS, prefix "underlays/"). Client: src/plan/underlayApi.js.
 *
 *   POST   /api/underlays              multipart: file (webp / jpeg / png, max 8 MB) -> { key }   owner only
-*   POST   /api/underlays/cleanup      -> { kept, deleted }   owner only ("Clean storage", My environments):
+*   POST   /api/underlays/cleanup      -> { deleted, inUse, recent }   owner only ("Clean storage", My environments):
 *                                      deletes the files no registered environment uses, uploaded more than
 *                                      CLEANUP_GRACE_MS ago (an underlay replaced or removed in a session that
 *                                      is still open can come back with undo)
@@ -60,16 +60,21 @@ export async function handleUnderlays(request, env, { cors, isOwner, usedKeys })
             return error(`Nothing was deleted: ${cause.message}`, 500);
         }
         const cutoff = Date.now() - CLEANUP_GRACE_MS;
-        let kept = 0, deleted = 0, cursor;
+        // inUse: an environment uses it; recent: unused but younger than the grace period (kept for now)
+        let deleted = 0, inUse = 0, recent = 0, cursor;
         do {
             const page = await env.MATERIALS.list({ prefix: PREFIX, cursor }); // up to 1000 objects per page
-            const unused = page.objects.filter((object) => !used.has(object.key) && object.uploaded.getTime() < cutoff).map((object) => object.key);
+            const unused = [];
+            for (const object of page.objects) {
+                if (used.has(object.key)) inUse++;
+                else if (object.uploaded.getTime() >= cutoff) recent++;
+                else unused.push(object.key);
+            }
             if (unused.length > 0) await env.MATERIALS.delete(unused);
             deleted += unused.length;
-            kept += page.objects.length - unused.length;
             cursor = page.truncated ? page.cursor : undefined;
         } while (cursor);
-        return json({ kept, deleted });
+        return json({ deleted, inUse, recent });
     }
 
     if (request.method === 'POST') {

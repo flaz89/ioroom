@@ -5,7 +5,7 @@ import { API_ORIGIN, adminToken } from '../sync/roomSync';
 * - prepareUnderlay(file): the chosen image or PDF (first page) as a WebP / JPEG ready to upload, with
 *   what the nominal scale needs: { blob, kind, width, height, dpi, downscale }.
 * - uploadUnderlay(blob): stores it in R2 (server/src/underlays.js, owner only) -> its public URL.
-* - cleanUnderlayStorage(): deletes the files no environment uses (older than a day) -> { kept, deleted }.
+* - cleanUnderlayStorage(): deletes the files no environment uses (older than a day) -> { deleted, inUse, recent }.
 * Errors reject with an Error whose message is meant for the UI.
 */
 const MAX_SIDE = 4096;      // px: longest side of the stored image (texture size limit, memory)
