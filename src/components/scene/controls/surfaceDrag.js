@@ -1,4 +1,4 @@
-import { Box3, Matrix4, Plane, Quaternion, Ray, Raycaster, Sphere, Vector3 } from 'three';
+import { Box3, FrontSide, Matrix4, Plane, Quaternion, Ray, Raycaster, Vector3 } from 'three';
 import { getPointerRay } from './pointerRay.js';
 
 /*
@@ -191,43 +191,78 @@ export function surfaceAlong(target, body, direction) {
 }
 
 /*
-* For each parent-space point, whether a surface lies behind it along the parent-space `direction`
-* (out[i] = true/false). Surfaces are collected once for all the rays. Used by the drag footprint to
-* paint red only the dots outside the allowed space (same "something below" rule as keepOverSurface).
+* For each parent-space point, whether a surface lies behind it along the parent-space, AXIS-ALIGNED
+* `direction` (out[i] = 1/0). Used by the drag footprint to paint red only the dots outside the allowed
+* space (same "something below" rule as keepOverSurface).
+* EFFICIENCY: the room is a few merged meshes spanning the whole plan (Room.jsx batches), so a per-mesh
+* box test keeps every wall and floor triangle, and ~300 raycasts x all of them was the frame cost of a
+* drag on the headset (20 fps on a real plan). Instead the triangles are gathered ONCE per call, keeping
+* only those inside the probes' column (probe box extended behind the points along `direction`), then each
+* probe ray is tested against that short list. Same answers as raycasting the meshes (FrontSide culling
+* included; groups/drawRange ignored: room and object geometries draw all their triangles).
 */
 export function surfacesBehind(target, points, direction, out) {
     const parent = target.parent;
-    if (parent == null) return out.fill(0);
-    _raycaster.ray.direction.copy(direction).transformDirection(parent.matrixWorld);
-    // probe origins in world space, and the sphere around them
-    _probeBox.makeEmpty();
-    for (let i = 0; i < points.length; i++) {
-        if (_probeOrigins.length <= i) _probeOrigins.push(new Vector3());
-        _probeBox.expandByPoint(_probeOrigins[i].copy(points[i]).applyMatrix4(parent.matrixWorld));
-    }
-    _probeBox.getBoundingSphere(_probeSphere);
-    // only the surfaces some probe ray can reach: a surface's world box grown by the probes' radius, crossed
-    // by the central ray (a superset: the result is the same). Testing every probe against every mesh of
-    // the board (~300 rays x all the room's faces) was the frame cost of a drag on the headset.
-    _centerRay.set(_probeSphere.center, _raycaster.ray.direction);
-    const surfaces = collectSurfaces(parent, target).filter((surface) => {
+    if (parent == null || points.length === 0) return out.fill(0);
+    // column axis (direction is axis-aligned in parent space) and the probes' box in parent space
+    const axis = Math.abs(direction.x) >= Math.abs(direction.y) ? (Math.abs(direction.x) >= Math.abs(direction.z) ? 'x' : 'z') : (Math.abs(direction.y) >= Math.abs(direction.z) ? 'y' : 'z');
+    const behindMax = direction[axis] < 0; // the column extends towards -axis (true) or +axis
+    _probeBox.setFromPoints(points);
+    const inColumn = (box) => {
+        for (const a of ['x', 'y', 'z']) {
+            if (a === axis) continue;
+            if (box.max[a] < _probeBox.min[a] || box.min[a] > _probeBox.max[a]) return false;
+        }
+        return behindMax ? box.min[axis] <= _probeBox.max[axis] : box.max[axis] >= _probeBox.min[axis];
+    };
+
+    // 1. triangles in the column, in parent space (flat xyz x 3 per triangle + culling flag)
+    _parentInverse.copy(parent.matrixWorld).invert();
+    let triangleCount = 0;
+    for (const surface of collectSurfaces(parent, target)) {
         const geometry = surface.geometry;
+        const position = geometry.attributes.position;
+        if (position == null) continue;
+        _toParent.multiplyMatrices(_parentInverse, surface.matrixWorld);
         if (geometry.boundingBox == null) geometry.computeBoundingBox();
-        _surfaceBox.copy(geometry.boundingBox).applyMatrix4(surface.matrixWorld).expandByScalar(_probeSphere.radius);
-        return _centerRay.intersectsBox(_surfaceBox);
-    });
+        if (!inColumn(_surfaceBox.copy(geometry.boundingBox).applyMatrix4(_toParent))) continue;
+        const material = surface.material;
+        const cull = !Array.isArray(material) && material.side === FrontSide; // as Mesh.raycast
+        const index = geometry.index;
+        const count = index ? index.count : position.count;
+        for (let t = 0; t + 2 < count; t += 3) {
+            for (let v = 0; v < 3; v++) _tri[v].fromBufferAttribute(position, index ? index.getX(t + v) : t + v).applyMatrix4(_toParent);
+            if (!inColumn(_triBox.setFromPoints(_tri))) continue;
+            const base = triangleCount * 10;
+            for (let v = 0; v < 3; v++) _tri[v].toArray(_triangles, base + v * 3);
+            _triangles[base + 9] = cull ? 1 : 0;
+            triangleCount++;
+        }
+    }
+
+    // 2. each probe ray against the gathered triangles
+    _probeRay.direction.copy(direction).normalize();
     for (let i = 0; i < points.length; i++) {
-        if (surfaces.length === 0) { out[i] = 0; continue; }
-        _raycaster.ray.origin.copy(_probeOrigins[i]);
-        out[i] = _raycaster.intersectObjects(surfaces, false).some((hit) => hit.face != null) ? 1 : 0;
+        _probeRay.origin.copy(points[i]);
+        let found = 0;
+        for (let k = 0; k < triangleCount && !found; k++) {
+            const base = k * 10;
+            _tri[0].fromArray(_triangles, base);
+            _tri[1].fromArray(_triangles, base + 3);
+            _tri[2].fromArray(_triangles, base + 6);
+            if (_probeRay.intersectTriangle(_tri[0], _tri[1], _tri[2], _triangles[base + 9] === 1, _point) != null) found = 1;
+        }
+        out[i] = found;
     }
     return out;
 }
-const _probeOrigins = [];
 const _probeBox = new Box3();
-const _probeSphere = new Sphere();
-const _centerRay = new Ray();
 const _surfaceBox = new Box3();
+const _triBox = new Box3();
+const _toParent = new Matrix4();
+const _probeRay = new Ray();
+const _tri = [new Vector3(), new Vector3(), new Vector3()];
+const _triangles = []; // reused between calls (grows to the largest column seen)
 
 // Surface straight below the body center (DROP rule, room bounds, footprint), or null
 export function surfaceBelow(target, body = target) {

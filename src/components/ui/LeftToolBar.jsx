@@ -26,6 +26,8 @@ export default function LeftToolBar() {
     // Performance stats: stays open alongside the other panels (closes them only on phones, panelSlice.js)
     const isPerfVisible = useStore((state) => state.perfOpen);
     const togglePerf = useStore((state) => state.togglePerf);
+    const isWireframe = useStore((state) => state.wireframe);
+    const toggleWireframe = useStore((state) => state.toggleWireframe);
 
     // Settings group (performance, environments, share): expanded/collapsed, per device and per page view
     const [isSettingsOpen, setSettingsOpen] = useState(false);
@@ -95,6 +97,7 @@ export default function LeftToolBar() {
                     {isSettingsOpen && (
                         <>
                             <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
+                            <CircleButton text="WF" onClick={toggleWireframe} isActive={isWireframe} title={"Wireframe"}/>
                             {/* shared rooms and sharing: owner only for now (guests must not spread new rooms) */}
                             {SYNC_HOST && isAdmin && <RoomsPanel />}
                             {SYNC_HOST && isAdmin && <SharePanel />}

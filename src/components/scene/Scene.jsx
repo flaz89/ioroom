@@ -8,6 +8,7 @@ import SceneGrid from './helpers/SceneGrid';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import PerfSampler from './perf/PerfSampler';
+import Wireframe from './perf/Wireframe';
 import PlanView2D from '../builder/PlanView2D';
 import WallPanel from '../builder/WallPanel';
 
@@ -39,6 +40,7 @@ export default function Scene({xrStore}) {
 
     const isGridVisible = useStore((state) => state.grid.visible);
     const isPerfVisible = useStore((state) => state.perfOpen);
+    const isWireframe = useStore((state) => state.wireframe);
     const deselectObject = useStore((state) => state.deselectObject);
     // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
@@ -83,6 +85,8 @@ export default function Scene({xrStore}) {
 
                 {/* Performance stats for the DOM panel (both renderers) */}
                 {isPerfVisible && <PerfSampler />}
+                {/* Debug: whole scene in wireframe */}
+                {isWireframe && <Wireframe />}
 
                 <OrbitControls 
                     makeDefault 

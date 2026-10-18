@@ -71,6 +71,8 @@ export default function WristMenu() {
     const isPerfVisible = useStore((state) => state.perfOpen);
     const togglePanel = useStore((state) => state.togglePanel);
     const togglePerf = useStore((state) => state.togglePerf);
+    const isWireframe = useStore((state) => state.wireframe);
+    const toggleWireframe = useStore((state) => state.toggleWireframe);
     const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
     const isMaterialsOpen = useStore((state) => state.openPanel === 'materials'); // VRMaterialsPanel (same)
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)
@@ -138,6 +140,8 @@ export default function WristMenu() {
                         {/* ponytail: always pressable (no-op on an empty history); dim them if that confuses */}
                         <VRButton svg={svg.undo} onClick={undo} position={[STEP_X * 2, 0, 0]} />
                         <VRButton svg={svg.redo} onClick={redo} position={[STEP_X * 2, BUTTON_STEP, 0]} />
+                        {/* debug: whole scene in wireframe (scene/perf/Wireframe.jsx) */}
+                        <VRButton label="Wire" active={isWireframe} onClick={toggleWireframe} position={[STEP_X * 2, BUTTON_STEP * 4, 0]} />
                         {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </PointerFilterContext.Provider>

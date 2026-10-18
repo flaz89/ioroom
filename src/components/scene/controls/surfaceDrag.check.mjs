@@ -228,4 +228,24 @@ for (const [ms, detaches] of [[150, true], [2000, false]]) {
     assert.deepEqual(away, [0]);
 }
 
+// FOOTPRINT PROBES on a big merged mesh (the room batches): a segmented 10 x 10 floor with a 2 x 2 hole
+// cut out, and a ceiling seen from behind (FrontSide, culled like Mesh.raycast)
+{
+    const board = new Group();
+    const floor = new Mesh(new PlaneGeometry(10, 10, 50, 50).rotateX(-Math.PI / 2).toNonIndexed());
+    const positions = floor.geometry.attributes.position.array;
+    const kept = [];
+    for (let i = 0; i < positions.length; i += 9) {
+        const cx = (positions[i] + positions[i + 3] + positions[i + 6]) / 3, cz = (positions[i + 2] + positions[i + 5] + positions[i + 8]) / 3;
+        if (Math.abs(cx - 3) > 1 || Math.abs(cz) > 1) kept.push(...positions.slice(i, i + 9));
+    }
+    floor.geometry.setAttribute('position', new floor.geometry.attributes.position.constructor(new Float32Array(kept), 3));
+    board.add(floor);
+    const ceiling = new Mesh(new PlaneGeometry(10, 10).rotateX(Math.PI / 2)); ceiling.position.y = -1; board.add(ceiling); // faces down, below the floor
+    const target = new Group(); board.add(target);
+    board.updateMatrixWorld(true);
+    const points = [-3.1, 3, 4.5].map((x) => new Vector3(x, 0.02, 0.1));
+    assert.deepEqual(surfacesBehind(target, points, new Vector3(0, -1, 0), [-1, -1, -1]), [1, 0, 1], 'hole seen, back face ignored');
+}
+
 console.log('surfaceDrag: ok');

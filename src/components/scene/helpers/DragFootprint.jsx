@@ -183,7 +183,7 @@ export default function DragFootprint({ targetRef, bodyRef, getSupportNormal }) 
         mesh.scale.set(extent, extent, 1);
 
         // Per-dot probes: from each probe cell (just in front of the plane) towards the surface.
-        // ~300 raycasts per frame, each only against the surfaces near the footprint (surfaceDrag.surfacesBehind).
+        // ~300 probe rays per frame, each only against the triangles in the footprint's column (surfaceDrag.surfacesBehind).
         if (patternRef.current?.grid !== grid) {
             patternRef.current?.texture.dispose();
             patternRef.current = createPattern(grid);
