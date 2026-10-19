@@ -76,6 +76,9 @@ export default function LeftToolBar() {
                         onToggle={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')}
                         onPick={(justify) => { setWallJustify(justify); setPlanTool('wall'); }}
                     />
+                    {/* draw floors (polygons snapped to the wall faces, PlanView2D.jsx) */}
+                    <CircleButton svg={svg.floor} isActive={planTool === 'floor'} title="Draw floors"
+                        onClick={() => setPlanTool(planTool === 'floor' ? 'select' : 'floor')} />
                 </div>}
 
                 {/* floor plan underlay (builder, 2D and 3D views): uploads need the owner's token */}

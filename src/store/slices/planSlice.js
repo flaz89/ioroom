@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN, activeLevel, flipWall, newWallId, rebuildFloors, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
+import { DEFAULT_PLAN, activeLevel, flipWall, newWallId, removeFloor, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
 
 /*
 * The floor plan of the environment (plan/planModel.js): walls and floors the room is built from.
@@ -12,18 +12,9 @@ export const createPlanSlice = (set, get) => ({
     setPlan: (patch) => set((state) => ({ plan: { ...state.plan, ...patch } })),
 
     // Replaces the level being worked on (plan editor: one call per committed edit = one undo step).
-    // FLOORS follow the walls here, for every edit (planModel.rebuildFloors): closed perimeters get a floor;
-    // a room split in two gives its material to both halves; an opened perimeter loses its floor and the
-    // floor's material (no orphan in the bill of quantities). Plan + surfaces in the same tick: one undo step.
-    setActiveLevel: (level) => {
-        const { level: rebuilt, inherited, removed } = rebuildFloors(level);
-        get().setPlan({ levels: withActiveLevel(get().plan, rebuilt).levels });
-        if (Object.keys(inherited).length === 0 && removed.length === 0) return;
-        const surfaces = { ...get().surfaces };
-        for (const [floorId, fromId] of Object.entries(inherited)) if (surfaces[fromId] != null) surfaces[floorId] = surfaces[fromId];
-        removed.forEach((floorId) => delete surfaces[floorId]);
-        set({ surfaces });
-    },
+    // FLOORS are independent of the walls: they are drawn by the user (floor tool) and never rebuilt or
+    // moved by wall edits (old auto floors, from the closed-perimeter era, are kept as they are).
+    setActiveLevel: (level) => get().setPlan({ levels: withActiveLevel(get().plan, level).levels }),
 
     // Thickness to the other side of the wall's line (planModel.flipWall). The inner and outer faces swap
     // roles, so their materials (surfaces slice) swap too: each face keeps its look. Plan and surfaces are
@@ -35,6 +26,13 @@ export const createPlanSlice = (set, get) => ({
         const remaining = { ...surfaces };
         wallIds.forEach((wallId) => wallFaceIds(wallId).forEach((faceId) => delete remaining[faceId]));
         set({ surfaces: remaining, selectedWallIds: [] });
+    },
+
+    // Deletes a floor and its material (no orphan material in the bill of quantities): one undo step
+    deleteFloor: (floorId) => {
+        get().setActiveLevel(removeFloor(activeLevel(get().plan), floorId));
+        const { [floorId]: _removed, ...remaining } = get().surfaces;
+        set({ surfaces: remaining, selectedFloorId: null });
     },
 
     // The same field patch on several walls at once (group edit: thickness / height), one undo step

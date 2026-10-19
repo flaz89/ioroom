@@ -165,8 +165,8 @@ export function levelVertices(level) {
 }
 
 /*
-* Moves the corner at `from` to `to`: every wall end AND floor point on that corner moves with it, so joined
-* walls stay joined and the floor follows. Returns the new level, or null when a wall would become shorter
+* Moves the corner at `from` to `to`: every wall end on that corner moves with it, so joined walls stay
+* joined. Floors are independent of the walls and stay where they are. Returns the new level, or null when a wall would become shorter
 * than MIN_WALL_LENGTH (the editor keeps the last valid position).
 */
 export function moveVertex(level, from, to) {
@@ -176,10 +176,7 @@ export function moveVertex(level, from, to) {
         : wall));
     const isValid = walls.every((wall) => Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) >= MIN_WALL_LENGTH);
     if (!isValid) return null;
-    const floors = level.floors.map((floor) => (floor.points.some((p) => same(p, from))
-        ? { ...floor, points: floor.points.map(move) }
-        : floor));
-    return { ...level, walls, floors };
+    return { ...level, walls };
 }
 
 /*
@@ -668,25 +665,6 @@ function pointInPolygon(p, polygon) {
     return inside;
 }
 
-// A point surely inside the polygon (its centroid when inside, else the middle of a diagonal that is)
-function interiorPoint(polygon) {
-    const area = signedArea(polygon);
-    let cx = 0, cz = 0;
-    polygon.forEach((p, i) => {
-        const q = polygon[(i + 1) % polygon.length];
-        const f = cross(p, q);
-        cx += (p[0] + q[0]) * f;
-        cz += (p[1] + q[1]) * f;
-    });
-    const centroid = [cx / (6 * area), cz / (6 * area)];
-    if (pointInPolygon(centroid, polygon)) return centroid;
-    for (let i = 2; i < polygon.length; i++) {
-        const middle = [(polygon[0][0] + polygon[i][0]) / 2, (polygon[0][1] + polygon[i][1]) / 2];
-        if (pointInPolygon(middle, polygon)) return middle;
-    }
-    return polygon[0];
-}
-
 // The wall whose drawn line holds the segment p-q (a loop edge; with T-joints an edge can be part of a wall).
 // The line may run past the wall's ends by up to a wall thickness: an end attached to another wall's line
 // (closedLoops) is projected there from within that wall's thickness.
@@ -731,33 +709,68 @@ export function roomPolygon(loop, walls) {
 }
 
 export const newFloorId = () => `f-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+export const MIN_FLOOR_AREA = 0.01; // m²: a drawn floor smaller than this is refused
+
+// True when the open segments p1-p2 and q1-q2 properly cross (touching at an end does not count)
+function segmentsCross(p1, p2, q1, q2) {
+    const d1 = cross(sub(p2, p1), sub(q1, p1)), d2 = cross(sub(p2, p1), sub(q2, p1));
+    const d3 = cross(sub(q2, q1), sub(p1, q1)), d4 = cross(sub(q2, q1), sub(p2, q1));
+    return d1 * d2 < -1e-12 && d3 * d4 < -1e-12;
+}
 
 /*
-* Rebuilds the floors of a level from its walls. Every closed loop (closedLoops) becomes a floor (the room's
-* clear area: roomPolygon, wall footprints excluded) marked
-* auto: true; it KEEPS the id (and so the material) of the old floor it lies in (matched by an interior
-* point), or gets a new id. A loop inside an old floor already taken (a room split in two by a new wall)
-* gets a new id and INHERITS that floor's material. Old auto floors with no loop are dropped (their
-* perimeter was opened); manual floors (no auto flag, e.g. the default test room) are kept as they are.
-* Returns { level, inherited: { newFloorId: oldFloorId }, removed: [floorId] } (materials: planSlice).
+* The points of a valid floor polygon (`points`: [x, z], either winding), consecutive duplicates dropped,
+* or null when it is not one: fewer than 3 points, area under MIN_FLOOR_AREA, or edges crossing each other.
 */
-export function rebuildFloors(level, makeId = newFloorId) {
-    const loops = closedLoops(level.walls);
-    const used = new Set();
-    const inherited = {};
-    const floors = loops.map((loop) => {
-        const points = roomPolygon(loop, level.walls);
-        const inside = interiorPoint(points);
-        const container = level.floors.find((floor) => pointInPolygon(inside, floor.points));
-        if (container && !used.has(container.id)) {
-            used.add(container.id);
-            return { id: container.id, points, auto: true };
+function floorPolygon(points) {
+    const clean = points.filter((p, i) => !same(p, points[(i + 1) % points.length])).map((p) => [p[0], p[1]]);
+    if (clean.length < 3 || polygonArea(clean) < MIN_FLOOR_AREA) return null;
+    const n = clean.length;
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            if (j === i + 1 || (i === 0 && j === n - 1)) continue; // neighbouring edges share an end
+            if (segmentsCross(clean[i], clean[(i + 1) % n], clean[j], clean[(j + 1) % n])) return null;
         }
-        const id = makeId();
-        if (container) inherited[id] = container.id;
-        return { id, points, auto: true };
-    });
-    const kept = level.floors.filter((floor) => !floor.auto && !used.has(floor.id));
-    const removed = level.floors.filter((floor) => floor.auto && !used.has(floor.id)).map((floor) => floor.id);
-    return { level: { ...level, floors: [...kept, ...floors] }, inherited, removed };
+    }
+    return clean;
+}
+
+// The level with a new DRAWN floor (floor tool) from the closed polygon `points` (drawing order), or null
+// when it is not a valid floor (floorPolygon)
+export function addFloor(level, points, id = newFloorId()) {
+    const clean = floorPolygon(points);
+    return clean && { ...level, floors: [...level.floors, { id, points: clean }] };
+}
+
+// The level with vertex `index` of floor `floorId` moved to `to` (floor tool, vertex drag); null when the
+// result is not a valid floor (floorPolygon: e.g. edges crossing). A vertex dropped on a neighbour merges.
+export function moveFloorVertex(level, floorId, index, to) {
+    const floor = level.floors.find((item) => item.id === floorId);
+    const clean = floor && floorPolygon(floor.points.map((p, i) => (i === index ? to : p)));
+    return clean && { ...level, floors: level.floors.map((item) => (item.id === floorId ? { ...item, points: clean } : item)) };
+}
+
+// The level without floor `floorId`
+export const removeFloor = (level, floorId) => ({ ...level, floors: level.floors.filter((floor) => floor.id !== floorId) });
+
+// The floor under `point` (the smallest one, if they overlap), or null
+export function floorAt(level, point) {
+    const hits = level.floors.filter((floor) => pointInPolygon(point, floor.points));
+    return hits.reduce((best, floor) => (best == null || polygonArea(floor.points) < polygonArea(best.points) ? floor : best), null);
+}
+
+/*
+* FILL A ROOM (floor tool, double click inside a room): the level with a new floor covering the clear area
+* (roomPolygon: net of the walls) of the smallest closed wall perimeter (closedLoops) around `point`.
+* Returns null when no closed perimeter holds the point, or when a floor already covers it (no double
+* floors in the bill of quantities).
+*/
+export function fillRoom(level, point, id = newFloorId()) {
+    if (level.floors.some((floor) => pointInPolygon(point, floor.points))) return null;
+    const rooms = closedLoops(level.walls)
+        .map((loop) => roomPolygon(loop, level.walls))
+        .filter((points) => pointInPolygon(point, points));
+    if (rooms.length === 0) return null;
+    const smallest = rooms.reduce((best, points) => (polygonArea(points) < polygonArea(best) ? points : best));
+    return addFloor(level, smallest, id);
 }

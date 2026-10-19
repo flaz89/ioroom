@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, rebuildFloors, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { DEFAULT_PLAN, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -29,7 +29,7 @@ assert.equal(levelVertices(level).length, 4);
 const moved = moveVertex(level, [-3, -3], [-4, -3.5]);
 assert.ok(near(moved.walls[0].b, [-4, -3.5]) && near(moved.walls[1].a, [-4, -3.5]));
 assert.ok(near(moved.walls[2].a, [3, -3]));
-assert.ok(near(moved.floors[0].points[0], [-4, -3.5]));
+assert.ok(near(moved.floors[0].points[0], [-3, -3])); // floors never follow the walls
 assert.ok(near(level.walls[0].b, [-3, -3])); // the original level is untouched
 // a wall can not collapse onto its other end
 assert.equal(moveVertex(level, [-3, -3], [-3, 3]), null);
@@ -68,34 +68,31 @@ assert.equal(half1.id, 'wall-back');
 assert.ok(near(half1.a, [-3, -3]) && near(half1.b, [0, -3]) && near(half2.a, [0, -3]) && near(half2.b, [3, -3]));
 assert.equal(half2.name, undefined);
 assert.equal(wallFootprint(half1, split.walls).bJoined, true);
-// FLOORS: the open U has no loop (its manual floor is kept); closed, the loop takes over the 'floor' id
+// FILL A ROOM: the open U has no closed perimeter; closed, the clear area becomes a floor
+const bare = { ...closed, floors: [] };
 assert.equal(closedLoops(level.walls).length, 0);
-assert.equal(rebuildFloors(level).level.floors[0].id, 'floor');
-const room = rebuildFloors(closed).level;
+assert.equal(fillRoom({ ...level, floors: [] }, [0, 0]), null);
+const room = fillRoom(bare, [0, 0], 'floor');
 assert.equal(room.floors.length, 1);
-assert.equal(room.floors[0].id, 'floor');
-assert.equal(room.floors[0].auto, true);
 assert.equal(polygonArea(room.floors[0].points), 36);
-// a middle wall ending on the front and back walls (T-joints) splits it: the second room inherits.
+assert.equal(fillRoom(room, [1, 1]), null); // already covered by a floor
+assert.equal(fillRoom(bare, [10, 10]), null); // outside every room
+// a middle wall ending on the front and back walls (T-joints) splits it into two rooms, filled one by one.
 // Floors are CLEAR areas: the side-aligned partition (thickness towards +x) takes 0.15 x 6 off one room...
-const halves = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid'), () => 'new-floor');
-assert.deepEqual(halves.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [18, 17.1]);
-assert.deepEqual(halves.inherited, { 'new-floor': 'floor' });
+const areasOf = (lvl) => lvl.floors.map((floor) => +polygonArea(floor.points).toFixed(6)).sort((p, q) => p - q);
+const fillBoth = (lvl) => fillRoom(fillRoom(lvl, [-1.5, 0], 'west'), [1.5, 0], 'east');
+assert.deepEqual(areasOf(fillBoth(addWall(bare, [0, -3], [0, 3], 'mid'))), [17.1, 18]);
 // a partition ending INSIDE the other walls' thickness (far face / between the faces), not on their lines,
 // splits the room the same way (traced on a CAD drawing)
-const inBand = rebuildFloors(addWall(room, [0, -3.15], [0, 3.05], 'mid'), () => 'new-floor');
-assert.deepEqual(inBand.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [18, 17.1]);
+assert.deepEqual(areasOf(fillBoth(addWall(bare, [0, -3.15], [0, 3.05], 'mid'))), [17.1, 18]);
 // ...a centered one half of it from each: two equal rooms
-const centered = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid', 'center'), () => 'new-floor');
-assert.deepEqual(centered.level.floors.map((floor) => +polygonArea(floor.points).toFixed(6)), [17.55, 17.55]);
+assert.deepEqual(areasOf(fillBoth(addWall(bare, [0, -3], [0, 3], 'mid', 'center'))), [17.55, 17.55]);
+// opening the perimeter again: no room left to fill
+assert.equal(fillRoom(removeWall(bare, 'wall-front'), [0, 0]), null);
 // mixed thickness sides at a corner (one wall flipped): faces mitered pairwise, clean L corner
 const mixed = [{ id: 'm1', a: [0, 0], b: [4, 0], thickness: 0.2 }, { id: 'm2', a: [4, 4], b: [4, 0], thickness: 0.2 }];
 assert.ok(near(wallFootprint(mixed[0], mixed).b, [3.8, 0]) && near(wallFootprint(mixed[0], mixed).bOut, [4, -0.2]));
 assert.ok(near(wallFootprint(mixed[1], mixed).b, [4, -0.2]) && near(wallFootprint(mixed[1], mixed).bOut, [3.8, 0]));
-// opening the perimeter again drops the auto floor
-const reopened = rebuildFloors(removeWall(room, 'wall-front'));
-assert.equal(reopened.level.floors.length, 0);
-assert.deepEqual(reopened.removed, ['floor']);
 // openings: centered in the widest free stretch; a second one goes into the widest gap left
 const withWindow = addOpening(level, 'wall-back', 'window', 'o1');
 assert.equal(withWindow.walls[1].openings[0].offset, 3);
@@ -152,14 +149,12 @@ assert.ok(near(moveUnderlay(u0, [1, 1], [3, 0]).center, [4, -1]));
 }
 // floor under a floor-level opening: the chosen side's room, flipped with its wall
 {
-    const room2 = rebuildFloors(addWall(room, [0, -3], [0, 3], 'mid'), () => 'east').level; // west 'floor' | east 'east'
+    const room2 = fillRoom(fillRoom(addWall(bare, [0, -3], [0, 3], 'mid'), [-1.5, 0], 'floor'), [1.5, 0], 'east'); // west 'floor' | east 'east'
     const withDoor = addOpening(room2, 'mid', 'door', 'dd');
     const sideOf = (level) => openingFloors(level).find((p) => p.openingId === 'dd').floorId;
     const inner = sideOf(withDoor);
     const outerLevel = updateOpening(withDoor, 'mid', 'dd', { floorSide: 'out' });
     assert.notEqual(sideOf(outerLevel), inner);
-    // flipping the wall (floors rebuilt, as every edit in the app: planSlice.setActiveLevel) keeps the room
-    assert.equal(sideOf(rebuildFloors(flipWall(outerLevel, 'mid'), () => 'east').level), sideOf(outerLevel));
     assert.equal(openingFloors(withDoor).length, 1);
     // a raised window has no floor strip
     assert.equal(openingFloors(addOpening(room2, 'mid', 'window', 'ww')).length, 0);
@@ -211,6 +206,28 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
         { id: 'door', a: [0, 1.9], b: [0, 0.1], thickness: 0.2, align: 'center' } // from the arm's face to the top face
     ];
     assert.equal(closedLoops(box).length >= 1, true, 'closed through the doorway');
+}
+
+
+// drawn floors (floor tool): closed polygon, either winding; invalid shapes refused
+{
+    const empty = { ...level, floors: [] };
+    const square = addFloor(empty, [[0, 0], [2, 0], [2, 2], [0, 2]], 'f1');
+    assert.equal(square.floors.length, 1);
+    assert.equal(polygonArea(square.floors[0].points), 4);
+    assert.ok(addFloor(empty, [[0, 0], [0, 2], [2, 2], [2, 0]]));             // counter-clockwise too
+    assert.equal(addFloor(empty, [[0, 0], [2, 0], [2, 2], [2, 2], [0, 2]], 'f2').floors[0].points.length, 4); // duplicate dropped
+    assert.equal(addFloor(empty, [[0, 0], [2, 0], [0, 2], [2, 2]]), null);   // bow tie: edges cross
+    assert.equal(addFloor(empty, [[0, 0], [2, 0]]), null);                   // too few points
+    assert.equal(addFloor(empty, [[0, 0], [1, 0], [2, 0]]), null);           // no area
+    assert.ok(addFloor(empty, [[0, 0], [3, 0], [3, 3], [2, 3], [2, 1], [1, 1], [1, 3], [0, 3]])); // concave U
+    // select / edit / delete
+    assert.equal(floorAt(square, [1, 1]).id, 'f1');
+    assert.equal(floorAt(square, [5, 5]), null);
+    assert.equal(polygonArea(moveFloorVertex(square, 'f1', 2, [4, 2]).floors[0].points), 6);
+    assert.equal(moveFloorVertex(square, 'f1', 2, [-2, 1]), null);              // crosses another edge
+    assert.equal(moveFloorVertex(square, 'f1', 2, [2, 0]).floors[0].points.length, 3); // merges with a neighbour
+    assert.equal(removeFloor(square, 'f1').floors.length, 0);
 }
 
 console.log('planModel: ok');

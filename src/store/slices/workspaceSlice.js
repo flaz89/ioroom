@@ -10,7 +10,9 @@
 *   builder or changing tool. Single wall: singleSelectedWall(state).
 * selectedOpening: { wallId, openingId } of the door / window selected in the builder (null = none); its panel
 *   is WallPanel.jsx too. Exclusive with selectedWallIds: selecting one clears the other.
-* planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls).
+* selectedFloorId: floor selected with the floor tool (2D plan: vertex handles, Delete removes it), null = none.
+*   Cleared when changing tool.
+* planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls) | 'floor' (draw floors).
 * wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
 * planGrid: { minor, major } grid steps (meters) of the open 2D plan view, null when it is closed
 *   (published by PlanView2D.jsx, shown by PlanGridLegend.jsx in the bottom bar).
@@ -51,7 +53,10 @@ export const createWorkspaceSlice = (set, get) => ({
     setSelectedOpening: (selectedOpening) => set({ selectedOpening, selectedWallIds: [] }),
 
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, underlayTool: null }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null }),
+
+    selectedFloorId: null,
+    setSelectedFloorId: (selectedFloorId) => set({ selectedFloorId }),
 
     wallJustify: 'left',
     setWallJustify: (wallJustify) => set({ wallJustify }),

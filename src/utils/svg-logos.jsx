@@ -97,6 +97,12 @@ export const svg = {
         <path d="M2.5 8h15M2.5 12h15M8 4v4M13 8v4M8 12v4" stroke="currentColor" strokeWidth="1.4"/>
     </svg>,
 
+    // floor: tiles seen in perspective (floor tool)
+    floor: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 6h10l3 9H2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <path d="M3.5 10.5h13M8.3 6l-1.6 9M11.7 6l1.6 9" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>,
+
     // arrow curving back to the left (undo)
     undo: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M7 4.5L3.5 8 7 11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>

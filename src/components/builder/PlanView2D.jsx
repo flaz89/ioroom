@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addWall, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, rebuildFloors, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -37,7 +37,7 @@ const ARROW_HEAD = 0.08;         // meters: longest arrow head of a sliding leaf
 *   Shift+click adds / removes a wall. BOX SELECTION (mouse, left drag): left -> right = window (walls fully
 *   inside), right -> left = crossing (walls touched too), Shift adds to the selection (planView.wallsInBox); the round button at the middle of the selected wall
 *   moves its thickness to the other side of its line (planSlice.flipWallSide);
-* - drag a corner handle = move that corner: joined walls and the floor follow (planModel.moveVertex),
+* - drag a corner handle = move that corner: joined walls follow, floors stay (planModel.moveVertex),
 *   snapped to the grid snap step when grid snap is on (right toolbar). The drag is a local DRAFT, written
 *   to the plan once on release: one undo step, one sync message (others see the result, not the motion).
 * - WALL TOOL (store planTool 'wall', button in the left toolbar): click = place a point; each click after
@@ -47,7 +47,20 @@ const ARROW_HEAD = 0.08;         // meters: longest arrow head of a sliding leaf
 *   the tool. Drag still pans. JUSTIFY (hover on the wall button, LeftToolBar.jsx; store wallJustify): the
 *   thickness goes on the left of the drawing direction, on the right, or half each side (center: axis
 *   line, planModel.addWall).
-* - ALIGNMENT GUIDES (wall tool and corner drag): a point that lines up horizontally / vertically with
+* - FLOOR TOOL (store planTool 'floor', button in the left toolbar): floors are DRAWN, never built from the
+*   walls. Click = place a vertex of the floor polygon; a click on its first point (or on the last one again,
+*   double click) or Enter closes it: one floor, one undo step (planModel.addFloor refuses fewer than 3
+*   points, no area or crossing edges: the preview turns red). Points snap to wall FACE corners and faces
+*   (the floor runs net of the walls, opening jambs included: planView.rulerTargets), to other floors'
+*   vertices and edges, to a DXF underlay, then alignment and grid like the wall tool. Esc drops the
+*   polygon, Esc again leaves the tool. FILL A ROOM: a double click before a second point fills the closed
+*   wall perimeter around it with its clear area (planModel.fillRoom; nothing if no room or already floored).
+*   SELECT (floor tool, no polygon being drawn): a click inside a floor selects it (store selectedFloorId; a
+*   click on a snap target starts a polygon instead); with a floor selected, a click on empty space only
+*   deselects. The selected floor shows its vertex handles: drag = move that vertex with the floor tool's
+*   snaps (planModel.moveFloorVertex: refused if the edges would cross; a local draft saved on release, one
+*   undo step). Delete / Backspace removes it with its material (planSlice.deleteFloor); Esc deselects.
+* - ALIGNMENT GUIDES (wall tool, floor tool and corner drag): a point that lines up horizontally / vertically with
 *   another corner (or the chain's last point) snaps to that line and shows it dashed (planView.alignPoint).
 *   Priority: exact corner > DXF underlay end point / line (CAD SNAP, below) > alignment (per axis) >
 *   angle snap > grid snap. CAD SNAP: a DXF underlay shown here lends its visible lines' end points (green
@@ -172,7 +185,12 @@ export default function PlanView2D() {
     const isRuler = useStore((state) => state.measures.active) && underlayTool == null;
     const measures = useStore((state) => state.measures);
     const measureList = planMeasureList(measures);
-    const isDrawing = planTool === 'wall' && !isRuler && underlayTool == null;
+    // a drawing tool (walls or floors) owns the clicks: walls, openings and corners are snap targets only
+    const isDrawing = (planTool === 'wall' || planTool === 'floor') && !isRuler && underlayTool == null;
+    const isFloorTool = isDrawing && planTool === 'floor';
+    const [floorPoints, setFloorPoints] = useState([]); // [x, z] vertices of the floor being drawn
+    const selectedFloorId = useStore((state) => state.selectedFloorId);
+    const setSelectedFloorId = useStore((state) => state.setSelectedFloorId);
     const [rulerHover, setRulerHover] = useState(null); // { point, kind, axis } snapped ruler point under the mouse
     const [endDrag, setEndDrag] = useState(null); // { id, which, point, kind, axis } while a measure end is dragged: preview
     // the selected measure (mine or saved: anyone can edit it): its ends get drag handles (PlanMeasures.jsx)
@@ -193,23 +211,38 @@ export default function PlanView2D() {
         setToolSeen(planTool);
         setChain(null);
         setHover(null);
+        setFloorPoints([]);
     }
 
-    // Esc: ends the wall chain, else leaves the wall tool, else deselects the wall
+    // Esc: ends the wall chain / drops the floor being drawn, else leaves the tool, else deselects the wall.
+    // Enter: closes the floor being drawn.
     useEffect(() => {
         const onKey = (event) => {
+            const isTyping = ['INPUT', 'TEXTAREA'].includes(event.target.tagName) || event.target.isContentEditable;
+            if ((event.key === 'Delete' || event.key === 'Backspace') && isFloorTool && selectedFloorId && !isTyping) {
+                event.preventDefault();
+                useStore.getState().deleteFloor(selectedFloorId);
+                return;
+            }
+            if (event.key === 'Enter' && isFloorTool && floorPoints.length > 0) {
+                const next = addFloor(activeLevel(useStore.getState().plan), floorPoints); // as closeFloor (below)
+                if (next) { setActiveLevel(next); setFloorPoints([]); }
+                return;
+            }
             if (event.key !== 'Escape') return;
             if (underlayTool) {
                 if (toolPoints.length > 0 || lengthAsk) { setToolPoints([]); setLengthAsk(null); } else setUnderlayTool(null);
                 return;
             }
             if (chain) setChain(null);
+            else if (floorPoints.length > 0) setFloorPoints([]);
+            else if (selectedFloorId) setSelectedFloorId(null);
             else if (isDrawing) setPlanTool('select');
             else setSelectedWallId(null);
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [chain, isDrawing, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]);
+    }, [chain, isDrawing, isFloorTool, floorPoints, selectedFloorId, setSelectedFloorId, setActiveLevel, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]);
 
     // UNDERLAY TOOL point under the pointer (screen point): the second point of 'move' snaps to a wall
     // corner, else to the grid snap step; the other points pick a spot of the drawing: free, or on a DXF's
@@ -294,6 +327,54 @@ export default function PlanView2D() {
         return { point: snappedWorld(point), kind, guides: [] };
     };
 
+    // Floor tool point under the pointer (screen point): wall face corners, the floor's own points and other
+    // floors' vertices (orange ring), then a DXF end point, wall faces / floor edges, a DXF line (marks like
+    // the wall tool's CAD snap), else alignment with those vertices and the grid snap step.
+    // skipFloorId: a floor that is not a snap target (the one whose vertex is being dragged)
+    const floorSnap = (point, skipFloorId = null) => {
+        const raw = toWorld(view, size.w, size.h, point.x, point.y);
+        const walls = rulerTargets(level, []); // wall face corners and faces (net of the walls), opening jambs
+        const floors = level.floors.filter((floor) => floor.id !== skipFloorId);
+        const floorEdges = floors.flatMap((floor) => floor.points.map((p, i) => [p, floor.points[(i + 1) % floor.points.length]]));
+        const vertices = [...floorPoints, ...walls.vertices, ...floors.flatMap((floor) => floor.points)];
+        const snap = snapWithUnderlay(raw, { vertices, segments: [...walls.segments, ...floorEdges] }, cadTargets, VERTEX_SNAP_RADIUS / view.scale);
+        if (snap.kind === 'vertex' && !snap.cad) return { point: snap.point, kind: 'vertex', guides: [], raw };
+        if (snap.kind) return { point: snap.point, kind: 'cad', cadKind: snap.kind, guides: [], raw };
+        const aligned = alignPoint(snappedWorld(point), vertices, ALIGN_SNAP_RADIUS / view.scale);
+        return { point: aligned.point, kind: useStore.getState().settings.gridSnap ? 'grid' : 'free', guides: aligned.guides, raw };
+    };
+
+    // Closes the floor being drawn: added if valid (one undo step), else kept on screen (red) to fix or Esc
+    const closeFloor = (points) => {
+        const next = addFloor(level, points);
+        if (next == null) return;
+        setActiveLevel(next);
+        setFloorPoints([]);
+    };
+
+    // Floor tool click: a new vertex; on the first point (or the last one again) the polygon closes
+    const placeFloorPoint = ({ point, raw, kind }) => {
+        // no polygon being drawn: a click inside a floor (not on a snap target) selects it; with a floor
+        // selected, a click on empty space only deselects
+        if (floorPoints.length === 0) {
+            const hit = kind === 'vertex' || kind === 'cad' ? null : floorAt(level, raw);
+            if (hit) return setSelectedFloorId(hit.id);
+            if (selectedFloorId) return setSelectedFloorId(null);
+        }
+        const last = floorPoints[floorPoints.length - 1];
+        if (floorPoints.length >= 3 && (samePoint(point, floorPoints[0]) || samePoint(point, last))) return closeFloor(floorPoints);
+        if (last && samePoint(point, last)) {
+            // double click on the first point: fill the room around it (raw pointer: never on a face); else nothing to close
+            if (floorPoints.length === 1) {
+                const next = fillRoom(level, raw);
+                if (next) setActiveLevel(next);
+                setFloorPoints([]);
+            }
+            return;
+        }
+        setFloorPoints([...floorPoints, point]);
+    };
+
     // Ruler point under the pointer (screen point): snapped (planView.rulerSnap2D), on the grid when it
     // snaps to nothing, then locked to the X / Z axis from the first point unless `free` (Shift)
     // `from`: the fixed point the axis lock starts from ([x, z]; default: the ruler's first point);
@@ -352,6 +433,11 @@ export default function PlanView2D() {
             return;
         }
         const dataset = event.target.dataset ?? {};
+        // floor tool: the selected floor's vertex handle (data-floor-vertex) starts a vertex drag
+        if (isFloorTool && dataset.floorVertex != null) {
+            gestureRef.current = { kind: 'floorVertex', floorId: selectedFloorId, index: Number(dataset.floorVertex) };
+            return;
+        }
         // ruler: only measure labels are picked (corners, walls and openings are snap targets)
         const { vertex, wallId, openingId, measureId, measureEnd, detected } = isDrawing || underlayTool ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
         // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
@@ -374,21 +460,24 @@ export default function PlanView2D() {
         const previous = pointers.get(event.pointerId);
         if (size == null || view == null) return;
         const point = localPoint(event);
-        if (isDrawing && pointers.size <= 1) setHover(snapPoint(point)); // preview of the next point (mouse)
+        const dragged = gestureRef.current?.kind === 'floorVertex' ? gestureRef.current.floorId : null; // not its own snap target
+        if (isDrawing && pointers.size <= 1) setHover(isFloorTool ? floorSnap(point, dragged) : snapPoint(point)); // preview of the next point (mouse)
         if (isRuler && pointers.size <= 1) setRulerHover(rulerPoint(point, event.shiftKey));
         if (underlayTool && pointers.size <= 1) setToolHover(underlayToolPoint(point));
         if (previous == null) return;
         const gesture = gestureRef.current;
-        if (pointers.size === 1 && gesture?.kind === 'vertex') {
+        if (pointers.size === 1 && gesture?.kind === 'floorVertex') {
+            const { point: to, guides } = floorSnap(point, gesture.floorId);
+            const next = moveFloorVertex(level, gesture.floorId, gesture.index, to);
+            if (next) setDraft({ level: next, point: to, guides, isFloor: true }); // invalid (edges crossing): keep the last valid one
+        } else if (pointers.size === 1 && gesture?.kind === 'vertex') {
             // align with the other corners (never with the dragged one's own start position)
             const targets = levelVertices(level).filter((v) => v[0] !== gesture.from[0] || v[1] !== gesture.from[1]);
             // a DXF underlay's end point / line wins (moving a corner onto the drawing)
             const cad = cadSnap(point);
             const { point: to, guides } = cad ? { point: cad.point, guides: [] } : alignPoint(snappedWorld(point), targets, ALIGN_SNAP_RADIUS / view.scale);
             const next = moveVertex(level, gesture.from, to);
-            // preview floors too (rebuilt like on commit; preview ids, never saved)
-            let previewId = 0; // unique keys for the preview floors
-            if (next) setDraft({ level: rebuildFloors(next, () => `preview-floor-${previewId++}`).level, point: to, guides }); // invalid: keep the last valid one
+            if (next) setDraft({ level: next, point: to, guides }); // invalid: keep the last valid one
         } else if (pointers.size === 1 && gesture?.kind === 'measureEnd') {
             if (Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
             const item = gesture.moved && measureList.find((entry) => entry.id === gesture.id);
@@ -434,7 +523,7 @@ export default function PlanView2D() {
         pointersRef.current.delete(event.pointerId);
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
-        if (gesture.kind === 'vertex' && draft) setActiveLevel(draft.level);
+        if ((gesture.kind === 'vertex' || gesture.kind === 'floorVertex') && draft) setActiveLevel(draft.level);
         if (gesture.kind === 'measureEnd' && endDrag) {
             const item = measureList.find((entry) => entry.id === endDrag.id);
             const y = endDrag.which === 'a' ? item.ya : item.yb; // the end keeps its height
@@ -456,6 +545,7 @@ export default function PlanView2D() {
             if (underlayTool) placeUnderlayPoint(underlayToolPoint(localPoint(event)));
             else if (gesture.measureId) selectMeasure(current.selectedId === gesture.measureId ? null : gesture.measureId);
             else if (isRuler) placeRulerPoint(rulerPoint(localPoint(event), event.shiftKey));
+            else if (isFloorTool) placeFloorPoint(floorSnap(localPoint(event)));
             else if (isDrawing) placePoint(snapPoint(localPoint(event)));
             else if (gesture.detected != null) useStore.getState().toggleDetectedWall(Number(gesture.detected)); // automatic walls preview
             else if (gesture.shift && gesture.wallId) useStore.getState().toggleSelectedWall(gesture.wallId);
@@ -521,7 +611,7 @@ export default function PlanView2D() {
                     <path className="plan-grid-major" d={gridPath(view, size.w, size.h, steps.major)} vectorEffect="non-scaling-stroke" />
 
                     {shown.floors.map((floor) => (
-                        <polygon key={floor.id} className="plan-floor" points={floor.points.join(' ')} vectorEffect="non-scaling-stroke" />
+                        <polygon key={floor.id} className={isFloorTool && floor.id === selectedFloorId ? 'plan-floor is-selected' : 'plan-floor'} points={floor.points.join(' ')} vectorEffect="non-scaling-stroke" />
                     ))}
 
                     {shown.walls.map((wall) => {
@@ -554,6 +644,26 @@ export default function PlanView2D() {
                     {/* wall tool: the wall being drawn (dashed, default thickness) and the snapped point */}
                     {isDrawing && chain && hover && previewWall(shown, chain, hover.point, wallJustify)}
                     {isDrawing && chain && <circle className="plan-chain-start" cx={chain[0]} cy={chain[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />}
+                    {/* floor tool: vertex handles of the selected floor (not while a polygon is being drawn) */}
+                    {isFloorTool && floorPoints.length === 0 && shown.floors.find((floor) => floor.id === selectedFloorId)?.points.map((p, index) => (
+                        <g key={`fv${index}`}>
+                            <circle className="plan-floor-handle-hit" data-floor-vertex={index} cx={p[0]} cy={p[1]} r={VERTEX_HIT_RADIUS / view.scale} />
+                            <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
+                        </g>
+                    ))}
+                    {/* floor tool: the polygon being drawn, closed through the pointer (red when addFloor refuses it) */}
+                    {isFloorTool && floorPoints.length > 0 && (() => {
+                        const points = hover ? [...floorPoints, hover.point] : floorPoints;
+                        const isInvalid = points.length >= 3 && addFloor(shown, points, 'preview') == null;
+                        return (
+                            <>
+                                <polygon className={isInvalid ? 'plan-floor-preview is-invalid' : 'plan-floor-preview'} points={points.join(' ')} vectorEffect="non-scaling-stroke" />
+                                {floorPoints.map((p, index) => (
+                                    <circle key={index} className={index === 0 ? 'plan-chain-start' : 'plan-floor-point'} cx={p[0]} cy={p[1]} r={(index === 0 ? VERTEX_RADIUS : VERTEX_RADIUS / 2) / view.scale} vectorEffect="non-scaling-stroke" />
+                                ))}
+                            </>
+                        );
+                    })()}
                     {/* alignment guides: dashed lines from the corner the point lines up with */}
                     {(draft?.guides ?? (isDrawing ? hover?.guides : null) ?? []).map((guide, index) => (
                         <line key={index} className="plan-guide" x1={guide.from[0]} y1={guide.from[1]} x2={guide.to[0]} y2={guide.to[1]} vectorEffect="non-scaling-stroke" />
@@ -589,6 +699,7 @@ export default function PlanView2D() {
 
             {/* wall tool: live length and angle of the wall being drawn */}
             {isReady && isDrawing && chain && hover && lengthLabel(view, size, { a: chain, b: hover.point })}
+            {isReady && isFloorTool && floorPoints.length > 0 && hover && lengthLabel(view, size, { a: floorPoints[floorPoints.length - 1], b: hover.point })}
             {isReady && isDrawing && chain && hover && (chainPrev
                 ? angleIndicator(view, size, chain, chainPrev, hover.point, 180)                    // between walls
                 : angleIndicator(view, size, chain, [chain[0] + 1, chain[1]], hover.point, 0))}     // from the horizontal
@@ -596,11 +707,11 @@ export default function PlanView2D() {
             {isReady && slide && openingDistances(view, size, slide.level, slide.wallId, slide.openingId)}
             {isReady && !slide && selectedOpening && !isDrawing && openingDistances(view, size, level, selectedOpening.wallId, selectedOpening.openingId)}
             {/* corner drag: angle between the dragged corner's two walls */}
-            {isReady && draft && cornerAngle(view, size, draft)}
+            {isReady && draft && !draft.isFloor && cornerAngle(view, size, draft)}
 
             {/* length labels (screen space, constant size): the selected wall, and the walls of the dragged corner */}
             {isReady && shown.walls
-                .filter((wall) => selectedWallIds.includes(wall.id) || (draft && (samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))))
+                .filter((wall) => selectedWallIds.includes(wall.id) || (draft && !draft.isFloor && (samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))))
                 .map((wall) => lengthLabel(view, size, wall))}
 
         </svg>
