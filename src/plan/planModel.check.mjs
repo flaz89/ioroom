@@ -230,4 +230,42 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
     assert.equal(removeFloor(square, 'f1').floors.length, 0);
 }
 
+// T joint on an UNSPLIT wall: a partition ending on another wall's line (mid-length) butts on its face
+{
+    const through = { id: 'through', a: [0, 0], b: [6, 0], thickness: 0.2, align: 'center' };   // faces z = ±0.1
+    const branch = { id: 'branch', a: [3, 2], b: [3, 0], thickness: 0.1, align: 'center' };     // ends on its line
+    const f = wallFootprint(branch, [through, branch]);
+    assert.ok(Math.abs(f.b[1] - 0.1) < 1e-9 && Math.abs(f.bOut[1] - 0.1) < 1e-9, `${f.b} ${f.bOut}`); // stops on the near face
+    assert.equal(f.bJoined, true);
+    assert.equal(f.aJoined, false);
+    const t = wallFootprint(through, [through, branch]);                                           // the through wall is whole
+    assert.ok(Math.abs(t.a[0]) < 1e-9 && Math.abs(t.b[0] - 6) < 1e-9 && !t.aJoined && !t.bJoined);
+    // an end INSIDE the thickness, off the line (a wall traced to the axis, the other drawn on a face): same
+    const offLine = { ...branch, b: [3, 0.05] };
+    const fo = wallFootprint(offLine, [through, offLine]);
+    assert.ok(Math.abs(fo.b[1] - 0.1) < 1e-9 && Math.abs(fo.bOut[1] - 0.1) < 1e-9 && fo.bJoined, `${fo.b} ${fo.bOut}`);
+    // a side-aligned through wall (its line is the face on +z, thickness towards -z): a branch from +z stops on the line
+    const side = { id: 'side', a: [0, 0], b: [6, 0], thickness: 0.2 };
+    const fs = wallFootprint(branch, [side, branch]);
+    assert.ok(Math.abs(fs.b[1]) < 1e-9 && Math.abs(fs.bOut[1]) < 1e-9, `${fs.b} ${fs.bOut}`);
+}
+
+// FILL A ROOM from footprints: walls that only overlap / touch (no shared corners), a hairline gap, a stub
+{
+    const c = (id, a, b, thickness = 0.2) => ({ id, a, b, thickness, align: 'center' });
+    // a 4 x 3 room (axes), walls running past each other at the corners (crossing, no shared vertices)
+    const crossing = { floors: [], walls: [c('n', [-0.5, 0], [4.5, 0]), c('s', [-0.5, 3], [4.5, 3]), c('w', [0, -0.5], [0, 3.5]), c('e', [4, -0.5], [4, 3.5])] };
+    const room = fillRoom(crossing, [2, 1.5], 'f');
+    assert.ok(Math.abs(polygonArea(room.floors[0].points) - 3.8 * 2.8) < 1e-6, `${polygonArea(room.floors[0].points)}`);
+    // the east wall drawn 2 cm short of the north and south walls' faces: still closed (ROOM_GAP)
+    const gap = { floors: [], walls: [c('n', [-0.1, 0], [4.1, 0]), c('s', [-0.1, 3], [4.1, 3]), c('w', [0, 0], [0, 3]), c('e', [4, 0.12], [4, 2.88])] };
+    assert.ok(fillRoom(gap, [2, 1.5], 'f'));
+    // a stub sticking into the room: the floor goes around it (area minus the stub's footprint)
+    const stub = { ...crossing, walls: [...crossing.walls, c('stub', [2, 0], [2, 1], 0.1)] };
+    assert.ok(Math.abs(polygonArea(fillRoom(stub, [1, 2], 'f').floors[0].points) - (3.8 * 2.8 - 0.1 * 0.93)) < 1e-6); // its free end run on by ROOM_GAP
+    // inside a wall, or outside the building: nothing
+    assert.equal(fillRoom(crossing, [0, 1.5]), null);
+    assert.equal(fillRoom(crossing, [10, 10]), null);
+}
+
 console.log('planModel: ok');

@@ -97,6 +97,19 @@ export const svg = {
         <path d="M2.5 8h15M2.5 12h15M8 4v4M13 8v4M8 12v4" stroke="currentColor" strokeWidth="1.4"/>
     </svg>,
 
+    // trace: a wall's two faces with a pointer on one of them (assisted wall tracing)
+    trace: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 5h16M2 9h16" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M9 9.5l1.2 8 2-2.6 3.1 2.3 1.2-1.6-3.1-2.3 3-1.4z" fill="currentColor"/>
+    </svg>,
+
+    // opening: a wall with a door leaf and its swing arc (door / window tool)
+    opening: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 16h4M14 16h4" stroke="currentColor" strokeWidth="2.2"/>
+        <path d="M6 16V8" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M6 8a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6"/>
+    </svg>,
+
     // floor: tiles seen in perspective (floor tool)
     floor: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M5 6h10l3 9H2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

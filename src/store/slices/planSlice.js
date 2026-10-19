@@ -28,6 +28,16 @@ export const createPlanSlice = (set, get) => ({
         set({ surfaces: remaining, selectedWallIds: [] });
     },
 
+    // A level edit that also removed walls (door / window tool: two walls merged into one): the removed
+    // walls' face materials go with them (no orphans in the bill of quantities); one undo step
+    setActiveLevelRemoving: (level, removedWallIds) => {
+        get().setActiveLevel(level);
+        if (removedWallIds.length === 0) return;
+        const remaining = { ...get().surfaces };
+        removedWallIds.forEach((wallId) => wallFaceIds(wallId).forEach((faceId) => delete remaining[faceId]));
+        set({ surfaces: remaining });
+    },
+
     // Deletes a floor and its material (no orphan material in the bill of quantities): one undo step
     deleteFloor: (floorId) => {
         get().setActiveLevel(removeFloor(activeLevel(get().plan), floorId));

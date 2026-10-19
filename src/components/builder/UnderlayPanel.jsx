@@ -4,6 +4,7 @@ import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
 import { UNDERLAY_DEFAULTS, activeLevel, levelBounds, nominalMetersPerPixel } from '../../plan/planModel';
 import { UNDERLAY_ACCEPT, prepareUnderlay, uploadUnderlay, useUnderlayVectors } from '../../plan/underlayFile';
+import { SYNC_HOST, getRoomId } from '../../sync/roomSync';
 import { placeDetectedWalls, wallCandidates } from '../../plan/dxfWalls';
 import { UNIT_METERS } from '../../plan/dxfUnderlay';
 import { usePanelInViewport } from '../ui/usePanelInViewport';
@@ -92,7 +93,12 @@ export default function UnderlayPanel() {
         setStatus('loading');
         try {
             const prepared = await prepareUnderlay(file);
-            const url = await uploadUnderlay(prepared.blob);
+            // LOCAL MODE (no ?room: nothing is shared or saved): the file stays in this tab as an object URL,
+            // never uploaded, gone on reload (testing drawings without filling the server). In a room it is
+            // uploaded: the other devices need to fetch it. (Switching room reloads the page: a blob URL never
+            // reaches a room.)
+            const isLocal = !SYNC_HOST || getRoomId() == null; // the same test as App.jsx's connectRoom
+            const url = isLocal ? URL.createObjectURL(prepared.blob) : await uploadUnderlay(prepared.blob);
             // a replaced underlay keeps its place when it is the same kind of file (a revised drawing); a new
             // DXF goes on the grid's origin (its drawing's center), an image / PDF on the plan's center
             const keep = underlay?.kind === prepared.kind || (underlay?.kind !== 'dxf' && prepared.kind !== 'dxf' && underlay != null);

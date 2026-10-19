@@ -64,6 +64,9 @@ function holedFace(t0, t1, h, rects, point, normal, uv) {
             quads.push(quad(corners.map(([t, y]) => point(t, y)), normal, corners.map(([t, y]) => uv(t, y))));
         }
     }
+    // a face with no length (a wall shorter than its joints take: t1 <= t0) has nothing to draw: null, the
+    // caller drops it (mergeGeometries([]) would throw and stop the whole room)
+    if (quads.length === 0) return null;
     return quads.length === 1 ? quads[0] : mergeGeometries(quads);
 }
 
@@ -110,7 +113,7 @@ function wallGeometries(wall, level, filled) {
         );
         if (!filled.has(opening.id)) faces.push({ part: 'edge', vertical: false, geometry: flat(bottom, 1) });
     }
-    return faces;
+    return faces.filter((face) => face.geometry != null); // degenerate faces (holedFace null) are skipped
 }
 
 /*

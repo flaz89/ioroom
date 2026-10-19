@@ -20,6 +20,7 @@
 export const DEFAULT_WALL_HEIGHT = 2.7;
 export const DEFAULT_THICKNESS = 0.15;
 const JOIN_EPSILON = 1e-4; // meters: end points closer than this are the same corner
+const T_JOINT_SIN = Math.sin((10 * Math.PI) / 180); // walls closer than this to parallel never make a T joint
 export const MIN_WALL_LENGTH = 0.05; // meters: editing never makes a wall shorter than this
 
 // The test room of the first versions: 6 x 6 m, open towards +Z. Same face ids as before (materials kept).
@@ -104,6 +105,10 @@ function sidesAt(wall, end) {
 * (another wall leaves it in the opposite direction: a split wall, a T or X junction) is cut square on both
 * faces: the through walls stay one straight wall and a branch butts against their faces (mitering the
 * through wall with the branch left a triangular hole on the far face).
+* T JOINT ON AN UNSPLIT WALL: an end with no other wall at that corner but lying WITHIN another wall's
+* thickness (its line, a face or in between: as closedLoops), away from that wall's ends (a traced or detected
+* partition, a door's wall run on to a wall, a wall drawn up to a face), butts against that wall's near face:
+* both faces stop there, no end face (joined). The wall it meets stays whole.
 */
 export function wallFootprint(wall, walls) {
     const corner = (end) => {
@@ -128,7 +133,29 @@ export function wallFootprint(wall, walls) {
             left = meet(mine.left, next, next.right);
             right = meet(mine.right, previous, previous.left);
         }
-        return { inner: mine.leftIsInner ? left : right, outer: mine.leftIsInner ? right : left, joined: others.length > 0 };
+        let joined = others.length > 0;
+        if (!joined) {
+            // T joint on an unsplit wall: the end within another wall's thickness, strictly between its ends
+            const through = walls.find((item) => {
+                if (item === wall) return false;
+                const { dir, normal, length } = wallFrame(item);
+                const { inner, outer } = faceOffsets(item);
+                const rel = sub(end, item.a);
+                const t = dotp(rel, dir), across = dotp(rel, normal);
+                return across >= Math.min(inner, outer) - JOIN_EPSILON && across <= Math.max(inner, outer) + JOIN_EPSILON
+                    && t > JOIN_EPSILON && t < length - JOIN_EPSILON && Math.abs(cross(dir, mine.away)) > T_JOINT_SIN;
+            });
+            if (through) {
+                const { dir, normal } = wallFrame(through);
+                const { inner, outer } = faceOffsets(through);
+                const offset = dotp(mine.away, normal) > 0 ? Math.max(inner, outer) : Math.min(inner, outer); // the face towards this wall
+                const base = add(through.a, scale(normal, offset));
+                left = intersect(square(mine.left), mine.away, base, dir) ?? left;
+                right = intersect(square(mine.right), mine.away, base, dir) ?? right;
+                joined = true;
+            }
+        }
+        return { inner: mine.leftIsInner ? left : right, outer: mine.leftIsInner ? right : left, joined };
     };
     const atA = corner(wall.a), atB = corner(wall.b);
     return { a: atA.inner, b: atB.inner, aOut: atA.outer, bOut: atB.outer, aJoined: atA.joined, bJoined: atB.joined };
@@ -761,16 +788,109 @@ export function floorAt(level, point) {
 
 /*
 * FILL A ROOM (floor tool, double click inside a room): the level with a new floor covering the clear area
-* (roomPolygon: net of the walls) of the smallest closed wall perimeter (closedLoops) around `point`.
-* Returns null when no closed perimeter holds the point, or when a floor already covers it (no double
-* floors in the bill of quantities).
+* around `point` (roomAt: bounded by the walls' footprints). Returns null when the point is not enclosed
+* (or is inside a wall), or when a floor already covers it (no double floors in the bill of quantities).
 */
 export function fillRoom(level, point, id = newFloorId()) {
     if (level.floors.some((floor) => pointInPolygon(point, floor.points))) return null;
-    const rooms = closedLoops(level.walls)
-        .map((loop) => roomPolygon(loop, level.walls))
-        .filter((points) => pointInPolygon(point, points));
-    if (rooms.length === 0) return null;
-    const smallest = rooms.reduce((best, points) => (polygonArea(points) < polygonArea(best) ? points : best));
-    return addFloor(level, smallest, id);
+    const room = roomAt(level.walls, point);
+    return room && addFloor(level, room, id);
+}
+
+const ROOM_GAP = 0.03;    // meters: free wall ends are run on by this much, closing hairline gaps between walls
+const ROOM_GRID = 1e-6;   // meters: arrangement vertices closer than this are one
+
+/*
+* The CLEAR AREA around `point`: the smallest region enclosed by the walls' FOOTPRINTS (wallFootprint: mitered
+* corners, T joints on faces) that holds it, as a polygon [[x, z], ...] (collinear points dropped), or null.
+* Robust to walls that only touch or overlap (traced, merged, drawn up to a face: no shared corner needed):
+* every footprint edge is cut where it meets the others (a planar ARRANGEMENT) and the faces of that planar
+* graph are walked; the room is the smallest bounded face holding the point. Free wall ends are run on by
+* ROOM_GAP so that walls drawn a hair apart still close the room. Openings do not cut footprints: a door
+* keeps its room closed.
+* ponytail: O(n²) edge intersections (fine for a few hundred walls, run on a click).
+*/
+export function roomAt(walls, point) {
+    const edges = [];
+    for (const wall of walls) {
+        const f = wallFootprint(wall, walls);
+        const { dir } = wallFrame(wall);
+        const run = (p, sign, joined) => (joined ? p : add(p, scale(dir, sign * ROOM_GAP)));
+        const quad = [run(f.a, -1, f.aJoined), run(f.b, 1, f.bJoined), run(f.bOut, 1, f.bJoined), run(f.aOut, -1, f.aJoined)];
+        if (pointInPolygon(point, quad)) return null; // inside a wall
+        quad.forEach((p, i) => edges.push([p, quad[(i + 1) % 4]]));
+    }
+    // cut every edge where the others meet it (crossings, touching ends, collinear overlaps)
+    const pieces = [];
+    for (const [i, [p, q]] of edges.entries()) {
+        const d = sub(q, p);
+        const lengthSq = dotp(d, d);
+        if (lengthSq < 1e-12) continue;
+        const cuts = [0, 1];
+        for (const [j, [r, s]] of edges.entries()) {
+            if (i === j) continue;
+            const e = sub(s, r);
+            const den = cross(d, e);
+            if (Math.abs(den) > 1e-12) {
+                const t = cross(sub(r, p), e) / den, u = cross(sub(r, p), d) / den;
+                if (t > 1e-9 && t < 1 - 1e-9 && u > -1e-9 && u < 1 + 1e-9) cuts.push(t);
+            } else if (Math.abs(cross(sub(r, p), d)) < 1e-9) {
+                // collinear: the other's ends that fall inside this edge
+                for (const x of [r, s]) {
+                    const t = dotp(sub(x, p), d) / lengthSq;
+                    if (t > 1e-9 && t < 1 - 1e-9) cuts.push(t);
+                }
+            }
+        }
+        cuts.sort((x, y) => x - y);
+        for (let k = 1; k < cuts.length; k++) {
+            if (cuts[k] - cuts[k - 1] > 1e-9) pieces.push([add(p, scale(d, cuts[k - 1])), add(p, scale(d, cuts[k]))]);
+        }
+    }
+    // planar graph: merged vertices, each piece once, both directions
+    const keyOf = (p) => `${Math.round(p[0] / ROOM_GRID)}|${Math.round(p[1] / ROOM_GRID)}`;
+    const vertices = new Map(); // key -> { p, out: [neighbor keys] }
+    const seen = new Set();
+    for (const [p, q] of pieces) {
+        const kp = keyOf(p), kq = keyOf(q);
+        if (kp === kq) continue;
+        const id = kp < kq ? `${kp}#${kq}` : `${kq}#${kp}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        for (const [k, x] of [[kp, p], [kq, q]]) if (!vertices.has(k)) vertices.set(k, { p: x, out: [] });
+        vertices.get(kp).out.push(kq);
+        vertices.get(kq).out.push(kp);
+    }
+    // outgoing edges sorted counter-clockwise by angle
+    const angle = (from, to) => Math.atan2(vertices.get(to).p[1] - vertices.get(from).p[1], vertices.get(to).p[0] - vertices.get(from).p[0]);
+    for (const [k, v] of vertices) v.out.sort((x, y) => angle(k, x) - angle(k, y));
+    // face walk: from u -> v, go on along the edge just clockwise of v -> u (the face stays on the left)
+    const used = new Set();
+    let best = null;
+    for (const [start, v0] of vertices) {
+        for (const first of v0.out) {
+            if (used.has(`${start}>${first}`)) continue;
+            const loop = [];
+            let u = start, v = first, guard = 0;
+            while (!used.has(`${u}>${v}`) && guard++ < 100000) {
+                used.add(`${u}>${v}`);
+                loop.push(vertices.get(u).p);
+                const around = vertices.get(v).out;
+                const back = around.indexOf(u);
+                const next = around[(back - 1 + around.length) % around.length];
+                u = v;
+                v = next;
+            }
+            if (loop.length < 3 || signedArea(loop) <= 1e-9 || !pointInPolygon(point, loop)) continue;
+            const area = polygonArea(loop);
+            if (best == null || area < best.area) best = { loop, area };
+        }
+    }
+    if (best == null) return null;
+    // clean: spikes (dangling edges walked both ways) and collinear points
+    const clean = removeSpikes(best.loop);
+    return clean.filter((p, i) => {
+        const prev = clean[(i - 1 + clean.length) % clean.length], next = clean[(i + 1) % clean.length];
+        return Math.abs(cross(sub(p, prev), sub(next, p))) > 1e-9;
+    });
 }

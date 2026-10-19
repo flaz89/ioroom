@@ -11,6 +11,7 @@ import RoomUsers from "./room-users/RoomUsers";
 import SnapControl from "./snap-control/SnapControl";
 import { SYNC_HOST, isAdmin } from "../../sync/roomSync";
 import UnderlayPanel from "../builder/UnderlayPanel";
+import { activeLevel } from "../../plan/planModel";
 
 // Wall tool thickness side (store wallJustify), seen along the drawing direction
 const JUSTIFY_STEPS = ['left', 'center', 'right'];
@@ -19,6 +20,14 @@ const JUSTIFY_TITLES = {
     left: 'Draw walls: thickness on the left of the drawing direction',
     center: 'Draw walls: the line is the wall axis (half thickness each side)',
     right: 'Draw walls: thickness on the right of the drawing direction'
+};
+
+// Door / window tool (store openingType)
+const OPENING_STEPS = ['door', 'window'];
+const OPENING_LABELS = { door: 'D', window: 'W' };
+const OPENING_TITLES = {
+    door: 'Doors: click in a gap between two walls, or on a wall between the drawing\'s jambs',
+    window: 'Windows: click on a wall between the drawing\'s jambs, or in a gap between two walls'
 };
 
 export default function LeftToolBar() {
@@ -49,6 +58,10 @@ export default function LeftToolBar() {
     const setPlanTool = useStore((state) => state.setPlanTool);
     const wallJustify = useStore((state) => state.wallJustify);
     const setWallJustify = useStore((state) => state.setWallJustify);
+    const openingType = useStore((state) => state.openingType);
+    const setOpeningType = useStore((state) => state.setOpeningType);
+    // assisted tracing needs the drawing's lines: a DXF underlay (later also vector PDFs, tappa 4c)
+    const hasVectorUnderlay = useStore((state) => activeLevel(state.plan).underlay?.kind === 'dxf');
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -76,13 +89,30 @@ export default function LeftToolBar() {
                         onToggle={() => setPlanTool(planTool === 'wall' ? 'select' : 'wall')}
                         onPick={(justify) => { setWallJustify(justify); setPlanTool('wall'); }}
                     />
+                    {/* assisted walls: point at a wall face of the drawing (plan/traceWall.js) */}
+                    {hasVectorUnderlay && <CircleButton svg={svg.trace} isActive={planTool === 'trace'} title="Trace walls on the drawing"
+                        onClick={() => setPlanTool(planTool === 'trace' ? 'select' : 'trace')} />}
+                    {/* doors / windows on the plan's walls (plan/placeOpening.js); hover picks door or window */}
+                    <SnapControl
+                        icon={svg.opening}
+                        label="Doors and windows"
+                        enabled={planTool === 'opening'}
+                        step={openingType}
+                        steps={OPENING_STEPS}
+                        labels={OPENING_LABELS}
+                        titles={OPENING_TITLES}
+                        side="right"
+                        onToggle={() => setPlanTool(planTool === 'opening' ? 'select' : 'opening')}
+                        onPick={(type) => { setOpeningType(type); setPlanTool('opening'); }}
+                    />
                     {/* draw floors (polygons snapped to the wall faces, PlanView2D.jsx) */}
                     <CircleButton svg={svg.floor} isActive={planTool === 'floor'} title="Draw floors"
                         onClick={() => setPlanTool(planTool === 'floor' ? 'select' : 'floor')} />
                 </div>}
 
-                {/* floor plan underlay (builder, 2D and 3D views): uploads need the owner's token */}
-                {isBuilder && SYNC_HOST && isAdmin && <div className="scene-settings">
+                {/* floor plan underlay (builder, 2D and 3D views, owner only): uploaded in a room, kept in the
+                    browser in local mode (UnderlayPanel.jsx) */}
+                {isBuilder && isAdmin && <div className="scene-settings">
                     <UnderlayPanel />
                 </div>}
 
