@@ -182,6 +182,25 @@ export function levelBounds(level) {
     return { min, max, center, radius: Math.hypot(max[0] - center[0], max[1] - center[1]) };
 }
 
+/*
+* Bounds of everything the project shows: the plan (levelBounds) plus its underlay drawing when there is one
+* (its rectangle in plan meters, turned by its rotation). Same shape as levelBounds. Sizes the 3D view's
+* zoom-out limit and the floor grid, so a big drawing or building is never cut off.
+*/
+export function sceneBounds(level) {
+    const plan = levelBounds(level);
+    const u = level.underlay;
+    if (!u?.width || !u?.height || !u?.metersPerPixel) return plan;
+    const hw = (u.width * u.metersPerPixel) / 2, hh = (u.height * u.metersPerPixel) / 2;
+    const c = Math.cos(u.rotation ?? 0), s = Math.sin(u.rotation ?? 0);
+    const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, z]) => [u.center[0] + x * c - z * s, u.center[1] + x * s + z * c]);
+    const points = [plan.min, plan.max, ...corners];
+    const min = [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1]))];
+    const max = [Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1]))];
+    const center = scale(add(min, max), 0.5);
+    return { min, max, center, radius: Math.hypot(max[0] - center[0], max[1] - center[1]) };
+}
+
 // Distinct wall end points of a level ([x, z]); joined ends count once (corners of the plan editor)
 export function levelVertices(level) {
     const vertices = [];

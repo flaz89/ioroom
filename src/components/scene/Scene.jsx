@@ -1,10 +1,12 @@
 import './scene.css'
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from '@react-three/drei';
 import SceneGrid from './helpers/SceneGrid';
+import SmoothWheelZoom from './controls/SmoothWheelZoom';
+import { activeLevel, sceneBounds } from '../../plan/planModel';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
 import PerfSampler from './perf/PerfSampler';
@@ -39,6 +41,10 @@ export default function Scene({xrStore}) {
     const setReadyBackend = useStore((state) => state.setReadyBackend);
 
     const isGridVisible = useStore((state) => state.grid.visible);
+    // ZOOM-OUT LIMIT from the project's size (plan + underlay drawing): the whole of it fits in the view
+    // (about 2.5 x its radius away), never less than the first versions' 20 m
+    const level = useStore((state) => activeLevel(state.plan));
+    const maxDistance = useMemo(() => Math.max(20, sceneBounds(level).radius * 2.5), [level]);
     const isPerfVisible = useStore((state) => state.perfOpen);
     const isWireframe = useStore((state) => state.wireframe);
     const deselectObject = useStore((state) => state.deselectObject);
@@ -94,11 +100,13 @@ export default function Scene({xrStore}) {
                     dampingFactor={ .2 }
                     maxPolarAngle={ Math.PI/2 }
                     minDistance={ 2 }
-                    maxDistance={ 20 }
+                    maxDistance={ maxDistance }
                     onStart={onOrbitStart}
                     onChange={onOrbitChange}
                     onEnd={onOrbitEnd}
                 />
+                {/* wheel zoom with damping (OrbitControls' own wheel zoom jumps) */}
+                <SmoothWheelZoom />
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />

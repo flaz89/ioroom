@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -266,6 +266,14 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
     // inside a wall, or outside the building: nothing
     assert.equal(fillRoom(crossing, [0, 1.5]), null);
     assert.equal(fillRoom(crossing, [10, 10]), null);
+}
+
+// scene bounds: the plan alone, or grown to hold its underlay drawing (20 x 10 m, turned 90°, centered at x = 30)
+{
+    const plain = sceneBounds(level);
+    assert.deepEqual(plain, levelBounds(level));
+    const drawn = sceneBounds({ ...level, underlay: { width: 2000, height: 1000, metersPerPixel: 0.01, center: [30, 0], rotation: Math.PI / 2 } });
+    assert.ok(Math.abs(drawn.max[0] - 35) < 1e-9 && Math.abs(drawn.max[1] - 10) < 1e-9 && drawn.min[0] < -3);
 }
 
 console.log('planModel: ok');
