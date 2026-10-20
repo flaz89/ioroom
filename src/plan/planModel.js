@@ -728,7 +728,7 @@ export function closedLoops(walls) {
 }
 
 // Is point p inside polygon (ray casting)?
-function pointInPolygon(p, polygon) {
+export function pointInPolygon(p, polygon) {
     let inside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
         const [xi, zi] = polygon[i], [xj, zj] = polygon[j];

@@ -62,12 +62,24 @@ xrStore.subscribe((state) => {
     onSessionVisibility();
 });
 
-// Tabletop on/off: resize the ray cursors (setHand/setController swap the pmndrs input implementation options)
-useStore.subscribe((state, previousState) => {
-    if (state.view.mode === previousState.view.mode) return;
-    const size = state.view.mode === 'tabletop' ? TABLETOP_CURSOR_SIZE : CURSOR_SIZE;
-    xrStore.setHand(handOptions(size));
+/*
+* Input options for the current view: tabletop on/off resizes the ray cursors; in VR LIFE mode the LEFT hand
+* has no ray / grab pointer, its pinch only teleports (TeleportGesture.jsx; its fingertip still presses
+* panels). setHand / setController swap the pmndrs input implementation options; re-applied when the view
+* mode or the session mode changes.
+*/
+function applyInputOptions() {
+    const isTabletop = useStore.getState().view.mode === 'tabletop';
+    const size = isTabletop ? TABLETOP_CURSOR_SIZE : CURSOR_SIZE;
+    const teleports = !isTabletop && xrStore.getState().mode === 'immersive-vr';
+    xrStore.setHand(teleports ? { default: handOptions(size), left: { ...handOptions(size), rayPointer: false, grabPointer: false } } : handOptions(size));
     xrStore.setController(controllerOptions(size));
+}
+useStore.subscribe((state, previousState) => {
+    if (state.view.mode !== previousState.view.mode) applyInputOptions();
+});
+xrStore.subscribe((state, previousState) => {
+    if (state.mode !== previousState.mode) applyInputOptions();
 });
 
 /*

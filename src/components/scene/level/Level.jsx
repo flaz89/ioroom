@@ -8,6 +8,7 @@ import FistDeleteGesture from "../xr-ui/FistDeleteGesture";
 import RemotePointers from "../presence/RemotePointers";
 import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
+import TeleportGesture from "../xr-ui/TeleportGesture";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import VRNotePanel from "../xr-ui/VRNotePanel";
 import VRMaterialsPanel from "../xr-ui/VRMaterialsPanel";
@@ -73,6 +74,8 @@ export default function Level() {
             {isXR && <FistDeleteGesture />}
             {/* VR || AR: right hand thumb-middle pinch + wrist twist rotates the selected object in place */}
             {isXR && <PinchRotateGesture />}
+            {/* VR life mode only: left hand pinch, aim the arc, release = teleport */}
+            {isVR && !isTabletop && <TeleportGesture />}
 
         </>
     );
