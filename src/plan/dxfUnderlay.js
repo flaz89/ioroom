@@ -30,9 +30,9 @@ export function dxfUnitsGuess(extent) {
 }
 
 // 2D affine transform [a, b, c, d, e, f]: x' = a x + c y + e, y' = b x + d y + f (DXF axes, y up)
-const IDENTITY = [1, 0, 0, 1, 0, 0];
-const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-const compose = (m, n) => [ // m after n
+export const IDENTITY = [1, 0, 0, 1, 0, 0];
+export const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+export const compose = (m, n) => [ // m after n
     m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1],
     m[0] * n[2] + m[2] * n[3], m[1] * n[2] + m[3] * n[3],
     m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]
@@ -133,19 +133,25 @@ export function dxfVectors(dxf) {
     };
     walk(dxf.entities, IDENTITY, 0, null);
 
-    // robust bounds (percentiles: stray far entities ignored) -> centered, plan axes (z = -y), rounded
+    const { width, height, layers } = centeredLayers(byLayer, 'No lines found in this DXF');
+    const units = INSUNITS[dxf.header?.$INSUNITS] ?? dxfUnitsGuess(Math.max(width, height));
+    return { units, width, height, layers };
+}
+
+// Segments per layer (Map name -> flat [x1, y1, x2, y2, ...], y up) -> { width, height, layers: [{ name, segments }] }:
+// robust bounds (percentiles: stray far entities ignored) -> centered, plan axes (z = -y), rounded.
+// Shared with vector PDFs (pdfUnderlay.js). Throws `emptyMessage` when there are no segments.
+export function centeredLayers(byLayer, emptyMessage) {
     const xs = [], ys = [];
     for (const list of byLayer.values()) {
         for (let i = 0; i < list.length; i += 2) { xs.push(list[i]); ys.push(list[i + 1]); }
     }
-    if (xs.length === 0) throw new Error('No lines found in this DXF');
+    if (xs.length === 0) throw new Error(emptyMessage);
     const [minX, maxX] = bulk(xs), [minY, maxY] = bulk(ys);
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     const round = (value) => Math.round(value * ROUND) / ROUND;
     const layers = [...byLayer.entries()]
         .map(([name, list]) => ({ name, segments: list.map((value, i) => round(i % 2 === 0 ? value - cx : cy - value)) }))
         .sort((p, q) => p.name.localeCompare(q.name));
-    const width = maxX - minX, height = maxY - minY;
-    const units = INSUNITS[dxf.header?.$INSUNITS] ?? dxfUnitsGuess(Math.max(width, height));
-    return { units, width, height, layers };
+    return { width: maxX - minX, height: maxY - minY, layers };
 }

@@ -511,11 +511,35 @@ export function updateOpening(level, wallId, openingId, patch) {
     const { length } = wallFrame(wall);
     const height = wall.height ?? level.wallHeight;
     const from = next.offset - next.width / 2, to = next.offset + next.width / 2;
-    const isValid = next.width >= MIN_OPENING_SIZE && next.height >= MIN_OPENING_SIZE && next.sill >= 0
+    const isValid = next.width >= MIN_OPENING_SIZE - 1e-9 && next.height >= MIN_OPENING_SIZE - 1e-9 && next.sill >= 0
         && from >= -1e-9 && to <= length + 1e-9 && next.sill + next.height <= height - MIN_LINTEL + 1e-9
         && wall.openings.every((o) => o.id === openingId || o.offset + o.width / 2 <= from + 1e-9 || o.offset - o.width / 2 >= to - 1e-9);
     if (!isValid) return null;
     return updateWall(level, wallId, { openings: wall.openings.map((o) => (o.id === openingId ? next : o)) });
+}
+
+/*
+* RESIZE HANDLE (2D plan): the level with one EDGE of the opening ('start' | 'end': its side towards the wall's
+* a / b) moved to `t` meters along the wall's line, the other edge fixed. `t` is clamped: never past the
+* neighbor opening or the wall's end on that side, never closer than MIN_OPENING_SIZE to the other edge.
+* Null when the opening is gone (or the result is invalid for another reason: updateOpening).
+*/
+export function resizeOpening(level, wallId, openingId, edge, t) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const opening = wall?.openings?.find((o) => o.id === openingId);
+    if (opening == null) return null;
+    const { length } = wallFrame(wall);
+    const from = opening.offset - opening.width / 2, to = opening.offset + opening.width / 2;
+    const others = wall.openings.filter((o) => o.id !== openingId);
+    let a = from, b = to;
+    if (edge === 'start') {
+        const limit = Math.max(0, ...others.map((o) => o.offset + o.width / 2).filter((x) => x <= from + 1e-9));
+        a = Math.min(Math.max(t, limit), to - MIN_OPENING_SIZE);
+    } else {
+        const limit = Math.min(length, ...others.map((o) => o.offset - o.width / 2).filter((x) => x >= to - 1e-9));
+        b = Math.max(Math.min(t, limit), from + MIN_OPENING_SIZE);
+    }
+    return updateOpening(level, wallId, openingId, { offset: (a + b) / 2, width: b - a });
 }
 
 // The level without opening `openingId` of wall `wallId`
@@ -536,6 +560,8 @@ export function removeOpening(level, wallId, openingId) {
 //   drawing units centered on the drawing; width / height = drawing size in units; `units` ('mm', 'cm', 'm',
 //   'in', 'ft': read from the file or chosen in the panel) gives metersPerPixel = meters per unit (exact
 //   scale, no dpi / scale); `layers`: the layer names, `hiddenLayers`: the ones switched off (saved, shared).
+//   A VECTOR PDF is stored the same way with source 'pdf': units are points, dpi 72 / downscale 1 / scale give
+//   metersPerPixel like a raster PDF (no `units`).
 // The image file lives in R2 (server/src/underlays.js); visibility and opacity are per device (workspace).
 // ---------------------------------------------------------------------------------------------------
 export const UNDERLAY_DEFAULTS = { scale: 100, dpi: 150 };

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -26,6 +26,7 @@ const WINDOW_MARK_LENGTH = 0.8;  // meters: window symbol, line across the wall 
 const LEAF_THICKNESS = 0.03;     // meters: a sliding leaf panel in the plan (and the track spacing)
 const SLIDE_GAP = 0.02;          // meters: a sliding leaf off the wall face / its arrow off the leaves
 const ARROW_HEAD = 0.08;         // meters: longest arrow head of a sliding leaf
+const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening, length (outwards) x half width
 
 /*
 * 2D top view of the floor plan (builder mode, view '2d', store/slices/workspaceSlice.js): grid in meters,
@@ -88,6 +89,9 @@ const ARROW_HEAD = 0.08;         // meters: longest arrow head of a sliding leaf
 *   select it (store selectedOpening; its panel is WallPanel.jsx). DRAG = slide it along its wall (start
 *   edge on the grid snap step when grid snap is on; stops at the wall's ends and at the other openings),
 *   with live distances from both wall ends; a local draft saved on release (one undo step).
+*   SELECTED: a filled triangle at each edge (OpeningEdgeHandles); dragging one moves only that edge along
+*   the wall (planModel.resizeOpening: grid snap, stops at the neighbor / wall end, at least 30 cm), same
+*   live distances and one undo step on release.
 *
 * - RULER (toolbar ruler button, store measures.active; PlanMeasures.jsx): the 3D ruler's measures seen
 *   from above, and new ones taken here (at floor level). Click = first point, click = measure (temporary,
@@ -483,6 +487,11 @@ export default function PlanView2D() {
             gestureRef.current = { kind: 'floorVertex', floorId: selectedFloorId, index: Number(dataset.floorVertex) };
             return;
         }
+        // selected opening's resize triangle (data-opening-edge): that edge follows the pointer along the wall
+        if (dataset.openingEdge != null && selectedOpening && !isDrawing && !isRuler && !underlayTool) {
+            gestureRef.current = { kind: 'openingEdge', ...selectedOpening, edge: dataset.openingEdge };
+            return;
+        }
         // ruler: only measure labels are picked (corners, walls and openings are snap targets)
         const { vertex, wallId, openingId, measureId, measureEnd, detected } = isDrawing || underlayTool ? {} : isRuler ? { measureId: dataset.measureId, measureEnd: dataset.measureEnd } : dataset;
         // left mouse in the select tool: a drag draws a selection box; touch / pen: a drag pans
@@ -533,6 +542,15 @@ export default function PlanView2D() {
                 const hit = rulerPoint(point, event.shiftKey, gesture.which === 'a' ? item.b : item.a, gesture.id);
                 setEndDrag({ id: gesture.id, which: gesture.which, ...hit });
             }
+        } else if (pointers.size === 1 && gesture?.kind === 'openingEdge') {
+            const wall = level.walls.find((item) => item.id === gesture.wallId);
+            if (wall) {
+                let t = alongWall(wall, toWorld(view, size.w, size.h, point.x, point.y));
+                const { gridSnap, gridSnapStep } = useStore.getState().settings;
+                if (gridSnap) t = Math.round(t / (gridSnapStep / 100)) * (gridSnapStep / 100);
+                const next = resizeOpening(level, gesture.wallId, gesture.openingId, gesture.edge, t); // clamped
+                if (next) setSlide({ level: next, wallId: gesture.wallId, openingId: gesture.openingId });
+            }
         } else if (pointers.size === 1 && gesture?.kind === 'opening') {
             if (Math.hypot(point.x - gesture.start.x, point.y - gesture.start.y) > CLICK_SLOP) gesture.moved = true;
             if (gesture.moved) {
@@ -576,6 +594,7 @@ export default function PlanView2D() {
             const y = endDrag.which === 'a' ? item.ya : item.yb; // the end keeps its height
             useStore.getState().moveMeasureEnd(endDrag.id, endDrag.which, { p: [endDrag.point[0], y, endDrag.point[1]] });
         }
+        if (gesture.kind === 'openingEdge' && slide) setActiveLevel(slide.level); // one undo step, still selected
         if (gesture.kind === 'opening') {
             if (gesture.moved && slide) setActiveLevel(slide.level);
             useStore.getState().setSelectedOpening({ wallId: gesture.wallId, openingId: gesture.openingId });
@@ -697,6 +716,11 @@ export default function PlanView2D() {
                             <circle className="plan-vertex" cx={vertex[0]} cy={vertex[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
                         </g>
                     ))}
+
+                    {/* selected opening: resize triangles at its two edges, over the corner handles */}
+                    {selectedOpening && !isDrawing && !isRuler && !underlayTool && (
+                        <OpeningEdgeHandles level={shown} {...selectedOpening} scale={view.scale} />
+                    )}
 
                     {/* wall tool: the wall being drawn (dashed, default thickness) and the snapped point */}
                     {isDrawing && chain && hover && previewWall(shown, chain, hover.point, wallJustify)}
@@ -877,6 +901,28 @@ function OpeningSymbol({ wall, rect, isSelected }) {
             {symbol}
         </g>
     );
+}
+
+/*
+* Resize handles of the selected opening: a filled triangle at each edge, on the wall's axis, pointing out
+* along the wall (unlike the round corner handles), with an invisible touch-size hit circle carrying
+* data-opening-edge ('start' | 'end'). Sizes in px, turned into meters by the view's scale.
+*/
+function OpeningEdgeHandles({ level, wallId, openingId, scale }) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const opening = wall?.openings?.find((item) => item.id === openingId);
+    if (opening == null) return null;
+    const { dir, normal } = wallFrame(wall);
+    const { inner, outer } = faceOffsets(wall);
+    const axis = (inner + outer) / 2;
+    const at = (t, across = 0) => [wall.a[0] + dir[0] * t + normal[0] * (axis + across), wall.a[1] + dir[1] * t + normal[1] * (axis + across)];
+    const [length, half] = EDGE_HANDLE.map((px) => px / scale);
+    return [['start', opening.offset - opening.width / 2, -1], ['end', opening.offset + opening.width / 2, 1]].map(([edge, t, out]) => (
+        <g key={edge}>
+            <circle className="plan-edge-handle-hit" data-opening-edge={edge} cx={at(t + out * length / 2)[0]} cy={at(t + out * length / 2)[1]} r={VERTEX_HIT_RADIUS / scale} />
+            <polygon className="plan-edge-handle" points={[at(t + out * length), at(t, half), at(t, -half)].join(' ')} vectorEffect="non-scaling-stroke" />
+        </g>
+    ));
 }
 
 // Distance of world point p from the wall's start along its line (meters)

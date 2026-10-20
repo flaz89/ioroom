@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -107,6 +107,13 @@ assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { offset: 2 }), null);   
 assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { offset: 5.5 }), null);    // past the end (6)
 assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { height: 1.8 }), null);    // 0.9 + 1.8 > 2.7 - 0.05
 assert.equal(updateOpening(withTwo, 'wall-back', 'o1', { width: 0.1 }), null);
+// resize handles (o1 2.4..3.6, o2 0.6..1.8, wall 6 m): one edge moves, clamped by the neighbor, the wall's end, the minimum size
+const edge = (lvl) => { const o = lvl.walls[1].openings[0]; return [o.offset - o.width / 2, o.offset + o.width / 2].map((x) => Math.round(x * 1e6) / 1e6); };
+assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'start', 2)), [2, 3.6]);
+assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'start', 1)), [1.8, 3.6]);  // stops at o2
+assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'end', 10)), [2.4, 6]);     // stops at the wall's end
+assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'start', 3.5)), [3.3, 3.6]); // never below 30 cm
+assert.equal(resizeOpening(withTwo, 'wall-back', 'gone', 'end', 4), null);
 // clipped to the wall: a wall shortened to 3.2 m cuts the window (2.4..3.6) at 3.2, below a 5 cm lintel
 const rect = openingRects(setWallLength(withWindow, 'wall-back', 3.2).walls[1], 2.2)[0];
 assert.ok(Math.abs(rect.to - 3.2) < 1e-9 && Math.abs(rect.top - 2.15) < 1e-9);

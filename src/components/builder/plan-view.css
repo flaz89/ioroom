@@ -56,6 +56,9 @@
 .plan-wall-preview { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
 .plan-floor.is-selected { fill: rgba(255, 154, 26, 0.22); stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: none; }
 .plan-floor-handle-hit { fill: transparent; cursor: move; }
+.plan-edge-handle-hit { fill: transparent; cursor: move; }
+.plan-edge-handle { fill: #ff9a1a; stroke: #0a1030; stroke-width: 1.5; pointer-events: none; }
+.plan-edge-handle-hit:hover + .plan-edge-handle { fill: #ffffff; stroke: #ff9a1a; }
 .plan-floor-handle-hit:hover + .plan-vertex { fill: #ff9a1a; }
 .plan-trace-face { stroke: #3ddc84; stroke-width: 3; pointer-events: none; }
 .plan-floor-preview { fill: rgba(255, 154, 26, 0.18); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }

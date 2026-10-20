@@ -28,7 +28,8 @@ const TOOLS = [
 *   at its exact size, from its units, centered on the grid's origin).
 * - Underlay: Show / Hide and Opacity (this device only, store underlayVisible / underlayOpacity), nominal
 *   scale 1:N ("calibrated" once Calibrate is used) and, for images, the scan resolution (dpi: a PDF knows
-*   its paper size); for a DXF instead: its units (read from the file, can be corrected) and its layers, each
+*   its paper size); a vector PDF (kind 'dxf', source 'pdf': its lines and layers, underlayFile.js) has the
+*   nominal scale and the DXF's layers / walls tools; for a DXF instead: its units (read from the file, can be corrected) and its layers, each
 *   switched on / off (saved: everyone sees the same); the adjustment tools Calibrate / Align / Move (store underlayTool, 2D plan), Replace,
 *   Remove.
 * ponytail: owner only for now (uploads need the admin token); no PDF page choice (first page).
@@ -107,7 +108,10 @@ export default function UnderlayPanel() {
                 : { center: prepared.kind === 'dxf' ? [0, 0] : levelBounds(activeLevel(useStore.getState().plan)).center, rotation: 0 };
             if (prepared.kind === 'dxf') {
                 const { blob: _blob, ...info } = prepared; // the blob is uploaded, not saved
-                saveUnderlay({ ...info, url, metersPerPixel: UNIT_METERS[prepared.units], hiddenLayers: [], ...placement });
+                // a vector PDF is in points, sized by the nominal scale (kept from a replaced PDF); a DXF by its units
+                const scale = prepared.source === 'pdf' ? (underlay?.scale ?? UNDERLAY_DEFAULTS.scale) : undefined;
+                const metersPerPixel = prepared.source === 'pdf' ? nominalMetersPerPixel({ ...prepared, scale }) : UNIT_METERS[prepared.units];
+                saveUnderlay({ hiddenLayers: [], ...info, ...(scale && { scale }), url, metersPerPixel, ...placement });
                 setUnderlayVisible(true);
                 setStatus(null);
                 return;
@@ -187,6 +191,9 @@ export default function UnderlayPanel() {
                             </label>
                             {underlay.kind === 'dxf' ? (
                                 <>
+                                    {underlay.source === 'pdf' ? (
+                                        <NumberRow label="Scale 1:" value={underlay.scale} placeholder="calibrated" onApply={applyNominal('scale', SCALE_RANGE)} />
+                                    ) : (
                                     <label className="underlay-row underlay-number">
                                         <span>Units</span>
                                         <select value={underlay.scale === null ? '' : underlay.units} onChange={(event) => applyUnits(event.target.value)}>
@@ -194,6 +201,7 @@ export default function UnderlayPanel() {
                                             {Object.keys(UNIT_METERS).map((units) => <option key={units} value={units}>{units}</option>)}
                                         </select>
                                     </label>
+                                    )}
                                     <div className="underlay-row">
                                         <span>Layers</span>
                                         <div className="underlay-layers">
