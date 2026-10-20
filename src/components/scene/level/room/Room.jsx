@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import UnderlayPlane from './UnderlayPlane';
+import Openings3D from './Openings3D';
+import { isStillClick, recordPress } from './builderClick';
 import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { polygonGeometry, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
@@ -50,23 +52,15 @@ function onDragDrop(event) {
 /*
 * BUILDER (store workspace 'builder', 3D view): a click on a wall face selects that wall (store
 * selectedWallIds, shared with the 2D plan; WallPanel.jsx shows its sizes), a click on a floor deselects.
-* Not while a tool owns the click (ruler, post-it) and not at the end of an orbit drag: the pointer must
-* not have moved more than CLICK_SLOP px since the press (pmndrs events have no usable `delta`: its getter
-* throws, so the press position is recorded here). The selected wall's faces are tinted like a material preview.
+* Not while a tool owns the click (ruler, post-it) and not at the end of an orbit drag (builderClick.js).
+* The selected wall's faces are tinted like a material preview. Doors / windows: Openings3D.jsx.
 */
-const CLICK_SLOP = 4; // px
 const NO_WALLS = []; // stable empty selection outside the builder
-const pressPositions = new Map(); // pointerId -> { x, y } screen position of the last press on the room
-function onBuilderPress(event) {
-    const native = event.nativeEvent;
-    if (native?.clientX != null) pressPositions.set(event.pointerId, { x: native.clientX, y: native.clientY });
-}
+const onBuilderPress = recordPress;
 function onBuilderClick(event) {
     const state = useStore.getState();
     if (state.workspace !== 'builder' || state.measures.active || state.notes.placing) return;
-    const press = pressPositions.get(event.pointerId);
-    const native = event.nativeEvent;
-    if (press && native?.clientX != null && Math.hypot(native.clientX - press.x, native.clientY - press.y) > CLICK_SLOP) return;
+    if (!isStillClick(event)) return;
     const surfaceId = faceOf(event);
     if (surfaceId == null) return;
     event.stopPropagation();
@@ -86,7 +80,8 @@ const ROOM_USER_DATA = { isRoom: true };
 * hundred vertices, cheap.
 */
 export default function Room() {
-    const level = useStore((state) => activeLevel(state.plan));
+    // the plan's level, or a 3D builder gesture's local preview (workspaceSlice levelPreview)
+    const level = useStore((state) => state.levelPreview ?? activeLevel(state.plan));
 
     // Builder with a floor plan UNDERLAY shown (this device: store underlayVisible): the drawing lies on the
     // floor (UnderlayPlane) and the floors are not drawn; hidden = the floors are back. A DXF is only lines:
@@ -166,6 +161,9 @@ export default function Room() {
                     receiveShadow
                 />
             ))}
+
+            {/* ------------- DOORS: frame, leaves, handles (Openings3D.jsx) ------------------ */}
+            <Openings3D level={level} />
 
             {/* ------------- FLOOR PLAN UNDERLAY (builder) ------------------ */}
             {showUnderlay && <UnderlayPlane underlay={level.underlay} opacity={underlayOpacity} />}

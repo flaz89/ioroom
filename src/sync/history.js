@@ -6,7 +6,8 @@ import * as Y from 'yjs';
 *
 * - Only LOCAL edits are recorded: in a shared room, undo never reverts what other people did.
 * - Tracked maps: objects, notes, saved measures, surface materials, floor plan.
-*   NOT tracked: sun (never in the history, by design), prices (frozen automatically), presence.
+*   NOT tracked: sun (never in the history, by design), open / closed doors ("doors": opening a door is not
+*   an edit), prices (frozen automatically), presence.
 * - Undo / redo are Yjs transactions with the UndoManager as origin: the room bindings (roomSync.js,
 *   fieldMapSync.js) treat them like remote changes, so they reach the store and every other device
 *   with no extra code.

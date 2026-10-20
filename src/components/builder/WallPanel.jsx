@@ -166,6 +166,8 @@ function OpeningPanel() {
     const setActiveLevel = useStore((state) => state.setActiveLevel);
     const setSelectedOpening = useStore((state) => state.setSelectedOpening);
     const setSelectedWallId = useStore((state) => state.setSelectedWallId);
+    const isOpen = useStore((state) => state.openDoors[openingId] === true);
+    const setDoorOpen = useStore((state) => state.setDoorOpen);
     const remove = () => {
         setActiveLevel(removeOpening(activeLevel(useStore.getState().plan), wallId, openingId));
         setSelectedOpening(null);
@@ -216,6 +218,8 @@ function OpeningPanel() {
             {hasLeaves && <Toggle label="Leaves" value={leaves} options={[[1, '1'], [2, '2'], [3, '3'], [4, '4']]} onChange={(next) => apply({ leaves: next })} />}
             {hasLeaves && leaves % 2 === 1 && <Toggle label={operation === 'swing' ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
             {hasLeaves && operation !== 'pocket' && <Toggle label={operation === 'swing' ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}
+            {/* open / closed in 3D (store openDoors: shared, animated by Openings3D.jsx, NOT an undo step; hinged doors for now) */}
+            {hasLeaves && <Toggle label="State" value={isOpen ? 'open' : 'closed'} options={[['closed', 'Closed'], ['open', 'Open']]} onChange={(state) => setDoorOpen(openingId, state === 'open')} />}
             {/* floor-level opening: which side's floor runs on through the wall's depth (planModel.openingFloors) */}
             {opening.sill === 0 && <Toggle label="Floor" value={opening.floorSide ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(floorSide) => apply({ floorSide })} />}
             <div className="wall-panel-actions">

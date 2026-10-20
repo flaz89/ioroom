@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, openingClearances, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -114,6 +114,11 @@ assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'start', 1)), [1
 assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'end', 10)), [2.4, 6]);     // stops at the wall's end
 assert.deepEqual(edge(resizeOpening(withTwo, 'wall-back', 'o1', 'start', 3.5)), [3.3, 3.6]); // never below 30 cm
 assert.equal(resizeOpening(withTwo, 'wall-back', 'gone', 'end', 4), null);
+// clearances: o1 2.4..3.6 has o2 (ends at 1.8) before it, the wall's inner face end after (6: the back wall's
+// inner face runs the whole 6 m line between the side walls' faces)
+const gaps = openingClearances(withTwo, 'wall-back', 'o1');
+assert.ok(Math.abs(gaps.before - 1.8) < 1e-9 && Math.abs(gaps.from - 2.4) < 1e-9 && Math.abs(gaps.to - 3.6) < 1e-9 && gaps.after > 3.6, JSON.stringify(gaps));
+assert.equal(openingClearances(withTwo, 'wall-back', 'gone'), null);
 // clipped to the wall: a wall shortened to 3.2 m cuts the window (2.4..3.6) at 3.2, below a 5 cm lintel
 const rect = openingRects(setWallLength(withWindow, 'wall-back', 3.2).walls[1], 2.2)[0];
 assert.ok(Math.abs(rect.to - 3.2) < 1e-9 && Math.abs(rect.top - 2.15) < 1e-9);

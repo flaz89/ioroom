@@ -258,3 +258,13 @@
     font: inherit;
     text-align: right;
 }
+
+/* 3D builder: the selected opening's dimensions (Openings3D.jsx Html labels), styled like .plan-length */
+.plan-length-3d {
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: 12px;
+    white-space: nowrap;
+    user-select: none;
+    text-shadow: 0 0 2px #0a1030, 0 0 2px #0a1030, 1px 1px 0 #0a1030, -1px -1px 0 #0a1030, 1px -1px 0 #0a1030, -1px 1px 0 #0a1030;
+}

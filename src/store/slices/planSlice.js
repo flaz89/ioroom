@@ -8,6 +8,17 @@ import { DEFAULT_PLAN, activeLevel, flipWall, newWallId, removeFloor, removeWall
 export const createPlanSlice = (set, get) => ({
     plan: DEFAULT_PLAN,
 
+    // OPEN DOORS: { [openingId]: true } for the doors / windows shown open in 3D (Openings3D.jsx). Shared with
+    // the room (Y.Map "doors", roomSync.js) but kept OUT of the plan and out of undo / redo (history.js does
+    // not track "doors"): opening a door is not an edit, and undoing a wall edit must not close the doors.
+    // ponytail: ids of deleted openings stay in the map (harmless: nothing to open); prune if it grows.
+    openDoors: {},
+    setOpenDoors: (values) => set({ openDoors: values }),
+    setDoorOpen: (openingId, isOpen) => set((state) => {
+        const { [openingId]: _was, ...rest } = state.openDoors;
+        return { openDoors: isOpen ? { ...rest, [openingId]: true } : rest };
+    }),
+
     // Merges plan fields received from the shared room (or set by the editor), e.g. { levels }
     setPlan: (patch) => set((state) => ({ plan: { ...state.plan, ...patch } })),
 

@@ -62,6 +62,12 @@ export const createWorkspaceSlice = (set, get) => ({
     openingType: 'door',
     setOpeningType: (openingType) => set({ openingType }),
 
+    // levelPreview: the active level as it would be after a gesture in progress in the 3D builder (an opening
+    // resized with its 3D handles: Openings3D.jsx). This device only, never synced: Room.jsx draws it instead
+    // of the plan's level while set; the gesture commits it with setActiveLevel on release (one undo step).
+    levelPreview: null,
+    setLevelPreview: (levelPreview) => set({ levelPreview }),
+
     wallJustify: 'left',
     setWallJustify: (wallJustify) => set({ wallJustify }),
 

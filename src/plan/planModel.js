@@ -393,6 +393,7 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // Doors and windows alike: operation 'swing' (hinged leaves) | 'slide' (sliding on a wall face: the swing
 // side) | 'pocket' (sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
 // 'standard' (their default: the plain window symbol, no leaves). openingOperation(opening) reads it.
+// Open / closed in 3D is NOT stored here: store openDoors (planSlice.js), out of the undo history.
 // ---------------------------------------------------------------------------------------------------
 export const OPENING_DEFAULTS = {
     door: { width: 0.9, height: 2.1, sill: 0 },
@@ -540,6 +541,26 @@ export function resizeOpening(level, wallId, openingId, edge, t) {
         b = Math.max(Math.min(t, limit), from + MIN_OPENING_SIZE);
     }
     return updateOpening(level, wallId, openingId, { offset: (a + b) / 2, width: b - a });
+}
+
+/*
+* CLEAR DISTANCES of an opening along its wall (2D plan and 3D builder labels): from its edges to the NEAREST
+* element on each side, i.e. the next opening of the same wall or, if none, the visible end of the wall's
+* face (the mitered footprint: at a corner, the face of the other wall). Positions in meters along the
+* wall's line: { from, to, before, after } (before <= from, after >= to); null when the opening is gone.
+*/
+export function openingClearances(level, wallId, openingId) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const opening = wall?.openings?.find((item) => item.id === openingId);
+    if (opening == null) return null;
+    const { dir } = wallFrame(wall);
+    const footprint = wallFootprint(wall, level.walls);
+    const along = (p) => (p[0] - wall.a[0]) * dir[0] + (p[1] - wall.a[1]) * dir[1];
+    const from = opening.offset - opening.width / 2, to = opening.offset + opening.width / 2;
+    const others = wall.openings.filter((item) => item.id !== openingId);
+    const before = Math.max(along(footprint.a), ...others.map((o) => o.offset + o.width / 2).filter((t) => t <= from + 1e-9));
+    const after = Math.min(along(footprint.b), ...others.map((o) => o.offset - o.width / 2).filter((t) => t >= to - 1e-9));
+    return { from, to, before, after };
 }
 
 // The level without opening `openingId` of wall `wallId`

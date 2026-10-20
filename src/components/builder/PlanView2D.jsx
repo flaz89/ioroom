@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -932,24 +932,18 @@ const alongWall = (wall, p) => {
 };
 
 /*
-* Clear distances of an opening (dragged or selected) along its wall: from its edges to the NEAREST element
-* on each side, i.e. the next opening of the same wall or, if none, the visible end of the wall's inner
-* face (mitered footprint: at a corner, the face of the other wall). Two length labels (inside the room).
+* Clear distances of an opening (dragged or selected) along its wall (planModel.openingClearances: the next
+* opening or the visible end of the wall's face on each side): two length labels (inside the room).
 */
 function openingDistances(view, size, level, wallId, openingId) {
+    const gaps = openingClearances(level, wallId, openingId);
+    if (gaps == null) return null;
     const wall = level.walls.find((item) => item.id === wallId);
-    const opening = wall?.openings?.find((item) => item.id === openingId);
-    if (opening == null) return null;
     const { dir } = wallFrame(wall);
-    const footprint = wallFootprint(wall, level.walls);
     const at = (t) => [wall.a[0] + dir[0] * t, wall.a[1] + dir[1] * t];
-    const from = opening.offset - opening.width / 2, to = opening.offset + opening.width / 2;
-    const others = wall.openings.filter((item) => item.id !== openingId);
-    const before = Math.max(alongWall(wall, footprint.a), ...others.map((o) => o.offset + o.width / 2).filter((t) => t <= from + 1e-9));
-    const after = Math.min(alongWall(wall, footprint.b), ...others.map((o) => o.offset - o.width / 2).filter((t) => t >= to - 1e-9));
     return [
-        from - before > 0.005 && lengthLabel(view, size, { id: 'gap-before', a: at(before), b: at(from) }),
-        after - to > 0.005 && lengthLabel(view, size, { id: 'gap-after', a: at(to), b: at(after) })
+        gaps.from - gaps.before > 0.005 && lengthLabel(view, size, { id: 'gap-before', a: at(gaps.before), b: at(gaps.from) }),
+        gaps.after - gaps.to > 0.005 && lengthLabel(view, size, { id: 'gap-after', a: at(gaps.to), b: at(gaps.after) })
     ];
 }
 

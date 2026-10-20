@@ -203,6 +203,12 @@ export function connectRoom(room) {
         read: (state) => state.plan,
         write: (patch) => useStore.getState().setPlan(patch)
     });
+    // open / closed doors: shared, never in the undo history (history.js TRACKED_MAPS)
+    const unbindDoors = bindFieldMap(doc, provider, {
+        name: 'doors',
+        read: (state) => state.openDoors,
+        write: (values) => useStore.getState().setOpenDoors(values)
+    });
     const unbindPrices = bindFieldMap(doc, provider, {
         name: 'prices',
         read: (state) => state.priceSnapshots,
@@ -216,6 +222,7 @@ export function connectRoom(room) {
         setRoomStatus('local');
         stopHistory();
         unbindPrices();
+        unbindDoors();
         unbindPlan();
         unbindAwareness();
         unbindSun();

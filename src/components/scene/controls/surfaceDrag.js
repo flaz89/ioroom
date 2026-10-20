@@ -95,11 +95,12 @@ export function isRayPointer(event) {
 
 // Surfaces an object can be placed on: meshes inside `root`, excluding the dragged subtree
 // (object + its gizmo/outline), wide lines (gizmo helpers; they also need a camera to raycast) and
-// post-it notes (userData.isNote: paper thin, never a place for an object).
+// post-it notes (userData.isNote: paper thin, never a place for an object) and doors (userData.noPlacement:
+// a leaf moves when the door opens).
 function collectSurfaces(root, dragged) {
     _candidates.length = 0;
     root.traverse((object) => {
-        if (object.isMesh && !object.isLineSegments2 && !object.userData.isNote) _candidates.push(object);
+        if (object.isMesh && !object.isLineSegments2 && !object.userData.isNote && !object.userData.noPlacement) _candidates.push(object);
     });
     return _candidates.filter((object) => {
         for (let o = object; o != null && o !== root; o = o.parent) if (o === dragged) return false;
