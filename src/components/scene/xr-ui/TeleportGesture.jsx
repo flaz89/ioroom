@@ -12,8 +12,8 @@ import { canLand, teleportArc, teleportOffset } from './teleport';
 * the hand (orange, red where you cannot stand: teleport.js canLand) with a ring where it lands; release on
 * a valid place: a short fade to black, the player moves there (head above the ring), fade back.
 * - In life mode the left hand has no pointers (ray, grab, touch: xrStore.js): it only teleports.
-* - Not while the wrist menu shows (palm towards the eyes), the fist delete gesture is armed or the Quest
-*   system keyboard is open (a note being typed: its hidden text field has the focus).
+* - Only with every VR panel closed (isAnyPanelOpen: wrist menu, sun, materials, measure, note + keyboard),
+*   and not while the fist delete gesture is armed.
 * - The move: the XR reference space is replaced by an OFFSET space of the session's base space
 *   (gl.xr.setReferenceSpace), so the camera, hands, pmndrs pointers and every pose this app reads with
 *   gl.xr.getReferenceSpace() (avatars, notes, ruler, gestures) follow, untouched. three.js drops the custom
@@ -33,6 +33,18 @@ const _thumb = new Vector3();
 const _index = new Vector3();
 const _matrix = new Matrix4();
 const _dir = new Vector3();
+
+/*
+* Any VR panel on screen: teleport only works with all of them closed (pinching at a panel must never move
+* the player). Wrist menu (with its catalog and stats panels), the room panels opened from it (VR_PANELS:
+* openPanel values that have a VR panel, Level.jsx), the selected measure's panel (VRMeasurePanel) and the
+* note panel (VRNotePanel, which also holds the Quest system keyboard). Flatscreen panels (settings, share,
+* environments...) left open before entering VR are not shown in VR and do not count. A new VR panel must
+* be added here.
+*/
+const VR_PANELS = ['sun', 'materials'];
+const isAnyPanelOpen = (state) => state.view.handMenuVisible || VR_PANELS.includes(state.openPanel)
+    || state.measures.selectedId != null || state.notes.draft != null || state.notes.openId != null;
 
 export default function TeleportGesture() {
     const hand = useXRInputSourceState('hand', 'left');
@@ -80,11 +92,8 @@ export default function TeleportGesture() {
         const thumb = joints && frame.getJointPose?.(joints.get('thumb-tip'), space);
         const index = joints && frame.getJointPose?.(joints.get('index-finger-tip'), space);
         const aimPose = hand && frame.getPose(hand.inputSource.targetRaySpace, space);
-        const { view, objects, plan } = useStore.getState();
-        // the Quest system keyboard is open while a DOM text field has the focus (VRNotePanel's hidden field):
-        // typing on it with the left hand (pinch) must not aim / teleport
-        const isKeyboardOpen = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA';
-        const blocked = view.handMenuVisible || objects.deleteArmed || isKeyboardOpen || fadeStateRef.current != null;
+        const state = useStore.getState();
+        const blocked = isAnyPanelOpen(state) || state.objects.deleteArmed || fadeStateRef.current != null;
         const distance = thumb && index ? _thumb.copy(thumb.transform.position).distanceTo(_index.copy(index.transform.position)) : null;
         const aim = aimRef.current;
         const pinching = distance != null && distance < (aim ? PINCH_END : PINCH_START);
@@ -97,7 +106,7 @@ export default function TeleportGesture() {
             const p = aimPose.transform.position;
             _dir.set(0, 0, -1).applyQuaternion(aimPose.transform.orientation);
             const { points, landing } = teleportArc([p.x, p.y, p.z], [_dir.x, _dir.y, _dir.z]);
-            const valid = landing != null && canLand(activeLevel(plan), landing);
+            const valid = landing != null && canLand(activeLevel(state.plan), landing);
             aimRef.current = { landing, valid, head: [viewer.x, viewer.z] };
             const color = valid ? ORANGE : RED;
             let count = 0;
