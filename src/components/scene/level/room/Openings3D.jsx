@@ -11,15 +11,17 @@ import { useStore } from '../../../../store/appStore';
 import { doorParts } from './doorModel';
 
 /*
-* DOORS in 3D (hinged doors): frame, leaves and handles of every swing door of the level,
+* DOORS in 3D (hinged, sliding on a face, pocket): frame, leaves and handles of every door of the level,
 * built from the plan (doorModel.js doorParts, the rules shared with the 2D symbol). Mounted by Room.jsx.
 * - One group per door on the wall's drawn line: local x = the wall's direction, y = up, z = -normal (so
 *   the model's c axis is -z), placed at the wall's start `a`. The frame is one merged mesh; each leaf (with
-*   its handle) sits in a PIVOT group on its hinge axis, turned by openAngle when the door is open.
-* - OPEN / CLOSED (store openDoors: shared, not in the undo history): each leaf eases towards its target angle every frame
-*   (OPEN_SPEED), on every device, so a change made anywhere is seen opening. The current angles live in a
-*   map by leaf (`<opening>:<index>`) that outlives the geometry rebuilt on each plan change; a leaf seen
-*   for the first time (page load, a new door) starts at its target, without animating.
+*   its handle) sits in a PIVOT group on its hinge axis: open = turned by openAngle (hinged) or moved along
+*   the wall by openShift (sliding, pocket; doorModel.js).
+* - OPEN / CLOSED (store openDoors: shared, not in the undo history): each leaf's PROGRESS (0 closed .. 1 open)
+*   eases towards its target every frame (OPEN_SPEED), on every device, so a change made anywhere is seen
+*   opening; rotation = progress x openAngle, x = hinge + progress x openShift. The progress lives in a map
+*   by leaf (`<opening>:<index>`) that outlives the geometry rebuilt on each plan change; a leaf seen for the
+*   first time (page load, a new door) starts at its target, without animating.
 * - Parts are named for the material step: surface ids '<opening>:frame' | ':leaf' | ':handle' (userData),
 *   like the walls' faces. Plain materials for now (FRAME / LEAF / HANDLE colors).
 * - Not pickable yet (raycast off): clicks and drags go through to the walls and the floor as before; the
@@ -85,7 +87,7 @@ const pickTint = (opacity) => new MeshBasicMaterial({ color: TINT, transparent: 
 const pickHoverMaterial = pickTint(0.12);
 const pickSelectedMaterial = pickTint(0.28);
 const OPEN_SPEED = 5;   // 1/s: exponential easing rate (about 0.6 s to open); tune by eye
-const SETTLED = 1e-4;   // radians: close enough to the target to stop
+const SETTLED = 1e-4;   // progress: close enough to the target to stop
 
 // Boxes (doorModel frame: x along, y up, c across) as one geometry in the door group's frame (z = -c),
 // shifted by `origin` ([x, c]: a leaf's hinge, so the pivot group sits there)
@@ -182,6 +184,7 @@ function buildDoors(level) {
                 leaves: parts.leaves.map((leaf) => ({
                     hinge: [leaf.hinge[0], 0, -leaf.hinge[1]],
                     openAngle: leaf.openAngle,
+                    openShift: leaf.openShift,
                     leaf: boxesGeometry([leaf.leaf], leaf.hinge),
                     handle: boxesGeometry(leaf.handle, leaf.hinge)
                 }))
@@ -336,22 +339,23 @@ export default function Openings3D({ level }) {
         ? (id === selectedId ? true : id === hoveredId ? 'hover' : false)
         : (id === hoveredDoorId ? 'hover' : false));
     const pivotsRef = useRef(new Map()); // '<opening>:<index>' -> pivot group (mounted)
-    const anglesRef = useRef(new Map()); // '<opening>:<index>' -> current angle (radians)
+    const progressRef = useRef(new Map()); // '<opening>:<index>' -> current progress (0 closed .. 1 open)
 
-    // leaves eased towards open / closed (a leaf without a stored angle snaps: no animation on load)
+    // leaves eased towards open / closed (a leaf without a stored progress snaps: no animation on load)
     useFrame((_state, delta) => {
-        const angles = anglesRef.current;
+        const progress = progressRef.current;
         const k = 1 - Math.exp(-OPEN_SPEED * Math.min(delta, 0.1));
         for (const door of doors) {
             door.leaves.forEach((leaf, index) => {
                 const key = `${door.id}:${index}`;
                 const pivot = pivotsRef.current.get(key);
                 if (pivot == null) return;
-                const target = openDoors[door.id] ? leaf.openAngle : 0;
-                let angle = angles.get(key) ?? target;
-                angle = Math.abs(target - angle) < SETTLED ? target : angle + (target - angle) * k;
-                angles.set(key, angle);
-                pivot.rotation.y = angle;
+                const target = openDoors[door.id] ? 1 : 0;
+                let p = progress.get(key) ?? target;
+                p = Math.abs(target - p) < SETTLED ? target : p + (target - p) * k;
+                progress.set(key, p);
+                pivot.rotation.y = p * leaf.openAngle;
+                pivot.position.x = leaf.hinge[0] + p * leaf.openShift; // the group's local x = along the wall
             });
         }
     });
@@ -374,7 +378,7 @@ export default function Openings3D({ level }) {
         <group key={door.key} position={door.position} rotation-y={door.rotationY} {...doorHandlers(door)}>
             <mesh geometry={door.frame} material={partMaterial('frame', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
             {door.leaves.map((leaf, index) => (
-                // pivot on the hinge axis: rotation-y eased between 0 (closed) and openAngle (useFrame)
+                // pivot on the hinge axis: turned / moved by the eased progress (useFrame)
                 <group key={index} position={leaf.hinge} ref={(pivot) => {
                     const key = `${door.id}:${index}`;
                     if (pivot) pivotsRef.current.set(key, pivot);

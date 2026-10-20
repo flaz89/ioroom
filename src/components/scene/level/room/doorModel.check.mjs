@@ -48,7 +48,41 @@ assert.equal(pair.leaves.length, 2);
 assert.ok(pair.leaves[0].hinge[0] < pair.leaves[1].hinge[0] && pair.leaves[0].openAngle === -pair.leaves[1].openAngle);
 assert.ok(Math.abs(pair.leaves[1].leaf.min[0] - pair.leaves[0].leaf.max[0] - MEETING_GAP) < eps, 'a visible joint between the leaves');
 
-// not built yet: windows, sliding and pocket doors
-assert.equal(doorParts(wallOf(withDoor), { ...doorOf(withDoor), operation: 'slide' }, 2.7), null);
+// every swing leaf turns, never shifts
+assert.ok(door.leaves.every((l) => l.openShift === 0));
+const span = (b) => [b.min[0], b.max[0]];
+const overlaps = (p, q) => p[0] < q[1] - eps && q[0] < p[1] - eps;
+const shifted = (l) => span(l.leaf).map((x) => x + l.openShift);
+
+// SLIDE (on the inner face): leaves in front of the casing, mirrored out of the reveal when open, a rail above
+const slide = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'slide' }));
+const [slider] = slide.leaves;
+assert.equal(slider.openAngle, 0);
+assert.ok(slider.leaf.max[2] < c0 - CASING_DEPTH + eps, 'in front of the inner face and its casing');
+assert.ok(shifted(slider)[1] <= 2.55 + eps, `slides past the reveal's start: ${shifted(slider)}`);
+assert.equal(slide.frame.length, 3 + 6 + 1, 'lining + casing + rail');
+const rail = slide.frame.at(-1);
+assert.ok(rail.min[1] >= slider.leaf.max[1] && rail.min[0] <= shifted(slider)[0] + eps, 'the rail runs over the whole travel');
+assert.equal(slider.handle.length, 6, 'bar + 2 stems on both faces');
+
+// SLIDE, 2 leaves: opposite ways, alternating tracks; 4 leaves: two each way, stacked without overlapping
+const slide4 = parts(updateOpening(updateOpening(withDoor, 'wall-back', 'd1', { width: 2.4, offset: 3, operation: 'slide' }), 'wall-back', 'd1', { leaves: 4 }));
+const tracks = slide4.leaves.map((l) => l.leaf.min[2]);
+assert.ok(tracks[0] !== tracks[1] && tracks[0] === tracks[2], 'alternating tracks');
+const open4 = slide4.leaves.map(shifted);
+assert.ok(!overlaps(open4[0], open4[1]) && !overlaps(open4[2], open4[3]), 'open leaves of a side do not overlap');
+assert.ok(open4[0][1] <= open4[1][0] + eps || open4[1][1] <= open4[0][0] + eps);
+const rail4 = slide4.frame.at(-1), reach4 = open4.flat();
+assert.ok(Math.abs(rail4.min[0] - Math.min(...reach4)) < eps && Math.abs(rail4.max[0] - Math.max(...reach4)) < eps, 'the rail ends where the open leaves end');
+
+// POCKET (1 leaf towards the start): on the wall's axis, inside the faces, no lining on the pocket side,
+// open = inside the wall past the reveal's start
+const pocket = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'pocket' }));
+const [pocketLeaf] = pocket.leaves;
+assert.ok(pocketLeaf.leaf.min[2] > c0 && pocketLeaf.leaf.max[2] < c1, 'inside the wall');
+assert.equal(pocket.frame.length, 2 + 6, 'one jamb (none on the pocket side) + head + casing');
+assert.ok(pocket.frame.every((b) => !(b.max[0] <= 2.55 + LINING + eps && b.min[1] === 0 && b.min[2] >= c0 - eps && b.max[2] <= c1 + eps)), 'no lining on the pocket side');
+assert.ok(shifted(pocketLeaf)[1] <= 2.55 + eps, 'open: inside the wall');
+assert.ok(pocketLeaf.handle.every((b) => b.max[2] - b.min[2] < 0.01), 'flat pulls');
 assert.equal(doorParts(wallOf(addOpening(level, 'wall-back', 'window', 'w1')), wallOf(addOpening(level, 'wall-back', 'window', 'w1')).openings[0], 2.7), null);
 console.log('doorModel: ok');
