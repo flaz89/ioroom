@@ -11,8 +11,9 @@ import { canLand, teleportArc, teleportOffset } from './teleport';
 * where the left pinch is half of the two-hand zoom, nor in AR). Hold a thumb-index pinch: a dotted arc from
 * the hand (orange, red where you cannot stand: teleport.js canLand) with a ring where it lands; release on
 * a valid place: a short fade to black, the player moves there (head above the ring), fade back.
-* - In life mode the left hand's ray and grab pointers are off (xrStore.js): its pinch only teleports.
-* - Not while the wrist menu shows (palm towards the eyes) nor while the fist delete gesture is armed.
+* - In life mode the left hand has no pointers (ray, grab, touch: xrStore.js): it only teleports.
+* - Not while the wrist menu shows (palm towards the eyes), the fist delete gesture is armed or the Quest
+*   system keyboard is open (a note being typed: its hidden text field has the focus).
 * - The move: the XR reference space is replaced by an OFFSET space of the session's base space
 *   (gl.xr.setReferenceSpace), so the camera, hands, pmndrs pointers and every pose this app reads with
 *   gl.xr.getReferenceSpace() (avatars, notes, ruler, gestures) follow, untouched. three.js drops the custom
@@ -80,7 +81,10 @@ export default function TeleportGesture() {
         const index = joints && frame.getJointPose?.(joints.get('index-finger-tip'), space);
         const aimPose = hand && frame.getPose(hand.inputSource.targetRaySpace, space);
         const { view, objects, plan } = useStore.getState();
-        const blocked = view.handMenuVisible || objects.deleteArmed || fadeStateRef.current != null;
+        // the Quest system keyboard is open while a DOM text field has the focus (VRNotePanel's hidden field):
+        // typing on it with the left hand (pinch) must not aim / teleport
+        const isKeyboardOpen = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA';
+        const blocked = view.handMenuVisible || objects.deleteArmed || isKeyboardOpen || fadeStateRef.current != null;
         const distance = thumb && index ? _thumb.copy(thumb.transform.position).distanceTo(_index.copy(index.transform.position)) : null;
         const aim = aimRef.current;
         const pinching = distance != null && distance < (aim ? PINCH_END : PINCH_START);

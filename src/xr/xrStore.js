@@ -64,15 +64,16 @@ xrStore.subscribe((state) => {
 
 /*
 * Input options for the current view: tabletop on/off resizes the ray cursors; in VR LIFE mode the LEFT hand
-* has no ray / grab pointer, its pinch only teleports (TeleportGesture.jsx; its fingertip still presses
-* panels). setHand / setController swap the pmndrs input implementation options; re-applied when the view
+* has NO pointer at all (ray, grab, fingertip touch): its pinch only teleports (TeleportGesture.jsx). Its
+* fingertip touching an object or a measure handle used to start a drag, even with the hand open; panels
+* are pressed with the right hand (the wrist menu already ignores the left fingertip). setHand / setController swap the pmndrs input implementation options; re-applied when the view
 * mode or the session mode changes.
 */
 function applyInputOptions() {
     const isTabletop = useStore.getState().view.mode === 'tabletop';
     const size = isTabletop ? TABLETOP_CURSOR_SIZE : CURSOR_SIZE;
     const teleports = !isTabletop && xrStore.getState().mode === 'immersive-vr';
-    xrStore.setHand(teleports ? { default: handOptions(size), left: { ...handOptions(size), rayPointer: false, grabPointer: false } } : handOptions(size));
+    xrStore.setHand(teleports ? { default: handOptions(size), left: { ...handOptions(size), rayPointer: false, grabPointer: false, touchPointer: false } } : handOptions(size));
     xrStore.setController(controllerOptions(size));
 }
 useStore.subscribe((state, previousState) => {
