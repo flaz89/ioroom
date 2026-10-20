@@ -75,14 +75,16 @@ assert.ok(open4[0][1] <= open4[1][0] + eps || open4[1][1] <= open4[0][0] + eps);
 const rail4 = slide4.frame.at(-1), reach4 = open4.flat();
 assert.ok(Math.abs(rail4.min[0] - Math.min(...reach4)) < eps && Math.abs(rail4.max[0] - Math.max(...reach4)) < eps, 'the rail ends where the open leaves end');
 
-// POCKET (1 leaf towards the start): on the wall's axis, inside the faces, no lining on the pocket side,
-// open = inside the wall past the reveal's start
+// POCKET (1 leaf towards the start): on the wall's axis, inside the faces, split jamb on the pocket side
+// (the leaf runs through its slot), open = in the wall but for 5 cm past the jamb
 const pocket = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'pocket' }));
 const [pocketLeaf] = pocket.leaves;
 assert.ok(pocketLeaf.leaf.min[2] > c0 && pocketLeaf.leaf.max[2] < c1, 'inside the wall');
-assert.equal(pocket.frame.length, 2 + 6, 'one jamb (none on the pocket side) + head + casing');
-assert.ok(pocket.frame.every((b) => !(b.max[0] <= 2.55 + LINING + eps && b.min[1] === 0 && b.min[2] >= c0 - eps && b.max[2] <= c1 + eps)), 'no lining on the pocket side');
-assert.ok(shifted(pocketLeaf)[1] <= 2.55 + eps, 'open: inside the wall');
+assert.equal(pocket.frame.length, 2 + 6 + 2, 'jamb + head + casing + split jamb on the pocket side');
+const split = pocket.frame.slice(-2);
+assert.ok(split.every((b) => b.min[0] === 2.55 && b.max[1] > 2), 'split jamb at the pocket side');
+assert.ok(split[0].min[2] === c0 && split[0].max[2] < pocketLeaf.leaf.min[2] && split[1].min[2] > pocketLeaf.leaf.max[2] && split[1].max[2] === c1, 'slot around the leaf');
+assert.ok(Math.abs(shifted(pocketLeaf)[1] - (2.55 + LINING + 0.05)) < 1e-6, `open: 5 cm out of the jamb: ${shifted(pocketLeaf)}`);
 assert.ok(pocketLeaf.handle.every((b) => b.max[2] - b.min[2] < 0.01), 'flat pulls');
 assert.equal(doorParts(wallOf(addOpening(level, 'wall-back', 'window', 'w1')), wallOf(addOpening(level, 'wall-back', 'window', 'w1')).openings[0], 2.7), null);
 console.log('doorModel: ok');

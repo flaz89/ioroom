@@ -27,8 +27,8 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 * - SLIDE (on a face, the swing side, like the 2D symbol): the leaves hang in front of the casing, covering the
 *   reveal and the casing, on two alternating tracks; a RAIL above them runs along the whole travel.
 * - POCKET (into the wall): the leaves are on the wall's axis, two tracks side by side (each at most a quarter
-*   of the wall's depth), the jamb lining is left out on each side they slide to (the wall opens into its
-*   pocket); open, they are inside the wall, hidden by it.
+*   of the wall's depth); on each side they slide to the jamb lining is SPLIT around the slot they run through
+*   (the wall opens into its pocket); open, they are inside the wall but for POCKET_GRIP past the jamb.
 * - Leaves of the same door meet with MEETING_GAP between them (the joint shows in 3D).
 * - HANDLE (part 'handle'), on both faces of each leaf near its free edge, at HANDLE_HEIGHT: hinged = a rose,
 *   a stem (perpendicular to the leaf) and the lever towards the hinge; sliding = a vertical bar on two stems;
@@ -59,6 +59,7 @@ const BAR = 0.02;             // bar handle: section, length, distance from the 
 const BAR_LENGTH = 0.3;
 const BAR_OUT = 0.035;
 const PULL = [0.03, 0.14, 0.004]; // pocket door pull plate: wide, tall, proud
+const POCKET_GRIP = 0.05;     // an open pocket leaf sticks out of the jamb by this much (visible, easy to click)
 
 const box = (x0, x1, y0, y1, c0, c1) => ({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(c0, c1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(c0, c1)] });
 
@@ -131,11 +132,20 @@ export function doorParts(wall, opening, wallHeight) {
             // swing: the free edge (dx = toFree * w) must end on the swing side (dc = side * w): sin a = side * toFree
             openAngle: operation === 'swing' ? (Math.PI / 2) * side * toFree : 0,
             // sliding: mirrored out of the leaves' extent on its side (stacked leaves never overlap)
-            openShift: operation === 'swing' ? 0 : span.towardsStart ? 2 * lo - span.from - span.to : 2 * hi - span.from - span.to,
+            // pocket: short of the full travel, so the leaf stays POCKET_GRIP out of the jamb lining
+            openShift: operation === 'swing' ? 0
+                : (span.towardsStart ? 2 * lo - span.from - span.to : 2 * hi - span.from - span.to)
+                    + (operation === 'pocket' ? (span.towardsStart ? 1 : -1) * (LINING + POCKET_GRIP) : 0),
             leaf: box(span.from, span.to, FLOOR_GAP, y1, leafC[0], leafC[1]),
             handle
         };
     });
+    // pocket sides: a split jamb, the lining on both sides of the slot the leaves run through
+    for (const [isStart, x0] of [[true, from], [false, to - LINING]]) {
+        if (!(isStart ? pocketStart : pocketEnd)) continue;
+        const slot = spans.flatMap((s, i) => (s.towardsStart === isStart ? track(i) : []));
+        frame.push(box(x0, x0 + LINING, 0, top, c0, Math.min(...slot) - LEAF_GAP), box(x0, x0 + LINING, 0, top, Math.max(...slot) + LEAF_GAP, c1));
+    }
     if (operation === 'slide') {
         // the rail above the leaves: from closed to open (as far as the open leaves reach), deep enough for both tracks
         const ends = leaves.flatMap(({ leaf, openShift }) => [leaf.min[0] + openShift, leaf.max[0] + openShift]);
