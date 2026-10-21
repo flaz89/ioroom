@@ -302,6 +302,16 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
     assert.deepEqual(pocketConflicts(nearWindow, 'wall-back', 'p1'), ['start'], 'another opening in the pocket');
     const partition = addWall(pocket({}), [-1, 0], [-1, -3], 'part', 'center'); // a T at 2 m along, in the pocket (1.65..2.55)
     assert.deepEqual(pocketConflicts(partition, 'wall-back', 'p1'), ['start'], 'a wall joined at a T across the pocket');
+    // moving / widening a pocket door where its pocket loses its room is refused (like an overlap)
+    assert.equal(updateOpening(pocket({}), 'wall-back', 'p1', { offset: 0.8 }), null, 'not moved into the corner');
+    assert.ok(updateOpening(pocket({}), 'wall-back', 'p1', { offset: 2 }), 'moved where the pocket still fits');
+    assert.equal(updateOpening(pocket({}), 'wall-back', 'p1', { width: 2.5 }), null, 'not widened past the room of the pocket');
+    // already without room (pocket chosen in a tight spot: allowed): moving it to a better place is allowed
+    assert.ok(pocket({ offset: 0.8 }), 'choosing pocket in a tight spot is allowed');
+    assert.ok(updateOpening(pocket({ offset: 0.8 }), 'wall-back', 'p1', { offset: 3 }), 'moved out of the conflict');
+    // at most 2 leaves, parting
+    assert.equal(openingLeaves({ type: 'door', operation: 'pocket', leaves: 4 }, 0, 2).length, 2);
+    assert.equal(openingLeaves({ type: 'door', operation: 'slide', leaves: 4 }, 0, 2).length, 4);
 }
 
 console.log('planModel: ok');

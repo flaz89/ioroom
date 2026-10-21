@@ -37,8 +37,8 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 *   the wall's axis, within WINDOW_TRACKS_DEPTH of its depth); the leaf at the hinge end ('start' default |
 *   'end': the panel's "Slides to") is FIXED (outermost track, no handle), opening slides every other leaf onto
 *   its place: with 4 leaves, 3 move on 3 tracks and all end over the 4th.
-* - POCKET (into the wall): the leaves are on the wall's axis, two tracks side by side (each at most a quarter
-*   of the wall's depth); on each side they slide to the jamb lining is SPLIT around the slot they run through
+* - POCKET (into the wall, doors only, at most 2 leaves: planModel.openingMaxLeaves): the leaves share ONE track
+*   on the wall's axis (at most a quarter of the wall's depth; 2 leaves part, one to each side); on each side they slide to the jamb lining is SPLIT around the slot they run through
 *   (the wall opens into its pocket); open, they are inside the wall but for POCKET_GRIP past the jamb.
 * - Leaves of the same opening meet with MEETING_GAP between them (the joint shows in 3D).
 * - HANDLE (part 'handle') near each leaf's free edge: doors on both faces at HANDLE_HEIGHT, windows on the
@@ -157,11 +157,12 @@ export function openingParts(wall, opening, wallHeight) {
             return [near, near + side * SLIDE_THICKNESS];
         };
     } else {
-        // pocket: on the wall's axis, two tracks side by side, into the wall on the pocket sides
+        // pocket: one track on the wall's axis (at most 2 leaves, parting: never in each other's way), into the
+        // wall on the pocket sides
         [lo, hi] = [pocketStart ? from : from + LINING + LEAF_GAP, pocketEnd ? to : to - LINING - LEAF_GAP];
         y1 = top - LINING - LEAF_GAP;
         const thickness = Math.min(SLIDE_THICKNESS, (c1 - c0) / 4);
-        track = (i) => (i % 2 === 0 ? [axis - TRACK_GAP / 2 - thickness, axis - TRACK_GAP / 2] : [axis + TRACK_GAP / 2, axis + TRACK_GAP / 2 + thickness]);
+        track = () => [axis - thickness / 2, axis + thickness / 2];
     }
     const y0 = isWindow ? sill + LEAF_GAP : FLOOR_GAP;
     const handleY = isWindow ? (y0 + y1) / 2 : HANDLE_HEIGHT;

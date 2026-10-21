@@ -86,6 +86,10 @@ assert.ok(split.every((b) => b.min[0] === 2.55 && b.max[1] > 2), 'split jamb at 
 assert.ok(split[0].min[2] === c0 && split[0].max[2] < pocketLeaf.leaf.min[2] && split[1].min[2] > pocketLeaf.leaf.max[2] && split[1].max[2] === c1, 'slot around the leaf');
 assert.ok(Math.abs(shifted(pocketLeaf)[1] - (2.55 + LINING + 0.05)) < 1e-6, `open: 5 cm out of the jamb: ${shifted(pocketLeaf)}`);
 assert.ok(pocketLeaf.handle.every((b) => b.max[2] - b.min[2] < 0.01), 'flat pulls');
+const pocket2 = parts(updateOpening(updateOpening(withDoor, 'wall-back', 'd1', { width: 1.6, operation: 'pocket' }), 'wall-back', 'd1', { leaves: 4 }));
+assert.equal(pocket2.leaves.length, 2, 'a pocket door has at most 2 leaves');
+assert.ok(pocket2.leaves[0].leaf.min[2] === pocket2.leaves[1].leaf.min[2] && Math.abs((pocket2.leaves[0].leaf.min[2] + pocket2.leaves[0].leaf.max[2]) / 2 - (c0 + c1) / 2) < 1e-9, 'one track, on the axis');
+assert.ok(pocket2.leaves[0].openShift < 0 && pocket2.leaves[1].openShift > 0, 'they part');
 assert.equal(parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'passage' })), null, 'a passage is just the hole');
 
 // WINDOWS (default 1.2 x 1.4, sill 0.9, centered at 3 m: 2.4..3.6, 0.9..2.3)

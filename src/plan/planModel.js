@@ -429,6 +429,8 @@ export const openingOperation = (opening) => (opening.type === 'window'
     ? (opening.operation === 'pocket' ? 'slide' : opening.operation ?? 'standard')
     : opening.operation ?? 'swing');
 export const MAX_LEAVES = 4;
+// A pocket door has at most 2 leaves (one track: they part, one into each side of the wall)
+export const openingMaxLeaves = (opening) => (opening.type === 'door' && openingOperation(opening) === 'pocket' ? 2 : MAX_LEAVES);
 
 /*
 * The LEAVES of an opening spanning from..to along its wall's line: [{ from, to, towardsStart }], equal
@@ -438,7 +440,7 @@ export const MAX_LEAVES = 4;
 * opening.hinge ('start' default | 'end'): 1 leaf = the classic single hinge choice.
 */
 export function openingLeaves(opening, from, to) {
-    const count = Math.min(MAX_LEAVES, Math.max(1, Math.round(opening.leaves ?? 1)));
+    const count = Math.min(openingMaxLeaves(opening), Math.max(1, Math.round(opening.leaves ?? 1)));
     const width = (to - from) / count;
     const middle = (count - 1) / 2;
     return Array.from({ length: count }, (_, i) => ({
@@ -507,7 +509,8 @@ export function addOpening(level, wallId, type, id = newOpeningId()) {
 /*
 * The level with opening `openingId` of wall `wallId` merged with `patch` (e.g. { width: 1 }), or null when
 * the result is not valid: smaller than MIN_OPENING_SIZE, negative sill, not entirely within the wall's line,
-* closer than MIN_LINTEL to the wall's top, or overlapping another opening of the wall.
+* closer than MIN_LINTEL to the wall's top, overlapping another opening of the wall, or a pocket door moved /
+* widened where its pocket loses its room.
 */
 export function updateOpening(level, wallId, openingId, patch) {
     const wall = level.walls.find((item) => item.id === wallId);
@@ -521,7 +524,14 @@ export function updateOpening(level, wallId, openingId, patch) {
         && from >= -1e-9 && to <= length + 1e-9 && next.sill + next.height <= height - MIN_LINTEL + 1e-9
         && wall.openings.every((o) => o.id === openingId || o.offset + o.width / 2 <= from + 1e-9 || o.offset - o.width / 2 >= to - 1e-9);
     if (!isValid) return null;
-    return updateWall(level, wallId, { openings: wall.openings.map((o) => (o.id === openingId ? next : o)) });
+    const result = updateWall(level, wallId, { openings: wall.openings.map((o) => (o.id === openingId ? next : o)) });
+    // a pocket door is not MOVED or WIDENED into a spot without room for its pocket (pocketConflicts): refused
+    // when a side that had room loses it; choosing 'pocket' in a tight spot stays allowed (a warning)
+    if ((next.offset !== current.offset || next.width !== current.width) && openingOperation(current) === 'pocket') {
+        const before = pocketConflicts(level, wallId, openingId) ?? [];
+        if ((pocketConflicts(result, wallId, openingId) ?? []).some((side) => !before.includes(side))) return null;
+    }
+    return result;
 }
 
 /*

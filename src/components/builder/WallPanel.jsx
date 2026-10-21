@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, addOpening, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -199,7 +199,7 @@ function OpeningPanel() {
     const isDoor = opening.type === 'door';
     const operation = openingOperation(opening);
     const hasLeaves = !['standard', 'passage', 'hole'].includes(operation);
-    const leaves = opening.leaves ?? 1;
+    const leaves = Math.min(opening.leaves ?? 1, openingMaxLeaves(opening)); // as drawn (an old pocket may store more)
     const isSlidingWindow = !isDoor && operation === 'slide';
     return (
         <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
@@ -215,8 +215,9 @@ function OpeningPanel() {
             {/* how it opens (doors and windows): hinged, sliding on a face, sliding into the wall; 1..4 leaves
                 (planModel.openingLeaves); hinge / slide direction only matters for an odd leaf count; doors can
                 also be a bare passage, windows a bare hole (no frame, no leaves) */}
-            <Toggle label="Type" value={operation} options={[...(isDoor ? [] : [['standard', 'Fixed']]), ['swing', 'Hinged'], ['slide', 'Sliding'], ...(isDoor ? [['pocket', 'Pocket'], ['passage', 'Passage']] : [['hole', 'Hole']])]} onChange={(next) => apply({ operation: next })} />
-            {hasLeaves && <Toggle label="Leaves" value={leaves} options={[[1, '1'], [2, '2'], [3, '3'], [4, '4']]} onChange={(next) => apply({ leaves: next })} />}
+            <Toggle label="Type" value={operation} options={[...(isDoor ? [] : [['standard', 'Fixed']]), ['swing', 'Hinged'], ['slide', 'Sliding'], ...(isDoor ? [['pocket', 'Pocket'], ['passage', 'Passage']] : [['hole', 'Hole']])]} onChange={(next) => apply({ operation: next, ...(next === 'pocket' && leaves > 2 ? { leaves: 2 } : {}) })} />
+            {/* a pocket door: 1 or 2 leaves (planModel.openingMaxLeaves) */}
+            {hasLeaves && <Toggle label="Leaves" value={leaves} options={[[1, '1'], [2, '2'], [3, '3'], [4, '4']].slice(0, openingMaxLeaves(opening))} onChange={(next) => apply({ leaves: next })} />}
             {/* a sliding window: always (the end whose leaf stays, the others slide onto it, doorModel.js) */}
             {hasLeaves && (leaves % 2 === 1 || isSlidingWindow) && <Toggle label={operation === 'swing' ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
             {hasLeaves && operation !== 'pocket' && !isSlidingWindow && <Toggle label={operation === 'swing' ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}

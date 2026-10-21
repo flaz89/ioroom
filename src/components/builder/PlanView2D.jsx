@@ -880,7 +880,7 @@ function OpeningSymbol({ wall, rect, isSelected, pocketConflicts }) {
             return [panel(leaf, near, near + side * LEAF_THICKNESS, `leaf${i}`), arrow(leaf, near + side * (LEAF_THICKNESS + SLIDE_GAP * 2), `arrow${i}`)];
         });
     } else if (operation === 'pocket') {
-        // leaves on two tracks around the axis; pockets: as long as the leaves sliding to each side
+        // leaves on one track on the axis (at most 2, parting); pockets: as long as the leaves sliding to each side
         const half = Math.min(LEAF_THICKNESS, Math.abs(outer - inner) / 4);
         const towardsStart = leaves.filter((leaf) => leaf.towardsStart).reduce((sum, leaf) => sum + leaf.to - leaf.from, 0);
         const towardsEnd = (to - from) - towardsStart;
@@ -892,7 +892,7 @@ function OpeningSymbol({ wall, rect, isSelected, pocketConflicts }) {
             towardsStart > 0 && pocket(from - towardsStart, from, 'pocketStart'),
             towardsEnd > 0 && pocket(to, to + towardsEnd, 'pocketEnd'),
             ...leaves.flatMap((leaf, i) => {
-                const near = i % 2 === 0 ? axis - half : axis;
+                const near = axis - half / 2;
                 return [panel(leaf, near, near + half, `leaf${i}`), arrow(leaf, axis + side * (Math.abs(outer - inner) / 2 + SLIDE_GAP * 2), `arrow${i}`)];
             })
         ];
