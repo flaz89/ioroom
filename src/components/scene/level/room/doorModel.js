@@ -11,7 +11,7 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 *
 * openingParts(wall, opening, wallHeight) -> null | { frame: [box],
 *     leaves: [{ hinge: [x, c], openAngle, openShift, leaf: box, sash?: [box], glass?: box, handle: [box] }] }
-* - Doors 'swing' | 'slide' | 'pocket', windows also 'standard' (one FIXED sash on the wall's axis): null
+* - Doors 'swing' | 'slide' | 'pocket', windows 'standard' (one FIXED sash on the wall's axis) | 'swing' | 'slide': null
 *   otherwise (a door 'passage' and a window 'hole' are just the hole), or when the opening is clipped away
 *   (openingRects).
 * - OPENING a leaf (renderer: progress p from 0 closed to 1 open): rotate by p x openAngle around the vertical
@@ -31,8 +31,12 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 *   frame (the renderer rotates them around the hinge). `leaf` is the leaf's whole box: a door's leaf (part
 *   'leaf'); a window draws instead its `sash` (part 'leaf': a frame SASH wide around the pane) and `glass`
 *   (part 'glass', GLASS thick, in the middle of the sash's depth).
-* - SLIDE (on a face, the swing side, like the 2D symbol): the leaves hang in front of the casing, covering the
-*   reveal and the casing, on two alternating tracks; a RAIL above them runs from closed to fully open.
+* - SLIDE DOOR (on a face, the swing side, like the 2D symbol): the leaves hang in front of the casing, covering
+*   the reveal and the casing, on two alternating tracks; a RAIL above them runs from closed to fully open.
+* - SLIDE WINDOW (the classic one): inside the lining, EACH leaf on its own track across the reveal (centered on
+*   the wall's axis, within WINDOW_TRACKS_DEPTH of its depth); the leaf at the hinge end ('start' default |
+*   'end': the panel's "Slides to") is FIXED (outermost track, no handle), opening slides every other leaf onto
+*   its place: with 4 leaves, 3 move on 3 tracks and all end over the 4th.
 * - POCKET (into the wall): the leaves are on the wall's axis, two tracks side by side (each at most a quarter
 *   of the wall's depth); on each side they slide to the jamb lining is SPLIT around the slot they run through
 *   (the wall opens into its pocket); open, they are inside the wall but for POCKET_GRIP past the jamb.
@@ -40,7 +44,7 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 * - HANDLE (part 'handle') near each leaf's free edge: doors on both faces at HANDLE_HEIGHT, windows on the
 *   room's side only at mid height. Hinged = a rose, a stem (perpendicular to the leaf) and the lever (doors:
 *   towards the hinge; windows: down); sliding door = a vertical bar on two stems; pocket door and sliding /
-*   pocket window = a flat pull plate (nothing sticks out); a fixed sash has none.
+*   sliding window = a flat pull plate (nothing sticks out); a fixed sash / leaf has none.
 * Calibration knobs (sizes in meters): tune by eye.
 * ponytail: boxes only (no profiles, no panels); shapes and styles come with the customization step.
 */
@@ -75,9 +79,10 @@ export const GLASS = 0.008;
 export const SILL_IN = 0.03;        // inner sill board: how far it juts into the room
 export const SILL_OUT = 0.04;       // outer sill: how far it juts outside, and past the reveal on each side
 const WINDOW_PULL = [0.025, 0.1, 0.004];
+const WINDOW_TRACKS_DEPTH = 0.8;    // share of the wall's depth a sliding window's tracks may take
 
 const box = (x0, x1, y0, y1, c0, c1) => ({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(c0, c1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(c0, c1)] });
-const OPERATIONS = { door: ['swing', 'slide', 'pocket'], window: ['standard', 'swing', 'slide', 'pocket'] };
+const OPERATIONS = { door: ['swing', 'slide', 'pocket'], window: ['standard', 'swing', 'slide'] };
 
 export function openingParts(wall, opening, wallHeight) {
     const operation = openingOperation(opening);
@@ -97,6 +102,10 @@ export function openingParts(wall, opening, wallHeight) {
 
     // which sides leaves slide to (pocket: no lining there, the wall is open into its pocket)
     const sides = openingLeaves(opening, from, to);
+    // sliding window: the leaf at the hinge end ('start' default | 'end') stays, the others slide over it
+    const isSlidingWindow = isWindow && operation === 'slide';
+    const fixedAtStart = opening.hinge !== 'end';
+    const windowRank = (i) => (fixedAtStart ? i : sides.length - 1 - i);
     const toStart = sides.some((leaf) => leaf.towardsStart), toEnd = sides.some((leaf) => !leaf.towardsStart);
     const pocketStart = operation === 'pocket' && toStart, pocketEnd = operation === 'pocket' && toEnd;
 
@@ -127,6 +136,18 @@ export function openingParts(wall, opening, wallHeight) {
         y1 = top - LINING - LEAF_GAP;
         track = operation === 'standard' ? () => [axis - sashDepth / 2, axis + sashDepth / 2] // fixed: on the axis
             : () => [face, face - side * (isWindow ? sashDepth : LEAF_THICKNESS)];               // flush with the face
+    } else if (operation === 'slide' && isWindow) {
+        // classic sliding window: inside the lining, each leaf on its own track across the reveal (centered on
+        // the axis, the fixed leaf outermost); rank = the leaf's place counted from the fixed end
+        [lo, hi] = [from + LINING + LEAF_GAP, to - LINING - LEAF_GAP];
+        y1 = top - LINING - LEAF_GAP;
+        const count = sides.length;
+        const thickness = Math.min(SLIDE_THICKNESS, (WINDOW_TRACKS_DEPTH * (c1 - c0) - (count - 1) * TRACK_GAP) / count);
+        const outermost = axis - roomward * (count * thickness + (count - 1) * TRACK_GAP) / 2;
+        track = (i) => {
+            const near = outermost + roomward * windowRank(i) * (thickness + TRACK_GAP);
+            return [near, near + roomward * thickness];
+        };
     } else if (operation === 'slide') {
         // in front of the face (past the casing), covering the casing too; two alternating tracks
         [lo, hi] = [from - out, to + out];
@@ -144,7 +165,10 @@ export function openingParts(wall, opening, wallHeight) {
     }
     const y0 = isWindow ? sill + LEAF_GAP : FLOOR_GAP;
     const handleY = isWindow ? (y0 + y1) / 2 : HANDLE_HEIGHT;
-    const spans = operation === 'standard' ? [{ from: lo, to: hi, towardsStart: true }] : openingLeaves(opening, lo, hi);
+    // fixed window: one sash; sliding window: every leaf's fixed side is the fixed end (its handle at the far edge)
+    const spans = operation === 'standard' ? [{ from: lo, to: hi, towardsStart: true }]
+        : openingLeaves(opening, lo, hi).map((span) => (isSlidingWindow ? { ...span, towardsStart: fixedAtStart } : span));
+    const leafWidth = (hi - lo) / spans.length;
     const leaves = spans.map((full, index) => {
         // half the meeting gap off each edge that touches another leaf
         const span = { ...full, from: full.from + (index > 0 ? MEETING_GAP / 2 : 0), to: full.to - (index < spans.length - 1 ? MEETING_GAP / 2 : 0) };
@@ -156,7 +180,7 @@ export function openingParts(wall, opening, wallHeight) {
         const [cMin, cMax] = [Math.min(...leafC), Math.max(...leafC)];
         // the leaf faces a handle goes on, as [surface, outwards along c]: doors both, windows the room's side
         const faces = isWindow ? [roomward > 0 ? [cMax, 1] : [cMin, -1]] : [[cMin, -1], [cMax, 1]];
-        const handle = operation === 'standard' ? []
+        const handle = operation === 'standard' || (isSlidingWindow && windowRank(index) === 0) ? []
             : operation === 'swing' ? leverHandle(handleX, handleY, isWindow ? 0 : toFree, faces)
                 : operation === 'slide' && !isWindow ? barHandle(handleX, handleY, faces)
                     : pullHandle(handleX, handleY, isWindow ? WINDOW_PULL : PULL, faces);
@@ -168,7 +192,9 @@ export function openingParts(wall, opening, wallHeight) {
             openAngle: operation === 'swing' ? (Math.PI / 2) * side * toFree : 0,
             // sliding: mirrored out of the leaves' extent on its side (stacked leaves never overlap)
             // pocket: short of the full travel, so the leaf stays POCKET_GRIP out of the jamb lining
+            // sliding window: onto the fixed leaf's place
             openShift: operation === 'swing' || operation === 'standard' ? 0
+                : isSlidingWindow ? (fixedAtStart ? -1 : 1) * windowRank(index) * leafWidth
                 : (span.towardsStart ? 2 * lo - span.from - span.to : 2 * hi - span.from - span.to)
                     + (operation === 'pocket' ? (span.towardsStart ? 1 : -1) * (LINING + POCKET_GRIP) : 0),
             leaf,
@@ -182,7 +208,7 @@ export function openingParts(wall, opening, wallHeight) {
         const slot = spans.flatMap((s, i) => (s.towardsStart === isStart ? track(i) : []));
         frame.push(box(x0, x0 + LINING, bottom, top, c0, Math.min(...slot) - LEAF_GAP), box(x0, x0 + LINING, bottom, top, Math.max(...slot) + LEAF_GAP, c1));
     }
-    if (operation === 'slide') {
+    if (operation === 'slide' && !isWindow) {
         // the rail above the leaves: from closed to open (as far as the open leaves reach), deep enough for both tracks
         const ends = leaves.flatMap(({ leaf, openShift }) => [leaf.min[0] + openShift, leaf.max[0] + openShift]);
         const railC = [face + side * CASING_DEPTH, face + side * (CASING_DEPTH + SLIDE_GAP + 2 * SLIDE_THICKNESS + TRACK_GAP + SLIDE_GAP)];
@@ -226,7 +252,7 @@ function barHandle(x, y, faces) {
     ]);
 }
 
-// Pocket door, sliding / pocket window: a flat pull plate on each given face (nothing must stick out)
+// Pocket door, sliding window: a flat pull plate on each given face (nothing must stick out)
 function pullHandle(x, y, [w, h, d], faces) {
     return faces.map(([surface, s]) => box(x - w / 2, x + w / 2, y - h / 2, y + h / 2, surface, surface + s * d));
 }

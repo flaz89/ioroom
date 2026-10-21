@@ -855,7 +855,22 @@ function OpeningSymbol({ wall, rect, isSelected }) {
     };
 
     let symbol;
-    if (operation === 'slide') {
+    if (operation === 'slide' && isWindow) {
+        // classic sliding window: one thin panel per leaf, each on its own track across the wall (the fixed one,
+        // at the hinge end, outermost), an arrow on each moving leaf towards the fixed one (doorModel.js)
+        const fixedAtStart = opening.hinge !== 'end';
+        const depth = Math.abs(outer - inner);
+        const pitch = Math.min(LEAF_THICKNESS, depth * 0.8 / leaves.length);
+        const roomward = Math.sign(inner - outer);
+        symbol = leaves.flatMap((leaf, i) => {
+            const rank = fixedAtStart ? i : leaves.length - 1 - i;
+            const near = axis - roomward * (pitch * leaves.length) / 2 + roomward * rank * pitch;
+            return [
+                panel(leaf, near, near + roomward * pitch * 0.7, `leaf${i}`),
+                rank > 0 && arrow({ ...leaf, towardsStart: fixedAtStart }, inner + roomward * SLIDE_GAP * 2, `arrow${i}`)
+            ];
+        });
+    } else if (operation === 'slide') {
         symbol = leaves.flatMap((leaf, i) => {
             const near = face + side * (SLIDE_GAP + (i % 2) * LEAF_THICKNESS);
             return [panel(leaf, near, near + side * LEAF_THICKNESS, `leaf${i}`), arrow(leaf, near + side * (LEAF_THICKNESS + SLIDE_GAP * 2), `arrow${i}`)];

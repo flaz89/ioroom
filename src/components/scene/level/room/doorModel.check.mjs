@@ -111,9 +111,19 @@ assert.ok(casement.leaves.every((l) => l.openAngle !== 0 && l.handle.length === 
 const lever = casement.leaves[0].handle[2];
 assert.ok(lever.max[1] - lever.min[1] > lever.max[0] - lever.min[0], 'window lever points down');
 assert.ok(casement.leaves[0].handle.every((b) => (roomward > 0 ? b.min[2] >= casement.leaves[0].leaf.max[2] - eps : b.max[2] <= casement.leaves[0].leaf.min[2] + eps)), 'handle on the room side');
-// sliding / pocket windows: pull plates, the same travel rules as doors
-assert.ok(win({ operation: 'slide', leaves: 2 }).leaves.every((l) => l.openShift !== 0 && l.handle.length === 1));
-assert.ok(win({ operation: 'pocket' }).leaves[0].leaf.min[1] > 0.9, 'pocket window above the sill');
+// sliding window, 4 leaves sliding to the start: the first stays (no handle), the other 3 each on their own
+// track slide onto its place; inside the faces, above the sill
+const sliding = win({ operation: 'slide', leaves: 4 });
+const at0 = sliding.leaves[0].leaf.min[0];
+assert.ok(sliding.leaves[0].openShift === 0 && sliding.leaves[0].handle.length === 0, 'the fixed leaf');
+assert.ok(sliding.leaves.slice(1).every((l) => l.handle.length === 1 && Math.abs(l.leaf.min[0] + l.openShift - at0) < 0.002), 'open: all over the fixed one');
+assert.equal(new Set(sliding.leaves.map((l) => l.leaf.min[2].toFixed(4))).size, 4, 'four tracks');
+assert.ok(sliding.leaves.every((l) => l.leaf.min[2] > c0 && l.leaf.max[2] < c1 && l.leaf.min[1] > 0.9), 'in the reveal, above the sill');
+assert.equal(sliding.frame.length, 9, 'no rail');
+const slidingEnd = win({ operation: 'slide', leaves: 2, hinge: 'end' });
+assert.ok(slidingEnd.leaves[1].openShift === 0 && slidingEnd.leaves[0].openShift > 0, 'slides to the end: the last leaf stays');
+// a window has no pocket: an old one is a sliding window
+assert.deepEqual(win({ operation: 'pocket', leaves: 2 }), win({ operation: 'slide', leaves: 2 }));
 // a hole is just the hole
 assert.equal(win({ operation: 'hole' }), null);
 console.log('doorModel: ok');

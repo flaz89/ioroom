@@ -390,8 +390,9 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // floor (0 = door). Doors: hinge 'start' (default, the side towards `a`) | 'end'; swing 'in' (default, the
 // leaf opens on the wall's inner side, -normal) | 'out'. Floor-level openings (sill 0): floorSide 'in'
 // (default) | 'out' = the room whose floor runs on through the wall's thickness under it (openingFloors).
-// Doors and windows alike: operation 'swing' (hinged leaves) | 'slide' (sliding on a wall face: the swing
-// side) | 'pocket' (sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
+// Doors and windows alike: operation 'swing' (hinged leaves) | 'slide' (doors: sliding on a wall face, the
+// swing side; windows: each leaf on its own track in the reveal, all sliding over the one fixed at the
+// hinge end) | 'pocket' (doors only: sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
 // 'standard' (their default: the plain window symbol; a fixed sash in 3D) and 'hole' (a bare hole: no frame,
 // no sash), doors 'passage' (the same for a door). openingOperation(opening) reads it.
 // Open / closed in 3D is NOT stored here: store openDoors (planSlice.js), out of the undo history.
@@ -422,8 +423,11 @@ export function openingRects(wall, height) {
     })).filter((rect) => rect.to - rect.from > 1e-6 && rect.top - rect.bottom > 1e-6);
 }
 
-// How an opening opens, its type's default when not set: doors 'swing', windows 'standard'
-export const openingOperation = (opening) => opening.operation ?? (opening.type === 'window' ? 'standard' : 'swing');
+// How an opening opens, its type's default when not set: doors 'swing', windows 'standard' (a window has no
+// 'pocket': an old one reads as 'slide')
+export const openingOperation = (opening) => (opening.type === 'window'
+    ? (opening.operation === 'pocket' ? 'slide' : opening.operation ?? 'standard')
+    : opening.operation ?? 'swing');
 export const MAX_LEAVES = 4;
 
 /*
