@@ -4,6 +4,7 @@ import { svg } from '../../../utils/svg-logos';
 import { useStore } from '../../../store/appStore';
 import { usePanelInViewport } from '../usePanelInViewport';
 import { preloadMaterialTextures, useMaterialList } from '../../../materials/library';
+import { finishMaterial, paintId } from '../../../materials/finishes';
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
 import { deleteMaterial } from '../../../materials/materialsApi';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
@@ -66,7 +67,11 @@ export default function MaterialsPanel() {
     const kinds = kindsIn(materials, filter.category);
     // a chip that no longer has materials (e.g. after an edit) falls back to "All"
     const kind = kinds.some((k) => k.id === filter.kind) ? filter.kind : null;
-    const shown = visibleMaterials(materials, { category: filter.category, kind });
+    // doors & windows tab: a CUSTOM paint ball after the finishes, any color (its picker: the ball's swatch)
+    const [customColor, setCustomColor] = useState('#2f6f8f');
+    const custom = finishMaterial(paintId(customColor));
+    const listed = visibleMaterials(materials, { category: filter.category, kind });
+    const shown = filter.category === 'fixture' && (kind == null || kind === 'paint') && !listed.includes(custom) ? [...listed, custom] : listed;
     const [confirmDelete, setConfirmDelete] = useState(null); // id waiting for the confirming press
     const [deleteError, setDeleteError] = useState(null);
 
@@ -86,7 +91,7 @@ export default function MaterialsPanel() {
     // Drag in progress: follow the pointer on the whole window, preview / apply on the surface below it
     useEffect(() => {
         if (drag == null) return;
-        const { setMaterialDrag, setSurfaceMaterial } = useStore.getState();
+        const { setMaterialDrag, dropMaterial } = useStore.getState();
         const materialId = drag.material.id;
         const move = (event) => {
             setDrag((current) => current && { ...current, x: event.clientX, y: event.clientY });
@@ -94,7 +99,8 @@ export default function MaterialsPanel() {
         };
         const end = (event) => {
             const surfaceId = event.type === 'pointerup' ? pickSurfaceAt(event.clientX, event.clientY) : null;
-            if (surfaceId != null) setSurfaceMaterial(surfaceId, materialId);
+            // a room face, or a door / window (its whole structure; Shift = all of that type: surfacesSlice)
+            if (surfaceId != null) dropMaterial(surfaceId, materialId, { allOfType: event.shiftKey });
             setMaterialDrag(null);
             setDrag(null);
         };
@@ -134,7 +140,7 @@ export default function MaterialsPanel() {
                         )}
                     </div>
                     {deleteError && <span className="materials-error" role="alert">{deleteError}</span>}
-                    <span className="materials-hint">Drag a material onto a wall or the floor</span>
+                    <span className="materials-hint">{filter.category === 'fixture' ? 'Drag onto a door or a window (Shift: all of that kind)' : 'Drag a material onto a wall or the floor'}</span>
                     <div className="materials-tabs" role="tablist">
                         {MATERIAL_CATEGORIES.map((category) => (
                             <button key={category.id} role="tab" aria-selected={filter.category === category.id}
@@ -162,7 +168,13 @@ export default function MaterialsPanel() {
                                         onPointerLeave={closeCardSoon}
                                     >
                                         <MaterialBall material={material} />
-                                        <span className="materials-name">{material.name}</span>
+                                        <span className="materials-name">{material === custom ? 'Custom' : material.name}</span>
+                                        {material === custom && (
+                                            // the custom paint's color picker (its own press: never starts a drag)
+                                            <label className="materials-edit materials-color" title="Pick a color" onPointerDown={(event) => event.stopPropagation()}>
+                                                <input type="color" value={customColor} onChange={(event) => setCustomColor(event.target.value)} />
+                                            </label>
+                                        )}
                                         {canManage && material.maps != null && (
                                             <span
                                                 className="materials-edit"
@@ -202,6 +214,7 @@ export default function MaterialsPanel() {
 
 // Material preview ball: the color map wrapped on a disc, shaded like a lit sphere (css)
 function MaterialBall({ material }) {
-    const style = material.maps ? { backgroundImage: `url(${material.maps.color})` } : undefined;
+    const style = material.maps ? { backgroundImage: `url(${material.maps.color})` }
+        : material.finish ? { backgroundColor: material.finish.color } : undefined; // a system finish: its color
     return <span className="material-ball" style={style} aria-hidden="true" />;
 }

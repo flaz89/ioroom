@@ -205,6 +205,18 @@
 .materials-panel .materials-group { max-height: 46vh; overflow-y: auto; }
 
 /* "✎" (owner): edit the material, left of the "×" */
+/* custom paint ball (doors & windows): the badge IS the color picker, the native input fills it */
+.materials-color { overflow: hidden; padding: 0; }
+.materials-color input {
+    width: 150%;
+    height: 150%;
+    margin: -25%;
+    border: none;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+}
+
 .materials-edit {
     position: absolute;
     top: 0;

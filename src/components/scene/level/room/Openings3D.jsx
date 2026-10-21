@@ -161,7 +161,8 @@ const onPickHover = (event, openingId, setHoveredId) => {
     setHoveredId(openingId);
 };
 
-const DOOR_USER_DATA = (id, part) => ({ surfaceId: `${id}:${part}`, noPlacement: true });
+// openingId: a dragged material lands on the whole opening (MaterialDropTarget.jsx, Room.jsx VR drags)
+const DOOR_USER_DATA = (id, part) => ({ surfaceId: `${id}:${part}`, openingId: id, noPlacement: true });
 
 // Designer: a click on a door part opens / closes it (not after an orbit drag, not under the ruler / post-its)
 function onDoorClick(event, doorId) {
@@ -322,6 +323,10 @@ export default function Openings3D({ level }) {
     const doors = useMemo(() => buildDoors(level), [level]);
     const openDoors = useStore((state) => state.openDoors);
     const surfaces = useStore((state) => state.surfaces); // part materials (doorModel.partMaterialId)
+    // a material dragged over an opening previews on its structure (frame + leaves), tinted like a wall face
+    const drag = useStore((state) => state.materialDrag);
+    const materialOf = (door, part) => (drag?.surfaceId === door.id && part !== 'handle' ? drag.materialId : partMaterialId(surfaces, door.id, part));
+    const partTint = (door, part) => (drag?.surfaceId === door.id && part !== 'handle' ? true : tintOf(door.id));
     const isBuilder = useStore((state) => state.workspace === 'builder');
     const selectedOpening = useStore((state) => (state.workspace === 'builder' ? state.selectedOpening : null));
     const selectedId = selectedOpening?.openingId;
@@ -382,7 +387,7 @@ export default function Openings3D({ level }) {
 
     return [...doors.map((door) => (
         <group key={door.key} position={door.position} rotation-y={door.rotationY} {...doorHandlers(door)}>
-            <SurfaceMesh geometry={door.frame} materialId={partMaterialId(surfaces, door.id, 'frame')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
+            <SurfaceMesh geometry={door.frame} materialId={materialOf(door, 'frame')} tinted={partTint(door, 'frame')} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
             {door.leaves.map((leaf, index) => (
                 // pivot on the hinge axis: turned / moved by the eased progress (useFrame)
                 <group key={index} position={leaf.hinge} ref={(pivot) => {
@@ -390,9 +395,9 @@ export default function Openings3D({ level }) {
                     if (pivot) pivotsRef.current.set(key, pivot);
                     else pivotsRef.current.delete(key);
                 }}>
-                    <SurfaceMesh geometry={leaf.leaf} materialId={partMaterialId(surfaces, door.id, 'leaf')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
+                    <SurfaceMesh geometry={leaf.leaf} materialId={materialOf(door, 'leaf')} tinted={partTint(door, 'leaf')} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
                     {leaf.glass && <mesh geometry={leaf.glass} material={glassMaterial(tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
-                    {leaf.handle && <SurfaceMesh geometry={leaf.handle} materialId={partMaterialId(surfaces, door.id, 'handle')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
+                    {leaf.handle && <SurfaceMesh geometry={leaf.handle} materialId={materialOf(door, 'handle')} tinted={partTint(door, 'handle')} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
                 </group>
             ))}
         </group>

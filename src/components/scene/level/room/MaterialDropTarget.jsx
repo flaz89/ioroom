@@ -10,7 +10,8 @@ const _raycaster = new THREE.Raycaster();
 /*
 * Scene side of material drag & drop (desktop/mobile, mounted inside the Board): registers the picker
 * of surfacePicker.js. A screen point maps to the room face under it (merged room meshes carry
-* userData.faceRanges: triangle -> face id, Room.jsx) only if the canvas itself is there (not a panel on top of it) and no object stands in front
+* userData.faceRanges: triangle -> face id, Room.jsx), or to the door / window whose part is there (its id,
+* userData.openingId: Openings3D.jsx), only if the canvas itself is there (not a panel on top of it) and no object stands in front
 * (object meshes: userData.objectId). Notes, gizmos and invisible helpers are looked through.
 */
 export default function MaterialDropTarget() {
@@ -28,6 +29,7 @@ export default function MaterialDropTarget() {
             for (const hit of _raycaster.intersectObject(board, true)) {
                 const object = hit.object;
                 if (!object.isMesh || hit.face == null || !object.visible || object.isLineSegments2 || object.userData.isNote) continue;
+                if (object.userData.openingId != null) return object.userData.openingId; // a door / window part (Openings3D)
                 if (object.userData.faceRanges != null) return surfaceIdAt(object.userData.faceRanges, hit.faceIndex);
                 if (object.userData.objectId != null) return null; // an object in front of the surface
             }

@@ -38,7 +38,7 @@ const PAGE_ROWS = 3;         // ball rows per page
 const PAGE_SIZE = COLUMNS * PAGE_ROWS;
 const ROW = 0.034;           // meters: tabs / chips / pager rows
 const CHIP_W = 0.062;        // meters (4 chips per row)
-const TAB_W = 0.12;
+const TAB_W = 0.084;          // 3 tabs fit the panel (short labels: grouping.js `short`)
 const CELL_W = 0.065;        // meters
 const CELL_H = 0.075;        // meters (ball + name)
 const BALL = 0.046;          // meters (diameter)
@@ -92,13 +92,13 @@ function useThumbnails(materials) {
 }
 
 // One ball: the thumbnail clipped to a disc, shaded like a lit sphere (same look as the desktop css ball)
-function drawBall(ctx, x, y, radius, thumbnail, outline) {
+function drawBall(ctx, x, y, radius, thumbnail, outline, color = '#e6e6e6') {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.clip();
     if (thumbnail) ctx.drawImage(thumbnail, x - radius, y - radius, radius * 2, radius * 2);
-    else { ctx.fillStyle = '#e6e6e6'; ctx.fill(); }
+    else { ctx.fillStyle = color; ctx.fill(); } // no texture: Plain, or a system finish's color
     const shade = ctx.createRadialGradient(x - radius * 0.35, y - radius * 0.4, radius * 0.1, x, y, radius);
     shade.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
     shade.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
@@ -178,7 +178,7 @@ export default function VRMaterialsPanel() {
         materials.forEach((material, index) => {
             const x = (index % COLUMNS + 0.5) * cell;
             const y = Math.floor(index / COLUMNS) * cellH + radius + cell * 0.08;
-            drawBall(ctx, x, y, radius, thumbnails[material.id], null);
+            drawBall(ctx, x, y, radius, thumbnails[material.id], null, material.finish?.color);
             ctx.fillStyle = '#ffffff';
             ctx.font = `500 ${Math.round(cell * 0.13)}px "SUSE Mono", monospace`;
             const fit = (cell * 0.92) / ctx.measureText(material.name).width;
@@ -265,7 +265,7 @@ export default function VRMaterialsPanel() {
 
             {/* Category tabs */}
             {MATERIAL_CATEGORIES.map((category, index) => (
-                <VRButton key={category.id} label={category.label} size={[TAB_W, 0.026]} active={filter.category === category.id}
+                <VRButton key={category.id} label={category.short ?? category.label} size={[TAB_W, 0.026]} active={filter.category === category.id}
                     onClick={() => setLibraryFilter({ category: category.id })}
                     position={[(index - (MATERIAL_CATEGORIES.length - 1) / 2) * (TAB_W + 0.008), tabsY, 0.001]} />
             ))}

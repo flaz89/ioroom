@@ -1,13 +1,14 @@
 /*
 * How the material library is organized in the materials panels (desktop MaterialsPanel.jsx and VR
-* xr-ui/VRMaterialsPanel.jsx): tabs by CATEGORY (where it is meant to go: floors / walls), chips by KIND
+* xr-ui/VRMaterialsPanel.jsx): tabs by CATEGORY (where it is meant to go: floors / walls / doors & windows), chips by KIND
 * (what it is: wood, marble...). Plain (no category) is the first ball of every tab: the "reset".
 * The kind list lives only here (the server only checks the shape of the id): add a kind = add a line.
 * Records without a kind, or with one not listed here, show under "Other".
 */
 export const MATERIAL_CATEGORIES = [
     { id: 'floor', label: 'Floors' },
-    { id: 'wall', label: 'Walls' }
+    { id: 'wall', label: 'Walls' },
+    { id: 'fixture', label: 'Doors & windows', short: 'Fixtures' } // system finishes (finishes.js) first, then the library's; short: VR tab
 ];
 
 export const MATERIAL_KINDS = [

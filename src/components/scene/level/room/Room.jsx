@@ -32,9 +32,11 @@ function vrDragOf(event) {
     return drag?.pointerId != null && drag.pointerId === event.pointerId ? drag : null;
 }
 const faceOf = (event) => (event.object.userData.faceRanges ? surfaceIdAt(event.object.userData.faceRanges, event.faceIndex) : null);
+// where a dragged material would land: a door / window (its parts carry openingId: Openings3D.jsx) or a face
+const dropTargetOf = (event) => event.object.userData.openingId ?? faceOf(event);
 function onDragMove(event) {
     const drag = vrDragOf(event);
-    if (drag != null) useStore.getState().setMaterialDrag({ ...drag, surfaceId: faceOf(event) });
+    if (drag != null) useStore.getState().setMaterialDrag({ ...drag, surfaceId: dropTargetOf(event) });
 }
 function onDragLeave(event) {
     const drag = vrDragOf(event);
@@ -44,8 +46,8 @@ function onDragDrop(event) {
     const drag = vrDragOf(event);
     if (drag == null) return;
     event.stopPropagation();
-    const surfaceId = faceOf(event);
-    if (surfaceId != null) useStore.getState().setSurfaceMaterial(surfaceId, drag.materialId);
+    const surfaceId = dropTargetOf(event);
+    if (surfaceId != null) useStore.getState().dropMaterial(surfaceId, drag.materialId); // VR: one at a time
     useStore.getState().setMaterialDrag(null);
 }
 

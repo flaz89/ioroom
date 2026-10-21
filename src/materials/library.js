@@ -1,6 +1,6 @@
 import { useTexture } from '@react-three/drei';
 import { useStore } from '../store/appStore';
-import { finishMaterial } from './finishes';
+import { FINISHES, finishMaterial } from './finishes';
 
 /*
 * Material library: the materials people can drag onto the room surfaces (and, later, onto objects).
@@ -26,10 +26,10 @@ const findIn = (list, id) => finishMaterial(id) ?? list.find((material) => mater
 // React: the material record for `id` (re-renders when the library changes)
 export const useMaterial = (id) => useStore((state) => findIn(state.libraryMaterials, id));
 
-// React: PLAIN first, then the library
+// React: PLAIN first, then the system finishes (finishes.js: the doors & windows tab), then the library
 export function useMaterialList() {
     const library = useStore((state) => state.libraryMaterials);
-    return [PLAIN, ...library];
+    return [PLAIN, ...FINISHES, ...library];
 }
 
 // material.maps keys; orm = packed R ambient occlusion / G roughness / B metalness (glTF layout, which is

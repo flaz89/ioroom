@@ -1,10 +1,13 @@
 import { priceSnapshot } from '../../materials/billOfQuantities';
+import { activeLevel } from '../../plan/planModel';
+import { PLAIN_ID } from '../../materials/library';
 
 /*
 * Materials of the room surfaces (floor, each wall).
 *
 * surfaces (saved in the environment, sync: Y.Map "surfaces", sync/roomSync.js + fieldMapSync.js):
-*   face id (Room.jsx: 'floor', '<wall>:inner|outer|edge') -> material id (materials/library.js);
+*   face id (Room.jsx: 'floor', '<wall>:inner|outer|edge') -> material id (materials/library.js); also doors
+*   and windows: '<opening>' (whole structure) and '<opening>:frame|leaf|handle' (doorModel.partMaterialId);
 *   a missing surface uses the plain material. Everyone in the room can change them (like the objects).
 * materialDrag (per device, never synced): { materialId, surfaceId, pointerId? } while a material is dragged
 *   from the materials panel; surfaceId = surface under the pointer (previewed there), null over nothing.
@@ -14,18 +17,41 @@ import { priceSnapshot } from '../../materials/billOfQuantities';
 *   (materials/billOfQuantities.js): later price-list changes do not alter the project's estimate.
 */
 
-export const createSurfacesSlice = (set, get) => ({
+// The new `surfaces`, plus the material's price frozen into the project the first time it is used with one
+function withPrice(state, surfaces, materialId) {
+    if (state.priceSnapshots[materialId] != null) return { surfaces };
+    const snapshot = priceSnapshot(state.libraryMaterials.find((material) => material.id === materialId));
+    return snapshot ? { surfaces, priceSnapshots: { ...state.priceSnapshots, [materialId]: snapshot } } : { surfaces };
+}
+
+export const createSurfacesSlice = (set) => ({
     surfaces: {},
     materialDrag: null,
     priceSnapshots: {},
 
     // Sets one surface's material, e.g. setSurfaceMaterial('wall-back:inner', 'brick_wall_001'),
     // freezing the material's price into the project the first time it is used with a price
-    setSurfaceMaterial: (surfaceId, materialId) => set((state) => {
-        const surfaces = { ...state.surfaces, [surfaceId]: materialId };
-        if (state.priceSnapshots[materialId] != null) return { surfaces };
-        const snapshot = priceSnapshot(get().libraryMaterials.find((material) => material.id === materialId));
-        return snapshot ? { surfaces, priceSnapshots: { ...state.priceSnapshots, [materialId]: snapshot } } : { surfaces };
+    setSurfaceMaterial: (surfaceId, materialId) => set((state) => withPrice(state, { ...state.surfaces, [surfaceId]: materialId }, materialId)),
+
+    /*
+    * A material DROPPED on `targetId` (materials panels, desktop and VR): a room face (setSurfaceMaterial), or a
+    * door / window (its id: Openings3D parts, doorModel.partMaterialId) = the material of its whole STRUCTURE,
+    * dropping its own frame / leaf materials (they would hide it; the handle keeps its own). allOfType (Shift,
+    * flatscreen): every opening of the same type (doors / windows) of the level gets it.
+    */
+    dropMaterial: (targetId, materialId, { allOfType = false } = {}) => set((state) => {
+        const walls = activeLevel(state.plan).walls;
+        const target = walls.flatMap((wall) => wall.openings ?? []).find((opening) => opening.id === targetId);
+        if (target == null) return withPrice(state, { ...state.surfaces, [targetId]: materialId }, materialId);
+        const ids = allOfType ? walls.flatMap((wall) => (wall.openings ?? []).filter((o) => o.type === target.type).map((o) => o.id)) : [targetId];
+        const surfaces = { ...state.surfaces };
+        for (const id of ids) {
+            if (materialId === PLAIN_ID) delete surfaces[id]; // Plain = back to the default finishes
+            else surfaces[id] = materialId;
+            delete surfaces[`${id}:frame`];
+            delete surfaces[`${id}:leaf`];
+        }
+        return withPrice(state, surfaces, materialId);
     }),
 
     // Replaces the frozen prices with the room's (sync/roomSync.js: all values, removed keys included)

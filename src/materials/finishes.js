@@ -12,12 +12,13 @@ export const paintId = (hex) => `${PAINT_PREFIX}${hex.toLowerCase()}`;
 export const WHITE_ID = paintId('#f1eee8');
 export const ANTHRACITE_ID = paintId('#3b3e42');
 const FIXED_FINISHES = {
-    'wood-light': { name: 'Light wood', color: '#c9a77c', roughness: 0.6, metalness: 0 },
-    'wood-dark': { name: 'Dark wood', color: '#5e3f2a', roughness: 0.6, metalness: 0 },
-    steel: { name: 'Steel', color: '#a9adb2', roughness: 0.35, metalness: 0.4 } // a high metalness looks black without an env map
+    'wood-light': { name: 'Light wood', kind: 'wood', color: '#c9a77c', roughness: 0.6, metalness: 0 },
+    'wood-dark': { name: 'Dark wood', kind: 'wood', color: '#5e3f2a', roughness: 0.6, metalness: 0 },
+    steel: { name: 'Steel', kind: 'metal', color: '#a9adb2', roughness: 0.35, metalness: 0.4 } // a high metalness looks black without an env map
 };
 export const STEEL_ID = 'finish:steel';
-const finishRecord = (id, name, finish) => ({ id, name, category: 'fixture', tileSize: 1, maps: null, finish });
+// kind: the chip it shows under in the library (grouping.js)
+const finishRecord = (id, name, kind, finish) => ({ id, name, kind, category: 'fixture', tileSize: 1, maps: null, finish });
 
 // one record per id (cached): store selectors (useMaterial) must get the same object every time
 const records = new Map();
@@ -31,12 +32,12 @@ function buildFinish(id) {
     if (id.startsWith(PAINT_PREFIX) && /^#[0-9a-f]{6}$/.test(id.slice(PAINT_PREFIX.length))) {
         const color = id.slice(PAINT_PREFIX.length);
         const name = id === WHITE_ID ? 'White' : id === ANTHRACITE_ID ? 'Anthracite' : `Paint ${color}`;
-        return finishRecord(id, name, { color, ...PAINT });
+        return finishRecord(id, name, 'paint', { color, ...PAINT });
     }
     const fixed = id.startsWith('finish:') && FIXED_FINISHES[id.slice('finish:'.length)];
     if (!fixed) return null;
-    const { name, ...finish } = fixed;
-    return finishRecord(id, name, finish);
+    const { name, kind, ...finish } = fixed;
+    return finishRecord(id, name, kind, finish);
 }
 
 // The system finishes offered in the library (presets: any other paint color comes from the picker)
