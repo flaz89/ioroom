@@ -801,6 +801,9 @@ export default function PlanView2D() {
                 .filter((wall) => selectedWallIds.includes(wall.id) || (draft && !draft.isFloor && (samePoint(wall.a, draft.point) || samePoint(wall.b, draft.point))))
                 .map((wall) => lengthLabel(view, size, wall))}
 
+            {/* pocket doors without free wall for their pocket: a red note by each red pocket, selected or not */}
+            {isReady && pocketWarnings(view, size, shown)}
+
         </svg>
         {isReady && !endDrag && !underlayTool && <PlanMeasureActions view={view} size={size} list={measureList} />}
         {/* underlay tool: points, live line, snapped target; calibration length field */}
@@ -1090,6 +1093,28 @@ function DetectedWalls({ underlay, pickable }) {
             ))}
         </g>
     );
+}
+
+// Warnings of pocket doors without free wall (planModel.pocketConflicts), screen space like the lengths: at the
+// middle of each blocked pocket, past the wall's outer side (the gap lengths sit on the room's side)
+function pocketWarnings(view, size, level) {
+    return level.walls.flatMap((wall) => openingRects(wall, wall.height ?? level.wallHeight).flatMap(({ opening, from, to }) => {
+        const sides = pocketConflicts(level, wall.id, opening.id) ?? [];
+        const leaves = openingLeaves(opening, from, to);
+        const { dir, normal } = wallFrame(wall);
+        const { inner, outer } = faceOffsets(wall);
+        const away = Math.sign(outer - inner); // along the normal, from the room out
+        return sides.map((side) => {
+            const span = leaves.filter((leaf) => leaf.towardsStart === (side === 'start')).reduce((sum, leaf) => sum + leaf.to - leaf.from, 0);
+            const t = side === 'start' ? from - span / 2 : to + span / 2;
+            const [x, y] = toScreen(view, size.w, size.h, wall.a[0] + dir[0] * t + normal[0] * outer, wall.a[1] + dir[1] * t + normal[1] * outer);
+            return (
+                <text key={`${opening.id}:${side}`} className="plan-length plan-pocket-warning" x={x + normal[0] * away * LABEL_OFFSET} y={y + normal[1] * away * LABEL_OFFSET}>
+                    No room for the pocket
+                </text>
+            );
+        });
+    }));
 }
 
 // Same corner (exact: the dragged point is copied into the walls by moveVertex)

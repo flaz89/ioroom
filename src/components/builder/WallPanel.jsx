@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, addOpening, openingOperation, pocketConflicts, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, addOpening, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -201,8 +201,6 @@ function OpeningPanel() {
     const hasLeaves = !['standard', 'passage', 'hole'].includes(operation);
     const leaves = opening.leaves ?? 1;
     const isSlidingWindow = !isDoor && operation === 'slide';
-    const blockedPockets = pocketConflicts(level, wallId, openingId) ?? []; // a warning only, nothing is blocked
-
     return (
         <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
             <div className="wall-panel-header">
@@ -222,11 +220,6 @@ function OpeningPanel() {
             {/* a sliding window: always (the end whose leaf stays, the others slide onto it, doorModel.js) */}
             {hasLeaves && (leaves % 2 === 1 || isSlidingWindow) && <Toggle label={operation === 'swing' ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
             {hasLeaves && operation !== 'pocket' && !isSlidingWindow && <Toggle label={operation === 'swing' ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}
-            {blockedPockets.length > 0 && (
-                <div className="wall-panel-warning">
-                    Not enough free wall for the pocket {blockedPockets.length === 2 ? 'on either side' : `towards the ${blockedPockets[0]}`}
-                </div>
-            )}
             {/* open / closed in 3D (store openDoors: shared, animated by Openings3D.jsx, NOT an undo step; hinged doors for now) */}
             {hasLeaves && <Toggle label="State" value={isOpen ? 'open' : 'closed'} options={[['closed', 'Closed'], ['open', 'Open']]} onChange={(state) => setDoorOpen(openingId, state === 'open')} />}
             {/* floor-level opening: which side's floor runs on through the wall's depth (planModel.openingFloors) */}

@@ -88,6 +88,8 @@
     dominant-baseline: middle;
     pointer-events: none;
 }
+/* by a pocket without enough free wall (PlanView2D pocketWarnings) */
+.plan-length.plan-pocket-warning { fill: #ff6b6b; }
 
 .plan-legend {
     padding: .3em .9em;
@@ -178,16 +180,6 @@
 }
 .plan-flip:hover { filter: brightness(1.1); }
 .plan-flip:active { scale: .9; }
-
-/* opening panel: a pocket door without enough free wall (a warning only) */
-.wall-panel-warning {
-    padding: .35em .6em;
-    border: 1px solid rgba(255, 77, 77, 0.6);
-    border-radius: 6px;
-    background: rgba(255, 77, 77, 0.14);
-    color: #ffb3b3;
-    font-size: .9em;
-}
 
 .wall-panel-actions {
     display: flex;
