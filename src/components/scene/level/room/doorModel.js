@@ -9,8 +9,8 @@ import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../.
 * A box: { min: [x, y, c], max: [x, y, c] }.
 *
 * doorParts(wall, opening, wallHeight) -> null | { frame: [box], leaves: [{ hinge: [x, c], openAngle, openShift, leaf: box, handle: [box] }] }
-* - Doors with operation 'swing' | 'slide' | 'pocket' (windows come later): null otherwise, or when the
-*   opening is clipped away (openingRects).
+* - Doors with operation 'swing' | 'slide' | 'pocket' (windows come later): null otherwise (a 'passage' is
+*   just the hole), or when the opening is clipped away (openingRects).
 * - OPENING a leaf (renderer: progress p from 0 closed to 1 open): rotate by p x openAngle around the vertical
 *   axis through `hinge`, and move by p x openShift along x. Swing: openAngle, openShift 0. Sliding: openShift,
 *   openAngle 0: the leaf is MIRRORED out of the leaves' extent on the side it slides to, so leaves going the

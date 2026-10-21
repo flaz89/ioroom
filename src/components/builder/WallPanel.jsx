@@ -198,14 +198,14 @@ function OpeningPanel() {
     const number = (text) => Number(String(text).replace(',', '.'));
     const isDoor = opening.type === 'door';
     const operation = openingOperation(opening);
-    const hasLeaves = operation !== 'standard';
+    const hasLeaves = operation !== 'standard' && operation !== 'passage';
     const leaves = opening.leaves ?? 1;
 
     return (
         <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
             <div className="wall-panel-header">
                 <button className="wall-panel-close" onClick={() => setSelectedWallId(wallId)} title="Back to the wall">←</button>
-                <span>{isDoor ? 'Door' : 'Window'}</span>
+                <span>{isDoor ? (operation === 'passage' ? 'Passage' : 'Door') : 'Window'}</span>
                 <button className="wall-panel-close" onClick={() => setSelectedOpening(null)} title="Deselect (Esc)">×</button>
             </div>
             <Field label="From start" value={start} onApply={(text) => apply({ offset: number(text) + opening.width / 2 })} />
@@ -213,8 +213,9 @@ function OpeningPanel() {
             <Field label="Height" value={opening.height} onApply={(text) => apply({ height: number(text) })} />
             {!isDoor && <Field label="Sill" value={opening.sill} onApply={(text) => apply({ sill: number(text) })} />}
             {/* how it opens (doors and windows): hinged, sliding on a face, sliding into the wall; 1..4 leaves
-                (planModel.openingLeaves); hinge / slide direction only matters for an odd leaf count */}
-            <Toggle label="Type" value={operation} options={[...(isDoor ? [] : [['standard', 'Standard']]), ['swing', 'Hinged'], ['slide', 'Sliding'], ['pocket', 'Pocket']]} onChange={(next) => apply({ operation: next })} />
+                (planModel.openingLeaves); hinge / slide direction only matters for an odd leaf count; doors can
+                also be a bare passage (no frame, no leaves) */}
+            <Toggle label="Type" value={operation} options={[...(isDoor ? [] : [['standard', 'Standard']]), ['swing', 'Hinged'], ['slide', 'Sliding'], ['pocket', 'Pocket'], ...(isDoor ? [['passage', 'Passage']] : [])]} onChange={(next) => apply({ operation: next })} />
             {hasLeaves && <Toggle label="Leaves" value={leaves} options={[[1, '1'], [2, '2'], [3, '3'], [4, '4']]} onChange={(next) => apply({ leaves: next })} />}
             {hasLeaves && leaves % 2 === 1 && <Toggle label={operation === 'swing' ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
             {hasLeaves && operation !== 'pocket' && <Toggle label={operation === 'swing' ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}

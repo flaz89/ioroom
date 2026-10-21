@@ -392,7 +392,8 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // (default) | 'out' = the room whose floor runs on through the wall's thickness under it (openingFloors).
 // Doors and windows alike: operation 'swing' (hinged leaves) | 'slide' (sliding on a wall face: the swing
 // side) | 'pocket' (sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
-// 'standard' (their default: the plain window symbol, no leaves). openingOperation(opening) reads it.
+// 'standard' (their default: the plain window symbol, no leaves), doors 'passage' (a bare opening: no frame,
+// no leaves). openingOperation(opening) reads it.
 // Open / closed in 3D is NOT stored here: store openDoors (planSlice.js), out of the undo history.
 // ---------------------------------------------------------------------------------------------------
 export const OPENING_DEFAULTS = {
