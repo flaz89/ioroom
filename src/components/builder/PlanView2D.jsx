@@ -897,7 +897,7 @@ function OpeningSymbol({ wall, rect, isSelected }) {
         <g className={isSelected ? 'plan-opening is-selected' : 'plan-opening'}>
             <polygon className="plan-opening-gap" data-wall-id={wall.id} data-opening-id={opening.id} points={gap.join(' ')} vectorEffect="non-scaling-stroke" />
             {isWindow && (operation === 'swing' || operation === 'standard') && <line className="plan-opening-mark" {...lineAt(at(from, axis), at(to, axis))} vectorEffect="non-scaling-stroke" />}
-            {isWindow && <line className="plan-opening-mark" {...lineAt(at((from + to) / 2, axis - WINDOW_MARK_LENGTH / 2), at((from + to) / 2, axis + WINDOW_MARK_LENGTH / 2))} vectorEffect="non-scaling-stroke" />}
+            {isWindow && operation !== 'hole' && <line className="plan-opening-mark" {...lineAt(at((from + to) / 2, axis - WINDOW_MARK_LENGTH / 2), at((from + to) / 2, axis + WINDOW_MARK_LENGTH / 2))} vectorEffect="non-scaling-stroke" />}
             {symbol}
         </g>
     );

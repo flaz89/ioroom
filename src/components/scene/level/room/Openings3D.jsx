@@ -8,11 +8,13 @@ import { setCursorHover } from '../../sceneCursor';
 import { isStillClick } from './builderClick';
 import { getPointerRay } from '../../controls/pointerRay';
 import { useStore } from '../../../../store/appStore';
-import { doorParts } from './doorModel';
+import { openingParts } from './doorModel';
 
 /*
-* DOORS in 3D (hinged, sliding on a face, pocket): frame, leaves and handles of every door of the level,
-* built from the plan (doorModel.js doorParts, the rules shared with the 2D symbol). Mounted by Room.jsx.
+* DOORS AND WINDOWS in 3D (hinged, sliding on a face, pocket; fixed windows): frame, leaves (a window's: sash +
+* glass) and handles of every opening of the level, built from the plan (doorModel.js openingParts, the rules
+* shared with the 2D symbol); a door 'passage' / window 'hole' is only the wall's hole. Mounted by Room.jsx.
+* "Door" below means any opening with parts.
 * - One group per door on the wall's drawn line: local x = the wall's direction, y = up, z = -normal (so
 *   the model's c axis is -z), placed at the wall's start `a`. The frame is one merged mesh; each leaf (with
 *   its handle) sits in a PIVOT group on its hinge axis: open = turned by openAngle (hinged) or moved along
@@ -68,7 +70,9 @@ const TINT_STRENGTH = { hover: 0.08, selected: 0.18 };
 const PARTS = {
     frame: { color: FRAME_COLOR, roughness: 0.6 },
     leaf: { color: LEAF_COLOR, roughness: 0.55 },
-    handle: { color: HANDLE_COLOR, roughness: 0.35, metalness: 0.4 }
+    handle: { color: HANDLE_COLOR, roughness: 0.35, metalness: 0.4 },
+    // window pane: see-through, never hides what is behind it in the depth buffer
+    glass: { color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false }
 };
 const partMaterials = new Map();
 function partMaterial(part, tinted) {
@@ -135,7 +139,7 @@ function buildPickBoxes(level) {
         const c0 = Math.min(inner, outer) - PICK_OUTSET, c1 = Math.max(inner, outer) + PICK_OUTSET;
         return openingRects(wall, wall.height ?? level.wallHeight).map((rect) => ({
             key: rect.opening.id,
-            isDoor: doorParts(wall, rect.opening, wall.height ?? level.wallHeight) != null, // has 3D parts to tint
+            isDoor: openingParts(wall, rect.opening, wall.height ?? level.wallHeight) != null, // has 3D parts to tint
             wallId: wall.id,
             openingId: rect.opening.id,
             ...wallPlacement(wall),
@@ -174,19 +178,21 @@ function buildDoors(level) {
     for (const wall of level.walls) {
         const height = wall.height ?? level.wallHeight;
         for (const opening of wall.openings ?? []) {
-            const parts = doorParts(wall, opening, height);
+            const parts = openingParts(wall, opening, height);
             if (parts == null) continue;
             doors.push({
                 key: opening.id,
                 id: opening.id,
                 ...wallPlacement(wall), // local +x -> the wall's direction
                 frame: boxesGeometry(parts.frame),
+                opens: parts.leaves.some((leaf) => leaf.openAngle !== 0 || leaf.openShift !== 0), // a fixed window: no click
                 leaves: parts.leaves.map((leaf) => ({
                     hinge: [leaf.hinge[0], 0, -leaf.hinge[1]],
                     openAngle: leaf.openAngle,
                     openShift: leaf.openShift,
-                    leaf: boxesGeometry([leaf.leaf], leaf.hinge),
-                    handle: boxesGeometry(leaf.handle, leaf.hinge)
+                    leaf: boxesGeometry(leaf.sash ?? [leaf.leaf], leaf.hinge), // a window: its sash around the glass
+                    glass: leaf.glass && boxesGeometry([leaf.glass], leaf.hinge),
+                    handle: leaf.handle.length ? boxesGeometry(leaf.handle, leaf.hinge) : null
                 }))
             });
         }
@@ -361,11 +367,11 @@ export default function Openings3D({ level }) {
     });
     useEffect(() => () => doors.forEach((door) => {
         door.frame.dispose();
-        door.leaves.forEach((leaf) => { leaf.leaf.dispose(); leaf.handle.dispose(); });
+        door.leaves.forEach((leaf) => { leaf.leaf.dispose(); leaf.glass?.dispose(); leaf.handle?.dispose(); });
     }), [doors]);
 
     // designer: pointer handlers shared by every part of a door (a group catches its children's events)
-    const doorHandlers = (door) => (pickDoors ? {
+    const doorHandlers = (door) => (pickDoors && door.opens ? {
         onClick: (event) => onDoorClick(event, door.id),
         onPointerOver: (event) => onDoorHover(event, door.id),
         onPointerOut: (event) => onDoorHover(event, null)
@@ -385,7 +391,8 @@ export default function Openings3D({ level }) {
                     else pivotsRef.current.delete(key);
                 }}>
                     <mesh geometry={leaf.leaf} material={partMaterial('leaf', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
-                    <mesh geometry={leaf.handle} material={partMaterial('handle', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />
+                    {leaf.glass && <mesh geometry={leaf.glass} material={partMaterial('glass', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
+                    {leaf.handle && <mesh geometry={leaf.handle} material={partMaterial('handle', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
                 </group>
             ))}
         </group>

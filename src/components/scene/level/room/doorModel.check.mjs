@@ -1,13 +1,13 @@
 // Check for doorModel.js: node src/components/scene/level/room/doorModel.check.mjs
 import assert from 'node:assert/strict';
-import { CASING_DEPTH, LINING, MEETING_GAP, doorParts } from './doorModel.js';
+import { CASING_DEPTH, LINING, MEETING_GAP, openingParts } from './doorModel.js';
 import { DEFAULT_PLAN, activeLevel, addOpening, faceOffsets, updateOpening } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const withDoor = addOpening(level, 'wall-back', 'door', 'd1'); // 0.9 x 2.1, centered at 3 m: 2.55..3.45
 const wallOf = (lvl) => lvl.walls.find((w) => w.id === 'wall-back');
 const doorOf = (lvl) => wallOf(lvl).openings[0];
-const parts = (lvl) => doorParts(wallOf(lvl), doorOf(lvl), 2.7);
+const parts = (lvl) => openingParts(wallOf(lvl), doorOf(lvl), 2.7);
 const { inner, outer } = faceOffsets(wallOf(withDoor));
 const c0 = Math.min(inner, outer), c1 = Math.max(inner, outer);
 const eps = 1e-9;
@@ -87,5 +87,33 @@ assert.ok(split[0].min[2] === c0 && split[0].max[2] < pocketLeaf.leaf.min[2] && 
 assert.ok(Math.abs(shifted(pocketLeaf)[1] - (2.55 + LINING + 0.05)) < 1e-6, `open: 5 cm out of the jamb: ${shifted(pocketLeaf)}`);
 assert.ok(pocketLeaf.handle.every((b) => b.max[2] - b.min[2] < 0.01), 'flat pulls');
 assert.equal(parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'passage' })), null, 'a passage is just the hole');
-assert.equal(doorParts(wallOf(addOpening(level, 'wall-back', 'window', 'w1')), wallOf(addOpening(level, 'wall-back', 'window', 'w1')).openings[0], 2.7), null);
+
+// WINDOWS (default 1.2 x 1.4, sill 0.9, centered at 3 m: 2.4..3.6, 0.9..2.3)
+const withWindow = addOpening(level, 'wall-back', 'window', 'w1');
+const win = (patch) => openingParts(wallOf(withWindow), { ...doorOf(withWindow), ...patch }, 2.7);
+const roomward = Math.sign(inner - outer);
+// standard: one fixed sash on the axis, glass inside it, no handle, nothing moves
+const fixed = win({});
+assert.equal(fixed.leaves.length, 1);
+const [pane] = fixed.leaves;
+assert.ok(pane.openAngle === 0 && pane.openShift === 0 && pane.handle.length === 0, 'fixed');
+assert.ok(Math.abs((pane.leaf.min[2] + pane.leaf.max[2]) / 2 - (c0 + c1) / 2) < 1e-9, 'on the axis');
+assert.equal(pane.sash.length, 4);
+assert.ok(inside(pane.glass, pane.leaf.min[0], pane.leaf.max[0], 0) && inside(pane.glass, pane.leaf.min[1], pane.leaf.max[1], 1), 'glass in the sash');
+assert.ok(pane.leaf.min[1] > 0.9 + LINING && pane.leaf.max[1] < 2.3 - LINING, 'between the sill lining and the head');
+// frame: jambs + head + inner casing (3) + bottom lining + inner sill + outer sill
+assert.equal(fixed.frame.length, 3 + 3 + 3);
+assert.ok(fixed.frame.some((b) => (roomward > 0 ? b.max[2] > c1 + 0.02 : b.min[2] < c0 - 0.02) && b.max[1] <= 0.9 + LINING + eps), 'inner sill juts into the room');
+assert.ok(fixed.frame.every((b) => (roomward > 0 ? b.min[2] >= c0 - 0.05 : b.max[2] <= c1 + 0.05)), 'no casing outside: only the outer sill');
+// hinged 2 leaves: open towards the swing side, handle on the room's side only, lever down
+const casement = win({ operation: 'swing', leaves: 2 });
+assert.ok(casement.leaves.every((l) => l.openAngle !== 0 && l.handle.length === 3), 'one handle (rose, stem, lever) each');
+const lever = casement.leaves[0].handle[2];
+assert.ok(lever.max[1] - lever.min[1] > lever.max[0] - lever.min[0], 'window lever points down');
+assert.ok(casement.leaves[0].handle.every((b) => (roomward > 0 ? b.min[2] >= casement.leaves[0].leaf.max[2] - eps : b.max[2] <= casement.leaves[0].leaf.min[2] + eps)), 'handle on the room side');
+// sliding / pocket windows: pull plates, the same travel rules as doors
+assert.ok(win({ operation: 'slide', leaves: 2 }).leaves.every((l) => l.openShift !== 0 && l.handle.length === 1));
+assert.ok(win({ operation: 'pocket' }).leaves[0].leaf.min[1] > 0.9, 'pocket window above the sill');
+// a hole is just the hole
+assert.equal(win({ operation: 'hole' }), null);
 console.log('doorModel: ok');
