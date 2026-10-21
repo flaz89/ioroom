@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, openingClearances, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, openingClearances, pocketConflicts, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -286,6 +286,22 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
     assert.deepEqual(plain, levelBounds(level));
     const drawn = sceneBounds({ ...level, underlay: { width: 2000, height: 1000, metersPerPixel: 0.01, center: [30, 0], rotation: Math.PI / 2 } });
     assert.ok(Math.abs(drawn.max[0] - 35) < 1e-9 && Math.abs(drawn.max[1] - 10) < 1e-9 && drawn.min[0] < -3);
+}
+
+// POCKET SPACE: the pocket door's leaves need free wall on the side they slide to
+{
+    const base = addOpening(activeLevel(DEFAULT_PLAN), 'wall-back', 'door', 'p1'); // 0.9 wide at x = 0: 2.55..3.45 along
+    const pocket = (patch, level = base) => updateOpening(level, 'wall-back', 'p1', { operation: 'pocket', ...patch });
+    assert.equal(pocketConflicts(base, 'wall-back', 'p1'), null, 'not a pocket door');
+    assert.deepEqual(pocketConflicts(pocket({}), 'wall-back', 'p1'), [], 'fits: 0.9 m of free wall towards the start');
+    assert.deepEqual(pocketConflicts(pocket({ offset: 0.8 }), 'wall-back', 'p1'), ['start'], 'runs past the corner');
+    assert.deepEqual(pocketConflicts(pocket({ offset: 0.8, hinge: 'end' }), 'wall-back', 'p1'), [], 'slides the other way');
+    assert.deepEqual(pocketConflicts(pocket({ width: 2, leaves: 2 }), 'wall-back', 'p1'), [], 'two leaves, 1 m each way');
+    const next = addOpening(pocket({}), 'wall-back', 'window', 'w9');
+    const nearWindow = updateOpening(next, 'wall-back', 'w9', { offset: 1.8, width: 0.6 }); // 1.5..2.1 along: in the pocket
+    assert.deepEqual(pocketConflicts(nearWindow, 'wall-back', 'p1'), ['start'], 'another opening in the pocket');
+    const partition = addWall(pocket({}), [-1, 0], [-1, -3], 'part', 'center'); // a T at 2 m along, in the pocket (1.65..2.55)
+    assert.deepEqual(pocketConflicts(partition, 'wall-back', 'p1'), ['start'], 'a wall joined at a T across the pocket');
 }
 
 console.log('planModel: ok');

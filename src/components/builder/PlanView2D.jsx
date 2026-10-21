@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -706,7 +706,8 @@ export default function PlanView2D() {
 
                     {/* doors / windows: over their wall (a click on them selects the opening, not the wall) */}
                     {shown.walls.flatMap((wall) => openingRects(wall, wall.height ?? shown.wallHeight).map((rect) => (
-                        <OpeningSymbol key={rect.opening.id} wall={wall} rect={rect} isSelected={rect.opening.id === 'preview' || (rect.opening.id === selectedOpeningId && !isDrawing)} />
+                        <OpeningSymbol key={rect.opening.id} wall={wall} rect={rect} isSelected={rect.opening.id === 'preview' || (rect.opening.id === selectedOpeningId && !isDrawing)}
+                            pocketConflicts={pocketConflicts(shown, wall.id, rect.opening.id)} />
                     )))}
 
                     {/* corner handles: invisible touch-size hit circle + visible dot (radii in px -> meters) */}
@@ -828,7 +829,7 @@ export default function PlanView2D() {
 * Windows also keep their mark across the wall at mid width (WINDOW_MARK_LENGTH, sticks out of the wall) and,
 * when standard or hinged, the line on the wall's axis.
 */
-function OpeningSymbol({ wall, rect, isSelected }) {
+function OpeningSymbol({ wall, rect, isSelected, pocketConflicts }) {
     const { dir, normal } = wallFrame(wall);
     const { inner, outer } = faceOffsets(wall);
     const at = (t, offset) => [wall.a[0] + dir[0] * t + normal[0] * offset, wall.a[1] + dir[1] * t + normal[1] * offset];
@@ -880,8 +881,9 @@ function OpeningSymbol({ wall, rect, isSelected }) {
         const half = Math.min(LEAF_THICKNESS, Math.abs(outer - inner) / 4);
         const towardsStart = leaves.filter((leaf) => leaf.towardsStart).reduce((sum, leaf) => sum + leaf.to - leaf.from, 0);
         const towardsEnd = (to - from) - towardsStart;
+        // a pocket without free wall (planModel.pocketConflicts: corner, opening, T wall in the way) is red
         const pocket = (t0, t1, key) => (
-            <polygon key={key} className="plan-opening-swing" points={[at(t0, axis - half), at(t1, axis - half), at(t1, axis + half), at(t0, axis + half)].join(' ')} vectorEffect="non-scaling-stroke" />
+            <polygon key={key} className={pocketConflicts?.includes(key === 'pocketStart' ? 'start' : 'end') ? 'plan-opening-swing is-blocked' : 'plan-opening-swing'} points={[at(t0, axis - half), at(t1, axis - half), at(t1, axis + half), at(t0, axis + half)].join(' ')} vectorEffect="non-scaling-stroke" />
         );
         symbol = [
             towardsStart > 0 && pocket(from - towardsStart, from, 'pocketStart'),

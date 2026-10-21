@@ -568,6 +568,44 @@ export function openingClearances(level, wallId, openingId) {
     return { from, to, before, after };
 }
 
+/*
+* POCKET SPACE of a pocket door: the leaves sliding to each side need, on that side, a stretch of free wall as
+* long as they are (the pocket). It is NOT free if it runs past the next opening of the wall or the visible
+* end of its face (openingClearances: a corner, a free end), or across a wall joined at a T anywhere along
+* it (an end within this wall's thickness, on either face). Only a warning (2D: red pocket, panel message):
+* nothing is blocked. Returns the sides without room, e.g. ['start'], [] when it fits; null when the
+* opening is not a pocket door (or is gone).
+*/
+export function pocketConflicts(level, wallId, openingId) {
+    const wall = level.walls.find((item) => item.id === wallId);
+    const opening = wall?.openings?.find((item) => item.id === openingId);
+    if (opening == null || opening.type !== 'door' || openingOperation(opening) !== 'pocket') return null;
+    const { before, after, from, to } = openingClearances(level, wallId, openingId);
+    const leaves = openingLeaves(opening, from, to);
+    const need = (towardsStart) => leaves.filter((leaf) => leaf.towardsStart === towardsStart).reduce((sum, leaf) => sum + leaf.to - leaf.from, 0);
+    // the stretches along this wall's line taken by walls joined at a T (ends within its thickness, away from its ends)
+    const { dir, normal, length } = wallFrame(wall);
+    const { inner, outer } = faceOffsets(wall);
+    const joints = level.walls.filter((item) => item !== wall).flatMap((item) => {
+        const sin = Math.abs(cross(dir, wallFrame(item).dir));
+        if (sin < T_JOINT_SIN) return [];
+        return [item.a, item.b].flatMap((end) => {
+            const rel = sub(end, wall.a);
+            const t = dotp(rel, dir), across = dotp(rel, normal);
+            if (across < Math.min(inner, outer) - JOIN_EPSILON || across > Math.max(inner, outer) + JOIN_EPSILON) return [];
+            if (t <= JOIN_EPSILON || t >= length - JOIN_EPSILON) return [];
+            const half = item.thickness / 2 / sin;
+            return [[t - half, t + half]];
+        });
+    });
+    const blocked = (a, b) => joints.some(([j0, j1]) => j1 > a + 1e-6 && j0 < b - 1e-6);
+    const sides = [];
+    const toStart = need(true), toEnd = need(false);
+    if (toStart > 0 && (from - toStart < before - 1e-6 || blocked(from - toStart, from))) sides.push('start');
+    if (toEnd > 0 && (to + toEnd > after + 1e-6 || blocked(to, to + toEnd))) sides.push('end');
+    return sides;
+}
+
 // The level without opening `openingId` of wall `wallId`
 export function removeOpening(level, wallId, openingId) {
     const wall = level.walls.find((item) => item.id === wallId);
