@@ -8,7 +8,8 @@ import { setCursorHover } from '../../sceneCursor';
 import { isStillClick } from './builderClick';
 import { getPointerRay } from '../../controls/pointerRay';
 import { useStore } from '../../../../store/appStore';
-import { openingParts } from './doorModel';
+import { openingParts, partMaterialId } from './doorModel';
+import SurfaceMesh from './SurfaceMesh';
 
 /*
 * DOORS AND WINDOWS in 3D (hinged, sliding on a face, pocket; fixed windows): frame, leaves (a window's: sash +
@@ -25,7 +26,8 @@ import { openingParts } from './doorModel';
 *   by leaf (`<opening>:<index>`) that outlives the geometry rebuilt on each plan change; a leaf seen for the
 *   first time (page load, a new door) starts at its target, without animating.
 * - Parts are named for the material step: surface ids '<opening>:frame' | ':leaf' | ':handle' (userData),
-*   like the walls' faces. Plain materials for now (FRAME / LEAF / HANDLE colors).
+*   like the walls' faces, plus '<opening>' for the whole structure (doorModel.partMaterialId); drawn with
+*   SurfaceMesh.jsx (library materials and system finishes), the glass with its own fixed material.
 * - Not pickable yet (raycast off): clicks and drags go through to the walls and the floor as before; the
 *   VR open / close interaction comes later.
 * - BUILDER (3D view): every opening, door or window, has an invisible PICK BOX filling its reveal (a window
@@ -58,30 +60,20 @@ import { openingParts } from './doorModel';
 *   the ruler / post-it tool owns the click.
 * ponytail: one mesh per leaf and per handle (a house has tens of doors); instance or merge if it shows in perf.
 */
-const FRAME_COLOR = '#f1eee8';
-const LEAF_COLOR = '#e6e0d4';
-const HANDLE_COLOR = '#a9adb2';
-
-// Part materials, shared by every door, per tint (false | 'hover' | true = selected): the walls' emissive
-// orange and strengths (SurfaceMesh.jsx). Never disposed: module lifetime, like SurfaceMesh's cache.
-// Handle: satin steel (a high metalness looks black without an environment map to reflect).
+// Frame, leaves and handles: SurfaceMesh.jsx (library materials and system finishes, shared and tinted like
+// the walls) with the material doorModel.partMaterialId resolves. The glass is fixed: one shared material per
+// tint (module lifetime, like SurfaceMesh's cache).
 const TINT = '#ff9a1a';
 const TINT_STRENGTH = { hover: 0.08, selected: 0.18 };
-const PARTS = {
-    frame: { color: FRAME_COLOR, roughness: 0.6 },
-    leaf: { color: LEAF_COLOR, roughness: 0.55 },
-    handle: { color: HANDLE_COLOR, roughness: 0.35, metalness: 0.4 },
-    // window pane: see-through, never hides what is behind it in the depth buffer
-    glass: { color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false }
-};
-const partMaterials = new Map();
-function partMaterial(part, tinted) {
-    const key = `${part}|${tinted}`;
-    if (!partMaterials.has(key)) {
+// window pane: see-through, never hides what is behind it in the depth buffer
+const GLASS = { color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false };
+const glassMaterials = new Map();
+function glassMaterial(tinted) {
+    if (!glassMaterials.has(tinted)) {
         const glow = tinted ? { emissive: TINT, emissiveIntensity: tinted === 'hover' ? TINT_STRENGTH.hover : TINT_STRENGTH.selected } : {};
-        partMaterials.set(key, new MeshStandardMaterial({ ...PARTS[part], ...glow }));
+        glassMaterials.set(tinted, new MeshStandardMaterial({ ...GLASS, ...glow }));
     }
-    return partMaterials.get(key);
+    return glassMaterials.get(tinted);
 }
 const noRaycast = () => null;
 const PICK_OUTSET = 0.002; // m: the pick box pokes out of the wall faces (its tint never z-fights the leaf)
@@ -94,12 +86,19 @@ const OPEN_SPEED = 5;   // 1/s: exponential easing rate (about 0.6 s to open); t
 const SETTLED = 1e-4;   // progress: close enough to the target to stop
 
 // Boxes (doorModel frame: x along, y up, c across) as one geometry in the door group's frame (z = -c),
-// shifted by `origin` ([x, c]: a leaf's hinge, so the pivot group sits there)
+// shifted by `origin` ([x, c]: a leaf's hinge, so the pivot group sits there). UVs in METERS, box mapped
+// (each face takes the two axes across its normal), so textures keep their real size (tileSize) on any part
 function boxesGeometry(boxes, origin = [0, 0]) {
     const pieces = boxes.map(({ min, max }) => new BoxGeometry(max[0] - min[0], max[1] - min[1], max[2] - min[2])
         .translate((min[0] + max[0]) / 2 - origin[0], (min[1] + max[1]) / 2, -((min[2] + max[2]) / 2 - origin[1])));
     const merged = mergeGeometries(pieces);
     pieces.forEach((piece) => piece.dispose());
+    const { position, normal, uv } = merged.attributes;
+    for (let i = 0; i < position.count; i++) {
+        const [nx, ny] = [Math.abs(normal.getX(i)), Math.abs(normal.getY(i))];
+        const [x, y, z] = [position.getX(i), position.getY(i), position.getZ(i)];
+        if (nx > 0.5) uv.setXY(i, z, y); else if (ny > 0.5) uv.setXY(i, x, z); else uv.setXY(i, x, y);
+    }
     return merged;
 }
 
@@ -322,6 +321,7 @@ function ResizeHandles({ level, wallId, openingId }) {
 export default function Openings3D({ level }) {
     const doors = useMemo(() => buildDoors(level), [level]);
     const openDoors = useStore((state) => state.openDoors);
+    const surfaces = useStore((state) => state.surfaces); // part materials (doorModel.partMaterialId)
     const isBuilder = useStore((state) => state.workspace === 'builder');
     const selectedOpening = useStore((state) => (state.workspace === 'builder' ? state.selectedOpening : null));
     const selectedId = selectedOpening?.openingId;
@@ -382,7 +382,7 @@ export default function Openings3D({ level }) {
 
     return [...doors.map((door) => (
         <group key={door.key} position={door.position} rotation-y={door.rotationY} {...doorHandlers(door)}>
-            <mesh geometry={door.frame} material={partMaterial('frame', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
+            <SurfaceMesh geometry={door.frame} materialId={partMaterialId(surfaces, door.id, 'frame')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
             {door.leaves.map((leaf, index) => (
                 // pivot on the hinge axis: turned / moved by the eased progress (useFrame)
                 <group key={index} position={leaf.hinge} ref={(pivot) => {
@@ -390,9 +390,9 @@ export default function Openings3D({ level }) {
                     if (pivot) pivotsRef.current.set(key, pivot);
                     else pivotsRef.current.delete(key);
                 }}>
-                    <mesh geometry={leaf.leaf} material={partMaterial('leaf', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
-                    {leaf.glass && <mesh geometry={leaf.glass} material={partMaterial('glass', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
-                    {leaf.handle && <mesh geometry={leaf.handle} material={partMaterial('handle', tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
+                    <SurfaceMesh geometry={leaf.leaf} materialId={partMaterialId(surfaces, door.id, 'leaf')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
+                    {leaf.glass && <mesh geometry={leaf.glass} material={glassMaterial(tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
+                    {leaf.handle && <SurfaceMesh geometry={leaf.handle} materialId={partMaterialId(surfaces, door.id, 'handle')} tinted={tintOf(door.id)} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
                 </group>
             ))}
         </group>

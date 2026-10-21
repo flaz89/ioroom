@@ -1,4 +1,5 @@
 import { faceOffsets, openingLeaves, openingOperation, openingRects } from '../../../../plan/planModel.js';
+import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 
 /*
 * 3D DOORS AND WINDOWS as data (pure, no three.js): the boxes an opening (hinged, sliding, pocket; windows also
@@ -80,6 +81,17 @@ export const SILL_IN = 0.03;        // inner sill board: how far it juts into th
 export const SILL_OUT = 0.04;       // outer sill: how far it juts outside, and past the reveal on each side
 const WINDOW_PULL = [0.025, 0.1, 0.004];
 const WINDOW_TRACKS_DEPTH = 0.8;    // share of the wall's depth a sliding window's tracks may take
+
+/*
+* MATERIALS of an opening's parts (store `surfaces`, synced and undoable like the walls' faces):
+* - '<opening>' = the whole STRUCTURE: frame (lining, casing, sills, rail) and leaves (a window's sashes);
+* - '<opening>:frame' | ':leaf' | ':handle' = a part's own material, which wins.
+* A part reads its own, then (frame and leaf only: the handle keeps its finish) the structure's, then its
+* DEFAULT finish (materials/finishes.js: paint / fixed finishes). The glass is fixed.
+*/
+export const DEFAULT_PART_MATERIALS = { frame: WHITE_ID, leaf: paintId('#e6e0d4'), handle: STEEL_ID };
+export const partMaterialId = (surfaces, openingId, part) =>
+    surfaces[`${openingId}:${part}`] ?? (part === 'handle' ? null : surfaces[openingId]) ?? DEFAULT_PART_MATERIALS[part];
 
 const box = (x0, x1, y0, y1, c0, c1) => ({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(c0, c1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(c0, c1)] });
 const OPERATIONS = { door: ['swing', 'slide', 'pocket'], window: ['standard', 'swing', 'slide'] };

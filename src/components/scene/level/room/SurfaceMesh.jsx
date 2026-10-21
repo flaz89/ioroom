@@ -21,7 +21,8 @@ const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing a
 */
 export default function SurfaceMesh({ materialId, tinted, color, ...meshProps }) {
     const material = useMaterial(materialId);
-    const plain = <mesh {...meshProps} material={plainMaterial(color, tinted)} />;
+    // a system finish (paint, fixed: library.js) is plain too, with its own color, roughness and metalness
+    const plain = <mesh {...meshProps} material={material.finish ? finishMaterial(material, tinted) : plainMaterial(color, tinted)} />;
     if (material.maps == null) return plain;
     return (
         <Suspense fallback={plain}>
@@ -48,6 +49,12 @@ const tint = (tinted) => (tinted ? { emissive: DROP_TINT, emissiveIntensity: tin
 function plainMaterial(color, tinted) {
     const key = `plain|${color}|${tinted}`;
     if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ color, ...tint(tinted) }));
+    return materials.get(key);
+}
+
+function finishMaterial({ id, finish }, tinted) {
+    const key = `${id}|${tinted}`;
+    if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ ...finish, ...tint(tinted) }));
     return materials.get(key);
 }
 

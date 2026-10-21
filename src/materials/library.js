@@ -1,10 +1,11 @@
 import { useTexture } from '@react-three/drei';
 import { useStore } from '../store/appStore';
+import { finishMaterial } from './finishes';
 
 /*
 * Material library: the materials people can drag onto the room surfaces (and, later, onto objects).
 *
-* A material RECORD: { id, name, category: 'floor' | 'wall' | null, tileSize, maps }
+* A material RECORD: { id, name, category: 'floor' | 'wall' | 'fixture' | null, tileSize, maps, finish? }
 * - tileSize: real side of one texture tile in meters, so patterns keep their real scale on any surface;
 * - maps: texture URLs { color, normal?, orm? } (PBR: sRGB color, OpenGL normal, ORM = packed
 *   R ambient occlusion / G roughness / B metalness, like glTF); older records may carry `roughness`
@@ -20,7 +21,7 @@ export const PLAIN_ID = 'plain';
 const PLAIN = { id: PLAIN_ID, name: 'Plain', category: null, tileSize: 1, maps: null };
 
 // Material for `id`; unknown ids (deleted, not loaded yet) -> PLAIN
-const findIn = (list, id) => list.find((material) => material.id === id) ?? PLAIN;
+const findIn = (list, id) => finishMaterial(id) ?? list.find((material) => material.id === id) ?? PLAIN;
 
 // React: the material record for `id` (re-renders when the library changes)
 export const useMaterial = (id) => useStore((state) => findIn(state.libraryMaterials, id));

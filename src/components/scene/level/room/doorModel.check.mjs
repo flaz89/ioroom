@@ -1,6 +1,6 @@
 // Check for doorModel.js: node src/components/scene/level/room/doorModel.check.mjs
 import assert from 'node:assert/strict';
-import { CASING_DEPTH, LINING, MEETING_GAP, openingParts } from './doorModel.js';
+import { CASING_DEPTH, DEFAULT_PART_MATERIALS, LINING, MEETING_GAP, openingParts, partMaterialId } from './doorModel.js';
 import { DEFAULT_PLAN, activeLevel, addOpening, faceOffsets, updateOpening } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
@@ -130,4 +130,11 @@ assert.ok(slidingEnd.leaves[1].openShift === 0 && slidingEnd.leaves[0].openShift
 assert.deepEqual(win({ operation: 'pocket', leaves: 2 }), win({ operation: 'slide', leaves: 2 }));
 // a hole is just the hole
 assert.equal(win({ operation: 'hole' }), null);
+// MATERIALS: the part's own, then the structure's (not for the handle), then the default
+assert.equal(partMaterialId({}, 'd1', 'frame'), DEFAULT_PART_MATERIALS.frame);
+const mats = { d1: 'oak', 'd1:leaf': 'paint:#ff0000' };
+assert.equal(partMaterialId(mats, 'd1', 'frame'), 'oak', 'structure');
+assert.equal(partMaterialId(mats, 'd1', 'leaf'), 'paint:#ff0000', 'own wins');
+assert.equal(partMaterialId(mats, 'd1', 'handle'), DEFAULT_PART_MATERIALS.handle, 'the handle keeps its finish');
+assert.equal(partMaterialId({ ...mats, 'd1:handle': 'oak' }, 'd1', 'handle'), 'oak');
 console.log('doorModel: ok');
