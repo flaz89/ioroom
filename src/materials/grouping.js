@@ -8,7 +8,7 @@
 export const MATERIAL_CATEGORIES = [
     { id: 'floor', label: 'Floors' },
     { id: 'wall', label: 'Walls' },
-    { id: 'fixture', label: 'Doors & windows', short: 'Fixtures' } // system finishes (finishes.js) first, then the library's; short: VR tab
+    { id: 'fixture', label: 'Doors & windows', short: 'Fixtures' } // the library's (desktop: plus the custom paint ball); short: VR tab
 ];
 
 export const MATERIAL_KINDS = [

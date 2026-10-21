@@ -1,6 +1,8 @@
 /*
 * SYSTEM FINISHES (doors and windows first; not in the database, no textures, nothing to load): a record
-* with a `finish` { color, roughness, metalness } and maps null.
+* with a `finish` { color, roughness, metalness } and maps null. NOT listed in the library (decision of
+* Flavio: the doors & windows tab offers the custom paint ball, plus the textures the admin uploads): they are
+* the parts' defaults (doorModel.DEFAULT_PART_MATERIALS) and whatever paint color is picked.
 * - PAINT, any color: id 'paint:#rrggbb' (the color picker writes it); WHITE and ANTHRACITE are two presets.
 * - FIXED finishes: 'finish:<key>' (FIXED_FINISHES).
 * finishMaterial(id) -> the record (the same object for the same id), or null for any other id (a library
@@ -40,5 +42,3 @@ function buildFinish(id) {
     return finishRecord(id, name, kind, finish);
 }
 
-// The system finishes offered in the library (presets: any other paint color comes from the picker)
-export const FINISHES = [WHITE_ID, ANTHRACITE_ID, ...Object.keys(FIXED_FINISHES).map((key) => `finish:${key}`)].map(finishMaterial);
