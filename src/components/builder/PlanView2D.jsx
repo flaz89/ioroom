@@ -110,7 +110,7 @@ const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening,
 *   grid snap step). One undo step each (planModel calibrateUnderlay / alignUnderlay / moveUnderlay). Esc
 *   drops the first point, then leaves the tool.
 *
-* Navigation: right (or middle) mouse drag = pan, like the 3D view (OrbitControls); left mouse drag pans
+* Navigation: right (or middle) mouse drag = pan, like the 3D view (CameraControls); left mouse drag pans
 * nothing (clicks only). Touch / pen: one finger drag = pan. Wheel = zoom at the cursor, two fingers = pinch
 * zoom + pan.
 * The camera ({ cx, cz, scale }, planView.js) is per view instance: fitted to the level when first shown.

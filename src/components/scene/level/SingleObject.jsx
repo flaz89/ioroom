@@ -176,7 +176,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
         selectObject(data.id);
     };
 
-    // OrbitControls listens to raw DOM events and would start orbiting on the same press that
+    // The camera controls (CameraControls) listen to raw DOM events and would start orbiting on the same press that
     // starts a grab: lock it on press, unlock on release (also covers a click without drag).
     // Registered with addEventListener (not onPointerDown props) because pmndrs pointer events
     // ignore R3F prop handlers on objects that already have three.js listeners (Handle uses them),
@@ -184,7 +184,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         const setOrbitEnabled = (enabled) => {
-            const controls = getThree().controls; // OrbitControls (makeDefault)
+            const controls = getThree().controls; // CameraControls (makeDefault)
             if (controls) controls.enabled = enabled;
         };
         const lock = () => setOrbitEnabled(false);

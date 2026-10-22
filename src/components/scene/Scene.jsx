@@ -3,10 +3,10 @@ import { useMemo, useRef, useState } from 'react';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from '@react-three/drei';
+import { CameraControls } from '@react-three/drei';
 import CameraMemory from './controls/CameraMemory';
 import SceneGrid from './helpers/SceneGrid';
-import SmoothWheelZoom from './controls/SmoothWheelZoom';
+import OrbitAtCursor from './controls/OrbitAtCursor';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
@@ -53,7 +53,7 @@ export default function Scene({xrStore}) {
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const isBuilder = useStore((state) => state.workspace === 'builder');
 
-    // CAMERA DRAG (orbit / pan / zoom with OrbitControls): while the camera actually moves, the scene takes no
+    // CAMERA DRAG (orbit / pan / zoom with CameraControls): while the camera actually moves, the scene takes no
     // pointer events, so nothing gets hovered (no tint, no hand cursor) under a sweeping mouse.
     // 'start' alone is NOT enough: a plain click also starts the controls, and blocking events on press would
     // eat that click. So: armed on start, blocked on the first camera 'change', released on 'end' (the damping
@@ -86,8 +86,8 @@ export default function Scene({xrStore}) {
                 onPointerMissed={onPointerMissed}
                 events={noEvents} // pmndrs pointer events (below) replace R3F's: one event system for mouse, touch, controllers and hands
             >
-                {/* batchEvents={false}: handlers run inside the DOM event. Registered before OrbitControls,
-                    so an object/gizmo press can disable orbiting before OrbitControls sees the same press */}
+                {/* batchEvents={false}: handlers run inside the DOM event. Registered before CameraControls,
+                    so an object/gizmo press can disable orbiting before CameraControls sees the same press */}
                 <PointerEvents batchEvents={false} />
 
                 {/* Performance stats for the DOM panel (both renderers) */}
@@ -95,19 +95,24 @@ export default function Scene({xrStore}) {
                 {/* Debug: whole scene in wireframe */}
                 {isWireframe && <Wireframe />}
 
-                <OrbitControls 
-                    makeDefault 
-                    enableDamping
-                    dampingFactor={ .2 }
+                {/* camera-controls (yomotsu): left = rotate, right = pan (truck), wheel / middle = zoom (dolly), all damped
+                    (smoothTime); touch: one finger rotates, two zoom + pan. Never below the horizon. minDistance is
+                    small because the orbit point follows the cursor (OrbitAtCursor.jsx): distances are to it.
+                    dollyToCursor: the wheel / pinch zooms towards the spot under the pointer (like a CAD), not the
+                    screen's center */}
+                <CameraControls
+                    makeDefault
+                    smoothTime={ 0.2 }
                     maxPolarAngle={ Math.PI/2 }
-                    minDistance={ 2 }
+                    minDistance={ 0.5 }
+                    dollyToCursor
                     maxDistance={ maxDistance }
                     onStart={onOrbitStart}
                     onChange={onOrbitChange}
                     onEnd={onOrbitEnd}
                 />
-                {/* wheel zoom with damping (OrbitControls' own wheel zoom jumps) */}
-                <SmoothWheelZoom />
+                {/* every rotation turns around the spot under the pointer */}
+                <OrbitAtCursor />
                 {/* each device reopens the environment where it left the view (localStorage) */}
                 <CameraMemory />
 

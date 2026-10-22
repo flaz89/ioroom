@@ -217,7 +217,7 @@ function buildDoors(level, partStyles) {
 * preview while dragging); every move resizes from the COMMITTED level, so the result never drifts.
 */
 function ResizeHandles({ level, wallId, openingId }) {
-    const getThree = useThree((state) => state.get); // controls read at event time (OrbitControls makeDefault)
+    const getThree = useThree((state) => state.get); // controls read at event time (CameraControls makeDefault)
     const dragRef = useRef(null); // { edge, y } while dragging (handlers)
     const [dragging, setDragging] = useState(null); // the dragged edge (render: its handle stays white)
     const [hovered, setHovered] = useState(null);
