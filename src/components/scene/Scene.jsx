@@ -4,6 +4,7 @@ import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from '@react-three/drei';
+import CameraMemory from './controls/CameraMemory';
 import SceneGrid from './helpers/SceneGrid';
 import SmoothWheelZoom from './controls/SmoothWheelZoom';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
@@ -107,6 +108,8 @@ export default function Scene({xrStore}) {
                 />
                 {/* wheel zoom with damping (OrbitControls' own wheel zoom jumps) */}
                 <SmoothWheelZoom />
+                {/* each device reopens the environment where it left the view (localStorage) */}
+                <CameraMemory />
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />
