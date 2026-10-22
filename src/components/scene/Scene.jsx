@@ -103,6 +103,10 @@ export default function Scene({xrStore}) {
                 <CameraControls
                     makeDefault
                     smoothTime={ 0.2 }
+                    // smoothing WHILE dragging (default 0.125 s): the orbit point is often close (the spot under the
+                    // cursor, OrbitAtCursor.jsx), so the hand's tremor turns into visible sideways camera shake;
+                    // more smoothing filters it. Calibration knob: higher = smoother but laggier
+                    draggingSmoothTime={ 0.25 }
                     maxPolarAngle={ Math.PI/2 }
                     minDistance={ 0.5 }
                     dollyToCursor

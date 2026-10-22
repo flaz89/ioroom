@@ -3,10 +3,13 @@ import { useThree } from '@react-three/fiber';
 import { Plane, Raycaster, Vector2, Vector3 } from 'three';
 
 /*
-* ORBIT AROUND THE CURSOR (desktop / mobile 3D view, like SketchUp / Twinmotion): when a camera ROTATION starts
-* (left mouse button, or the first finger on touch), the orbit point becomes the spot under the pointer, WITHOUT
-* moving the view (CameraControls.setOrbitPoint keeps the camera where it is through its focal offset). So
-* panning no longer leaves the pivot somewhere odd: every rotation turns around what was clicked.
+* ORBIT AROUND THE CURSOR (desktop / mobile 3D view, like SketchUp / Twinmotion): when a camera ROTATION (left
+* mouse button, or the first finger on touch) or PAN (right button) starts, the orbit point becomes the spot under
+* the pointer, WITHOUT moving the view (CameraControls.setOrbitPoint keeps the camera where it is through its focal
+* offset). Rotation: every one turns around what was clicked, panning never leaves the pivot somewhere odd. Pan:
+* camera-controls pans at a speed proportional to the distance to the orbit point, so with the point under the
+* cursor the grabbed spot follows the mouse (like a CAD), close up or far away; with a stale, very close point
+* (after zooming in) the pan would crawl.
 * The spot: the first visible mesh under the pointer (walls, floor, furniture, doors...), else the floor plane
 * (y = 0). A hit ABOVE the camera falls back to the floor plane too: the orbit point must stay below the camera,
 * or the max polar angle (never below the horizon, Scene.jsx) would snap the view up. Nothing usable (looking at
@@ -43,7 +46,8 @@ export default function OrbitAtCursor() {
             // a press counts once: a later wheel zoom (also a 'controlstart') must not reuse it
             const current = press;
             press = null;
-            if (current == null || current.button !== 0 || gl.xr?.isPresenting) return; // left button / first finger only
+            // left button / first finger (rotate), right button (pan); not the middle one (zoom: dollyToCursor)
+            if (current == null || (current.button !== 0 && current.button !== 2) || gl.xr?.isPresenting) return;
             const rect = gl.domElement.getBoundingClientRect();
             ndc.set(((current.x - rect.left) / rect.width) * 2 - 1, -((current.y - rect.top) / rect.height) * 2 + 1);
             raycaster.setFromCamera(ndc, camera);
