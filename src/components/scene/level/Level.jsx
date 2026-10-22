@@ -42,7 +42,7 @@ export default function Level() {
             {/* ----------- ROOM + OBJECTS ---------------- */}
             {/* Room: VR / flatscreen, and in AR only as a miniature (at 1:1 the real room is used) */}
             <Board isTabletop={isTabletop} room={(!isAR || isTabletop) && <Room />}>
-                {/* Sun + ambient: inside the board, so light, sun arc and shadows follow the tabletop model */}
+                {/* Sun (+ environment intensity): inside the board, so light, sun arc and shadows follow the tabletop model */}
                 <Light />
                 {/* Compass: view direction in board space (compass bars), N/E/S/W on the floor around the room */}
                 <CameraHeadingTracker />

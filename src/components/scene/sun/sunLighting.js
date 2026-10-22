@@ -9,14 +9,14 @@ import { findCity, localTimeToDate, sunDirection, sunPosition } from './sun';
 *   direction  - [x, y, z] unit vector from the room center towards the sun (room space, see sun.js)
 *   altitude   - radians above the horizon (negative at night)
 *   intensity  - directional light intensity (0 below the horizon)
-*   ambient    - ambient light intensity (dimmer at night)
+*   environment - scene.environmentIntensity: the environment map's fill light (dimmer at night)
 *   color      - THREE.Color of the sunlight (warm near the horizon, white-ish when high)
 * }
 * Constants are calibration knobs: tune them on the headset.
 */
 const SUN_INTENSITY = 1.1;                    // high noon
-const AMBIENT_DAY = 0.4;
-const AMBIENT_NIGHT = 0.12;
+const ENVIRONMENT_DAY = 0.6;                // fill light (reflections + indirect) by day
+const ENVIRONMENT_NIGHT = 0.15;
 const NOON_COLOR = new Color('#fffaf0');
 const HORIZON_COLOR = new Color('#ffb066');   // low sun: warm light
 
@@ -51,7 +51,7 @@ export function sunLighting(sun) {
         direction: sunDirection(azimuth, altitude, sun.northDeg),
         altitude,
         intensity: SUN_INTENSITY * smoothstep(0, 0.12, height),
-        ambient: AMBIENT_NIGHT + (AMBIENT_DAY - AMBIENT_NIGHT) * smoothstep(-0.1, 0.25, height),
+        environment: ENVIRONMENT_NIGHT + (ENVIRONMENT_DAY - ENVIRONMENT_NIGHT) * smoothstep(-0.1, 0.25, height),
         color: HORIZON_COLOR.clone().lerp(NOON_COLOR, smoothstep(0, 0.5, height))
     };
 }

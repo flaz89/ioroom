@@ -2,9 +2,11 @@ import './scene.css'
 import { useMemo, useRef, useState } from 'react';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
+import { NeutralToneMapping } from 'three';
 import { Canvas } from "@react-three/fiber";
 import { CameraControls } from '@react-three/drei';
 import CameraMemory from './controls/CameraMemory';
+import SceneEnvironment from '../light/SceneEnvironment';
 import SceneGrid from './helpers/SceneGrid';
 import OrbitAtCursor from './controls/OrbitAtCursor';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
@@ -76,7 +78,12 @@ export default function Scene({xrStore}) {
             <Canvas 
                 key={backend} // a new backend needs a new canvas: a canvas can't switch context type
                 gl={backend === 'webgpu' ? createWebGPURenderer : undefined}
-                onCreated={() => setReadyBackend(backend)}
+                onCreated={({ gl }) => {
+                    // Khronos PBR Neutral instead of R3F's default ACES: keeps texture colors true and bright
+                    // whites unburnt (ACES desaturates and shifts them). Both backends.
+                    gl.toneMapping = NeutralToneMapping;
+                    setReadyBackend(backend);
+                }}
                 camera={{
                     position: [4,3,7],
                     fov: 50
@@ -119,6 +126,8 @@ export default function Scene({xrStore}) {
                 <OrbitAtCursor />
                 {/* each device reopens the environment where it left the view (localStorage) */}
                 <CameraMemory />
+                {/* environment lighting (reflections + indirect light) for every material, both backends */}
+                <SceneEnvironment />
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />

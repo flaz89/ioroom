@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Object3D, Vector3 } from 'three';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '../../store/appStore';
 import { sunLighting } from '../scene/sun/sunLighting';
 import SunArc from '../scene/sun/SunArc';
@@ -18,10 +18,11 @@ const NORMAL_BIAS = 0.02;  // room meters: removes shadow acne on the walls/floo
 const _scale = new Vector3();
 
 /*
-* Scene lights: an ambient light plus the sun, the only directional light (it casts the shadows).
+* Scene lights: the sun, the only directional light (it casts the shadows), plus the environment map's
+* fill light (SceneEnvironment.jsx; no ambient light: the environment replaces it), dimmed here at night.
 * The sun follows the real solar arc of the environment's location, day and clock time (store `sun`,
 * edited in the sun panel; values from sun/sunLighting.js); it fades out and turns warm near the horizon,
-* and the ambient light dims at night. SunArc shows the sun's path while the day/time sliders move.
+* and the environment light dims at night. SunArc shows the sun's path while the day/time sliders move.
 *
 * Centered on the floor plan and sized from it (levelBounds): the target is the plan's center, the sun
 * stays outside the building, the shadow camera covers the plan (capped: MAX_SHADOW_HALF), and the
@@ -35,6 +36,9 @@ export default function Light() {
     const sun = useStore((state) => state.sun);
     const lighting = useMemo(() => sunLighting(sun), [sun]);
     const lightRef = useRef();
+    // fill light follows the sun (scene-wide: the environment is set on the scene, not on the board)
+    const scene = useThree((state) => state.scene);
+    useLayoutEffect(() => { scene.environmentIntensity = lighting.environment; }, [scene, lighting]);
     const appliedScale = useRef(''); // scale | shadow size | sun distance last applied to the shadow camera
     // Plan size: center [x, z] and radius (m) of the level being worked on
     const level = useStore((state) => activeLevel(state.plan));
@@ -63,8 +67,6 @@ export default function Light() {
 
     return(
         <>
-            <ambientLight intensity={lighting.ambient}/>
-
             <primitive object={target} />
             <directionalLight
                 ref={lightRef}
