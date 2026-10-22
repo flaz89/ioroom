@@ -1,6 +1,6 @@
 // Check for doorModel.js: node src/components/scene/level/room/doorModel.check.mjs
 import assert from 'node:assert/strict';
-import { CASING_DEPTH, DEFAULT_PART_MATERIALS, LINING, MEETING_GAP, openingParts, partMaterialId } from './doorModel.js';
+import { CASING_DEPTH, DEFAULT_PART_MATERIALS, LINING, MEETING_GAP, handleStyle, handleStyles, openingParts, partMaterialId } from './doorModel.js';
 import { DEFAULT_PLAN, activeLevel, addOpening, faceOffsets, updateOpening } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
@@ -150,4 +150,22 @@ console.log('doorModel: ok');
     assert.ok(Math.abs(Math.abs(fl.openAngle) - Math.PI / 2) < eps && fl.openShift === 0, 'hinged');
     const flushOut = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'flush', swing: 'out' }));
     assert.ok(Math.abs(flushOut.leaves[0].leaf.max[2] - c1) < eps && flushOut.frame.every((b) => Math.abs(b.min[2] - c0) < eps), "swing 'out': mirrored");
+}
+
+// HANDLE STYLES (store partStyles): defaults per kind, a stored style only where that kind offers it
+{
+    const d = doorOf(withDoor);
+    const hinged = (styles) => openingParts(wallOf(withDoor), d, 2.7, styles).leaves[0].handle;
+    assert.equal(handleStyle({}, d), 'lever', 'hinged door: lever by default');
+    assert.equal(hinged({}).length, 6, 'default lever unchanged: rose + stem + lever on both faces');
+    assert.equal(hinged({ 'd1:handle': 'knob' }).length, 6, 'knob: rose + stem + knob on both faces');
+    assert.equal(hinged({ 'd1:handle': 'bar' }).length, 6, 'bar: bar + 2 stems on both faces');
+    assert.equal(hinged({ 'd1:handle': 'recessed' }).length, 2, 'recessed: one plate per face');
+    assert.equal(hinged({ 'd1:handle': 'none' }).length, 0, 'none');
+    const flushDoor = { ...d, operation: 'flush' };
+    assert.equal(handleStyle({}, flushDoor), 'recessed', 'flush door: recessed by default');
+    const pocketDoor = { ...d, operation: 'pocket' };
+    assert.equal(handleStyle({ 'd1:handle': 'lever' }, pocketDoor), 'recessed', 'a style the kind does not offer: its default');
+    assert.deepEqual(handleStyles({ type: 'door', operation: 'passage' }), [], 'a passage has no handle');
+    assert.equal(handleStyle({}, { type: 'window' }), 'none', 'fixed window: none');
 }

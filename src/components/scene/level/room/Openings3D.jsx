@@ -185,12 +185,12 @@ function onDoorContextMenu(event, doorId) {
 }
 
 // Every swing door of the level as { key, position, rotationY, frame, leaves: [{ hinge, leaf, handle }] }
-function buildDoors(level) {
+function buildDoors(level, partStyles) {
     const doors = [];
     for (const wall of level.walls) {
         const height = wall.height ?? level.wallHeight;
         for (const opening of wall.openings ?? []) {
-            const parts = openingParts(wall, opening, height);
+            const parts = openingParts(wall, opening, height, partStyles);
             if (parts == null) continue;
             doors.push({
                 key: opening.id,
@@ -332,7 +332,8 @@ function ResizeHandles({ level, wallId, openingId }) {
 }
 
 export default function Openings3D({ level }) {
-    const doors = useMemo(() => buildDoors(level), [level]);
+    const partStyles = useStore((state) => state.partStyles); // handle styles (doorModel.handleStyle)
+    const doors = useMemo(() => buildDoors(level, partStyles), [level, partStyles]);
     const openDoors = useStore((state) => state.openDoors);
     const surfaces = useStore((state) => state.surfaces); // part materials (doorModel.partMaterialId)
     // a material dragged over an opening previews on its structure (frame + leaves), tinted like a wall face

@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 * Undo / redo of this device's own edits to the environment (Y.UndoManager on the room document).
 *
 * - Only LOCAL edits are recorded: in a shared room, undo never reverts what other people did.
-* - Tracked maps: objects, notes, saved measures, surface materials, floor plan.
+* - Tracked maps: objects, notes, saved measures, surface materials, door / window part styles, floor plan.
 *   NOT tracked: sun (never in the history, by design), open / closed doors ("doors": opening a door is not
 *   an edit), prices (frozen automatically), presence.
 * - Undo / redo are Yjs transactions with the UndoManager as origin: the room bindings (roomSync.js,
@@ -23,7 +23,7 @@ export const SEED = Symbol('seed');
 // True for transactions made by this device's bindings (their observers must not echo them back)
 export const isOwnOrigin = (origin) => origin === LOCAL || origin === SEED;
 
-const TRACKED_MAPS = ['objects', 'notes', 'measures', 'surfaces', 'plan'];
+const TRACKED_MAPS = ['objects', 'notes', 'measures', 'surfaces', 'partStyles', 'plan'];
 
 // Edits closer than this are merged into one undo step. Needed because one user action can touch
 // several maps in separate transactions (one per binding, same tick).

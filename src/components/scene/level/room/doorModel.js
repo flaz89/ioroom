@@ -10,7 +10,7 @@ import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 * c = across, along the wall's normal (planModel.wallFrame; the faces are at faceOffsets inner / outer).
 * A box: { min: [x, y, c], max: [x, y, c] }.
 *
-* openingParts(wall, opening, wallHeight) -> null | { frame: [box],
+* openingParts(wall, opening, wallHeight, partStyles = {}) -> null | { frame: [box],
 *     leaves: [{ hinge: [x, c], openAngle, openShift, leaf: box, sash?: [box], glass?: box, handle: [box] }] }
 * - Doors 'swing' | 'flush' | 'slide' | 'pocket', windows 'standard' (one FIXED sash on the wall's axis) | 'swing' | 'slide': null
 *   otherwise (a door 'passage' and a window 'hole' are just the hole), or when the opening is clipped away
@@ -47,9 +47,12 @@ import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 *   (the wall opens into its pocket); open, they are inside the wall but for POCKET_GRIP past the jamb.
 * - Leaves of the same opening meet with MEETING_GAP between them (the joint shows in 3D).
 * - HANDLE (part 'handle') near each leaf's free edge: doors on both faces at HANDLE_HEIGHT, windows on the
-*   room's side only at mid height. Hinged = a rose, a stem (perpendicular to the leaf) and the lever (doors:
-*   towards the hinge; windows: down); sliding door = a vertical bar on two stems; pocket door and sliding /
-*   sliding window = a flat pull plate (nothing sticks out); a fixed sash / leaf has none.
+*   room's side only at mid height. Its STYLE (store partStyles '<opening>:handle', one for both faces; see
+*   HANDLE_STYLES: which styles each kind of opening offers, the first being its default) is one of:
+*   'lever' = a rose, a stem (perpendicular to the leaf) and the lever (doors: towards the hinge; windows: down);
+*   'knob' = a rose, a short stem and a knob; 'bar' = a vertical bar on two stems; 'recessed' = a flat pull
+*   plate almost flush with the leaf (nothing sticks out: pocket doors, sliding windows, flush doors); 'none'.
+*   A fixed sash / leaf never has one.
 * Calibration knobs (sizes in meters): tune by eye.
 * ponytail: boxes only (no profiles, no panels); shapes and styles come with the customization step.
 */
@@ -66,6 +69,8 @@ const ROSE = [0.05, 0.05, 0.01];   // along, up, out from the leaf face
 const LEVER = [0.12, 0.018, 0.018]; // length (towards the hinge / down), section, thick
 const LEVER_OUT = 0.05;       // lever's distance from the leaf face
 const STEM = 0.016;           // square section of the stem from the rose to the lever
+const KNOB = [0.05, 0.05, 0.035]; // knob: along, up, thick
+const KNOB_OUT = 0.05;        // knob's middle: distance from the leaf face
 // sliding doors
 export const SLIDE_THICKNESS = 0.035; // a sliding leaf (pocket: at most a quarter of the wall's depth)
 const SLIDE_GAP = 0.015;      // a face-sliding leaf off the casing
@@ -100,7 +105,30 @@ export const partMaterialId = (surfaces, openingId, part) =>
 const box = (x0, x1, y0, y1, c0, c1) => ({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(c0, c1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(c0, c1)] });
 const OPERATIONS = { door: ['swing', 'flush', 'slide', 'pocket'], window: ['standard', 'swing', 'slide'] };
 
-export function openingParts(wall, opening, wallHeight) {
+/*
+* HANDLE STYLES offered by each kind of opening ('<type>:<operation>'), the first = its DEFAULT. Only what
+* makes sense there: nothing sticking out of a pocket door (it slides into the wall), no lever on a door
+* sliding on a face, a fixed window has none. Kinds missing here have no handle (passage, hole).
+*/
+export const HANDLE_STYLES = {
+    'door:swing': ['lever', 'knob', 'bar', 'recessed', 'none'],
+    'door:flush': ['recessed', 'lever', 'knob', 'bar', 'none'],
+    'door:slide': ['bar', 'recessed', 'none'],
+    'door:pocket': ['recessed', 'none'],
+    'window:swing': ['lever', 'none'],
+    'window:slide': ['recessed', 'none'],
+    'window:standard': ['none']
+};
+// The handle styles an opening offers ([] = none at all)
+export const handleStyles = (opening) => HANDLE_STYLES[`${opening.type}:${openingOperation(opening)}`] ?? [];
+// The handle style an opening shows: the stored one (store partStyles) when this kind offers it, else the default
+export function handleStyle(partStyles, opening) {
+    const styles = handleStyles(opening);
+    const stored = partStyles[`${opening.id}:handle`];
+    return styles.includes(stored) ? stored : styles[0] ?? 'none';
+}
+
+export function openingParts(wall, opening, wallHeight, partStyles = {}) {
     const kind = openingOperation(opening);
     if (!OPERATIONS[opening.type]?.includes(kind)) return null;
     // a flush door is a hinged one with its own frame and leaf extent: 'swing' from here on, but isFlush
@@ -192,6 +220,7 @@ export function openingParts(wall, opening, wallHeight) {
     }
     const y0 = isWindow ? sill + LEAF_GAP : FLOOR_GAP;
     const handleY = isWindow ? (y0 + y1) / 2 : HANDLE_HEIGHT;
+    const style = handleStyle(partStyles, opening);
     // fixed window: one sash; sliding window: every leaf's fixed side is the fixed end (its handle at the far edge)
     const spans = operation === 'standard' ? [{ from: lo, to: hi, towardsStart: true }]
         : openingLeaves(opening, lo, hi).map((span) => (isSlidingWindow ? { ...span, towardsStart: fixedAtStart } : span));
@@ -208,9 +237,7 @@ export function openingParts(wall, opening, wallHeight) {
         // the leaf faces a handle goes on, as [surface, outwards along c]: doors both, windows the room's side
         const faces = isWindow ? [roomward > 0 ? [cMax, 1] : [cMin, -1]] : [[cMin, -1], [cMax, 1]];
         const handle = operation === 'standard' || (isSlidingWindow && windowRank(index) === 0) ? []
-            : operation === 'swing' ? leverHandle(handleX, handleY, isWindow ? 0 : toFree, faces)
-                : operation === 'slide' && !isWindow ? barHandle(handleX, handleY, faces)
-                    : pullHandle(handleX, handleY, isWindow ? WINDOW_PULL : PULL, faces);
+            : handleBoxes(style, handleX, handleY, isWindow ? 0 : toFree, faces, isWindow);
         const leaf = box(span.from, span.to, y0, y1, leafC[0], leafC[1]);
         return {
             // pivot origin of the leaf (renderer): the hinge for a swing leaf, its fixed edge on the track otherwise
@@ -255,6 +282,24 @@ function glazed({ min, max }) {
         ],
         glass: box(min[0] + w, max[0] - w, min[1] + w, max[1] - w, mid - GLASS / 2, mid + GLASS / 2)
     };
+}
+
+// The boxes of a handle of `style` (HANDLE_STYLES) on each given face, at (x, y)
+function handleBoxes(style, x, y, toFree, faces, isWindow) {
+    if (style === 'lever') return leverHandle(x, y, toFree, faces);
+    if (style === 'knob') return knobHandle(x, y, faces);
+    if (style === 'bar') return barHandle(x, y, faces);
+    if (style === 'recessed') return pullHandle(x, y, isWindow ? WINDOW_PULL : PULL, faces);
+    return []; // 'none'
+}
+
+// A rose, a short stem and a knob (a squat box: boxes only for now) on each given face
+function knobHandle(x, y, faces) {
+    return faces.flatMap(([surface, s]) => [
+        box(x - ROSE[0] / 2, x + ROSE[0] / 2, y - ROSE[1] / 2, y + ROSE[1] / 2, surface, surface + s * ROSE[2]),
+        box(x - STEM / 2, x + STEM / 2, y - STEM / 2, y + STEM / 2, surface, surface + s * (KNOB_OUT - KNOB[2] / 2)),
+        box(x - KNOB[0] / 2, x + KNOB[0] / 2, y - KNOB[1] / 2, y + KNOB[1] / 2, surface + s * (KNOB_OUT - KNOB[2] / 2), surface + s * (KNOB_OUT + KNOB[2] / 2))
+    ]);
 }
 
 // Hinged: a rose, a stem and a lever on each given face ([surface, outwards]); the lever towards the hinge

@@ -85,3 +85,7 @@
     cursor: pointer;
 }
 .parts-menu-color input { opacity: 0; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer; }
+
+/* handle type chips (above the handle's materials): wrap when there are many */
+.parts-menu-types { flex-wrap: wrap; padding: .3em .2em 0; }
+.parts-menu-types button { flex: 1 0 auto; padding: .25em .4em; }

@@ -12,6 +12,10 @@ import { PLAIN_ID } from '../../materials/library';
 * materialDrag (per device, never synced): { materialId, surfaceId, pointerId? } while a material is dragged
 *   from the materials panel; surfaceId = surface under the pointer (previewed there), null over nothing.
 *   pointerId: only VR drags (xr-ui/VRMaterialsPanel.jsx), the ray that Room.jsx follows.
+* partStyles (saved in the environment, sync: Y.Map "partStyles", undoable like the materials): the STYLE of a
+*   door / window part, '<opening>:handle' -> handle style id (doorModel.HANDLE_STYLES); missing = the opening's
+*   default (doorModel.handleStyle). One style for both faces of the door for now: a per-face choice would be
+*   '<opening>:handle:in|out' keys, read by doorModel.handleStyle only.
 * priceSnapshots (saved in the environment, sync: Y.Map "prices"): material id -> its product card
 *   (price, VAT, waste, name...) FROZEN when the material is first applied in this project with a price
 *   (materials/billOfQuantities.js): later price-list changes do not alter the project's estimate.
@@ -26,6 +30,7 @@ function withPrice(state, surfaces, materialId) {
 
 export const createSurfacesSlice = (set) => ({
     surfaces: {},
+    partStyles: {},
     materialDrag: null,
     priceSnapshots: {},
 
@@ -65,6 +70,18 @@ export const createSurfacesSlice = (set) => ({
         surfaces[`${openingId}:${part}`] = materialId;
         return withPrice(state, surfaces, materialId);
     }),
+
+    // The style of one PART of a door / window (for now 'handle': doorModel.HANDLE_STYLES); null = back to the
+    // opening's default (key removed)
+    setPartStyle: (openingId, part, style) => set((state) => {
+        const partStyles = { ...state.partStyles };
+        if (style == null) delete partStyles[`${openingId}:${part}`];
+        else partStyles[`${openingId}:${part}`] = style;
+        return { partStyles };
+    }),
+
+    // Replaces the part styles with the room's (sync/roomSync.js: all values, removed keys included)
+    setPartStyles: (partStyles) => set({ partStyles }),
 
     // Replaces the frozen prices with the room's (sync/roomSync.js: all values, removed keys included)
     setPriceSnapshots: (priceSnapshots) => set({ priceSnapshots }),

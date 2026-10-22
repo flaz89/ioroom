@@ -21,6 +21,7 @@ import { LOCAL, SEED, isOwnOrigin, startHistory } from './history';
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
 * Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
+* Styles of door / window parts (store partStyles, e.g. the handle type): Y.Map "partStyles", one key per part.
 * Prices frozen in the project (store priceSnapshots, bill of quantities): Y.Map "prices", one key per material.
 * Floor plan (store plan: levels with walls and floors, plan/planModel.js): Y.Map "plan" (fieldMapSync.js,
 * key "levels"); a room without one is seeded with the local (default) plan.
@@ -198,6 +199,12 @@ export function connectRoom(room) {
         write: (values) => useStore.getState().setSurfaces(values)
     });
 
+    const unbindPartStyles = bindFieldMap(doc, provider, {
+        name: 'partStyles',
+        read: (state) => state.partStyles,
+        write: (values) => useStore.getState().setPartStyles(values)
+    });
+
     const unbindPlan = bindFieldMap(doc, provider, {
         name: 'plan',
         read: (state) => state.plan,
@@ -227,6 +234,7 @@ export function connectRoom(room) {
         unbindAwareness();
         unbindSun();
         unbindSurfaces();
+        unbindPartStyles();
         unbindObjects();
         unbindNotes();
         unbindMeasures();

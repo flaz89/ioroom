@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { xrStore } from '../../../xr/xrStore';
 import { useStore } from '../../../store/appStore';
 import { activeLevel } from '../../../plan/planModel';
-import { openingParts, partMaterialId } from '../../scene/level/room/doorModel';
+import { handleStyle, handleStyles, openingParts, partMaterialId } from '../../scene/level/room/doorModel';
 import { PLAIN_ID, useMaterial, useMaterialList } from '../../../materials/library';
 import { finishMaterial, paintId } from '../../../materials/finishes';
 import { MATERIAL_CATEGORIES } from '../../../materials/grouping';
@@ -13,8 +13,11 @@ import './parts-menu.css';
 * PARTS MENU of a door / window (DESIGNER, desktop): opened by a right click on it (Openings3D.jsx, store
 * partsMenu), at the cursor, kept inside the window. One row per part with the material it shows now
 * (doorModel.partMaterialId: its own, else the structure's, else its default finish): Frame, Leaf (Sash for a
-* window), Handle when it has one.
-* A click on a row opens its PICKER below it (one at a time): category tabs like the materials panel
+* window), Handle when the opening offers a handle style other than none (doorModel.handleStyles; the row shows
+* its style too, so 'none' can be picked and undone).
+* A click on a row opens its PICKER below it (one at a time). The Handle's starts with its TYPE: one chip per style
+* the opening offers (doorModel.HANDLE_STYLES; picking the default removes the stored key: store
+* surfacesSlice.setPartStyle, synced, one undo step, both faces of the door). Then the materials: category tabs like the materials panel
 * (grouping.js; it opens on Doors & windows, but ANY library material can go on a part, e.g. a wall's material on
 * a flush door), then the balls: DEFAULT (removes the part's own material: back to the structure's / its default
 * finish), the category's materials, and a CUSTOM paint (its swatch picks the color; applied when the color
@@ -35,14 +38,18 @@ export default function PartsMenu() {
     if (parts == null) return null;
     const isWindow = opening.type === 'window';
     const rows = [['frame', 'Frame'], ['leaf', isWindow ? 'Sash' : 'Leaf']];
-    if (parts.leaves.some((leaf) => leaf.handle.length)) rows.push(['handle', 'Handle']);
+    if (handleStyles(opening).some((style) => style !== 'none')) rows.push(['handle', 'Handle']);
     // keyed: a fresh menu (no part open) for every opening
-    return <Menu key={menu.openingId} menu={menu} title={isWindow ? 'Window' : 'Door'} rows={rows} />;
+    return <Menu key={menu.openingId} menu={menu} opening={opening} title={isWindow ? 'Window' : 'Door'} rows={rows} />;
 }
 
-function Menu({ menu, title, rows }) {
+// Labels of the handle styles (doorModel.HANDLE_STYLES)
+const HANDLE_LABELS = { lever: 'Lever', knob: 'Knob', bar: 'Bar', recessed: 'Recessed', none: 'None' };
+
+function Menu({ menu, opening, title, rows }) {
     const setPartsMenu = useStore((state) => state.setPartsMenu);
     const surfaces = useStore((state) => state.surfaces);
+    const style = useStore((state) => handleStyle(state.partStyles, opening)); // the handle's, as shown
     const [openPart, setOpenPart] = useState(null); // the row whose picker is shown
     useEffect(() => {
         const close = () => setPartsMenu(null);
@@ -61,8 +68,9 @@ function Menu({ menu, title, rows }) {
             <span className="parts-menu-title">{title}</span>
             {rows.map(([part, label]) => (
                 <div key={part}>
-                    <PartRow label={label} materialId={partMaterialId(surfaces, menu.openingId, part)}
+                    <PartRow label={part === 'handle' ? `${label} · ${HANDLE_LABELS[style]}` : label} materialId={partMaterialId(surfaces, menu.openingId, part)}
                         isOpen={openPart === part} onClick={() => setOpenPart(openPart === part ? null : part)} />
+                    {openPart === part && part === 'handle' && <HandleTypes opening={opening} style={style} />}
                     {openPart === part && <PartPicker openingId={menu.openingId} part={part} current={surfaces[`${menu.openingId}:${part}`]}
                         // what Default goes back to: the resolution without the part's own material (undefined = missing for ??)
                         fallbackId={partMaterialId({ ...surfaces, [`${menu.openingId}:${part}`]: undefined }, menu.openingId, part)} />}
@@ -80,6 +88,20 @@ function PartRow({ label, materialId, isOpen, onClick }) {
             <span className="parts-menu-label">{label}</span>
             <span className="parts-menu-material">{material.name}</span>
         </button>
+    );
+}
+
+// The handle's TYPE chips: the styles the opening offers; the default stores nothing (key removed)
+function HandleTypes({ opening, style }) {
+    const styles = handleStyles(opening);
+    const pick = (next) => useStore.getState().setPartStyle(opening.id, 'handle', next === styles[0] ? null : next);
+    return (
+        <div className="parts-menu-tabs parts-menu-types" role="radiogroup" aria-label="Handle type">
+            {styles.map((item) => (
+                <button key={item} role="radio" aria-checked={style === item} className={style === item ? 'is-active' : ''}
+                    onClick={() => pick(item)}>{HANDLE_LABELS[item]}</button>
+            ))}
+        </div>
     );
 }
 
