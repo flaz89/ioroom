@@ -12,7 +12,7 @@ import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 *
 * openingParts(wall, opening, wallHeight) -> null | { frame: [box],
 *     leaves: [{ hinge: [x, c], openAngle, openShift, leaf: box, sash?: [box], glass?: box, handle: [box] }] }
-* - Doors 'swing' | 'slide' | 'pocket', windows 'standard' (one FIXED sash on the wall's axis) | 'swing' | 'slide': null
+* - Doors 'swing' | 'flush' | 'slide' | 'pocket', windows 'standard' (one FIXED sash on the wall's axis) | 'swing' | 'slide': null
 *   otherwise (a door 'passage' and a window 'hole' are just the hole), or when the opening is clipped away
 *   (openingRects).
 * - OPENING a leaf (renderer: progress p from 0 closed to 1 open): rotate by p x openAngle around the vertical
@@ -32,6 +32,10 @@ import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 *   frame (the renderer rotates them around the hinge). `leaf` is the leaf's whole box: a door's leaf (part
 *   'leaf'); a window draws instead its `sash` (part 'leaf': a frame SASH wide around the pane) and `glass`
 *   (part 'glass', GLASS thick, in the middle of the sash's depth).
+* - FLUSH DOOR ('flush', "porta a raso"): a hinged door (everything above for 'swing' holds) built to vanish
+*   into the wall: NO casing, and the leaf covers the lining on its swing face (only LEAF_GAP shows around it,
+*   flush with the wall face); the lining (jambs + head) runs behind the leaf, from its back to the other face,
+*   where it is flush with the wall and acts as the stop.
 * - SLIDE DOOR (on a face, the swing side, like the 2D symbol): the leaves hang in front of the casing, covering
 *   the reveal and the casing, on two alternating tracks; a RAIL above them runs from closed to fully open.
 * - SLIDE WINDOW (the classic one): inside the lining, EACH leaf on its own track across the reveal (centered on
@@ -94,11 +98,14 @@ export const partMaterialId = (surfaces, openingId, part) =>
     surfaces[`${openingId}:${part}`] ?? (part === 'handle' ? null : surfaces[openingId]) ?? DEFAULT_PART_MATERIALS[part];
 
 const box = (x0, x1, y0, y1, c0, c1) => ({ min: [Math.min(x0, x1), Math.min(y0, y1), Math.min(c0, c1)], max: [Math.max(x0, x1), Math.max(y0, y1), Math.max(c0, c1)] });
-const OPERATIONS = { door: ['swing', 'slide', 'pocket'], window: ['standard', 'swing', 'slide'] };
+const OPERATIONS = { door: ['swing', 'flush', 'slide', 'pocket'], window: ['standard', 'swing', 'slide'] };
 
 export function openingParts(wall, opening, wallHeight) {
-    const operation = openingOperation(opening);
-    if (!OPERATIONS[opening.type]?.includes(operation)) return null;
+    const kind = openingOperation(opening);
+    if (!OPERATIONS[opening.type]?.includes(kind)) return null;
+    // a flush door is a hinged one with its own frame and leaf extent: 'swing' from here on, but isFlush
+    const isFlush = kind === 'flush';
+    const operation = isFlush ? 'swing' : kind;
     const isWindow = opening.type === 'window';
     const rect = openingRects({ ...wall, openings: [opening] }, wallHeight)[0];
     if (rect == null) return null;
@@ -123,12 +130,14 @@ export function openingParts(wall, opening, wallHeight) {
 
     // a window's lining also runs under it (sill): its casing starts above that
     const sill = isWindow ? bottom + LINING : bottom;
+    // the lining's depth: the whole wall, but a flush door's stops behind its leaf (the leaf covers it there)
+    const [l0, l1] = isFlush ? (isOut ? [c0, c1 - LEAF_THICKNESS] : [c0 + LEAF_THICKNESS, c1]) : [c0, c1];
     const frame = [
-        ...(pocketStart ? [] : [box(from, from + LINING, bottom, top, c0, c1)]), // jambs
-        ...(pocketEnd ? [] : [box(to - LINING, to, bottom, top, c0, c1)]),
-        box(from, to, top - LINING, top, c0, c1),                                  // head
-        // casing: sides and head, on each face (a window: the inner face only)
-        ...(isWindow ? [inner] : [c0, c1]).map((f) => [f, f + Math.sign(f - axis) * CASING_DEPTH]).flatMap(([a, b]) => [
+        ...(pocketStart ? [] : [box(from, from + LINING, bottom, top, l0, l1)]), // jambs
+        ...(pocketEnd ? [] : [box(to - LINING, to, bottom, top, l0, l1)]),
+        box(from, to, top - LINING, top, l0, l1),                                  // head
+        // casing: sides and head, on each face (a window: the inner face only; a flush door: none)
+        ...(isWindow ? [inner] : isFlush ? [] : [c0, c1]).map((f) => [f, f + Math.sign(f - axis) * CASING_DEPTH]).flatMap(([a, b]) => [
             box(from - out, from + LINING, sill, top + out, a, b),
             box(to - LINING, to + out, sill, top + out, a, b),
             box(from - out, to + out, top - LINING, top + out, a, b)
@@ -143,7 +152,12 @@ export function openingParts(wall, opening, wallHeight) {
     // the leaves' extent along x and their tracks across (c), per operation
     let lo, hi, y1, track;
     const sashDepth = Math.min(SASH_DEPTH, (c1 - c0) / 2);
-    if (operation === 'swing' || operation === 'standard') {
+    if (isFlush) {
+        // over the lining, the whole reveal but the gap all round: flush with the swing face
+        [lo, hi] = [from + LEAF_GAP, to - LEAF_GAP];
+        y1 = top - LEAF_GAP;
+        track = () => [face, face - side * LEAF_THICKNESS];
+    } else if (operation === 'swing' || operation === 'standard') {
         [lo, hi] = [from + LINING + LEAF_GAP, to - LINING - LEAF_GAP];
         y1 = top - LINING - LEAF_GAP;
         track = operation === 'standard' ? () => [axis - sashDepth / 2, axis + sashDepth / 2] // fixed: on the axis

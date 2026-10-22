@@ -12,6 +12,7 @@ import { useStore } from './store/appStore';
 import RoomNotice from './components/ui/room-notice/RoomNotice';
 import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
+import PartsMenu from './components/ui/parts-menu/PartsMenu';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
 import PlanGridLegend from './components/builder/PlanGridLegend';
@@ -63,6 +64,7 @@ export default function App() {
           <CompassBar/>
           <RoomNotice/>
           <NoteModal/>
+          <PartsMenu/>
           {/* bottom center (provisional), stacked upwards: performance stats (when open), grid scale of the
               2D plan (builder), then undo / redo for everyone and the workspace switch for the admin */}
           <div className="bottom-bar">

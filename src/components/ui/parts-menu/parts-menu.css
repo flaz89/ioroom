@@ -1,0 +1,87 @@
+/* Parts menu of a door / window (PartsMenu.jsx): a small glass card at the right click */
+.parts-menu {
+    position: fixed;
+    z-index: 120;
+    width: 260px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: .35em;
+    padding: .6em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: #fff;
+    font-family: "SUSE Mono", monospace; /* same as the materials panel */
+    font-size: .8em;
+    pointer-events: all; /* the .ui container lets clicks through to the canvas */
+}
+.parts-menu-title { font-size: .8em; opacity: .7; padding: 0 .3em; text-transform: uppercase; letter-spacing: .08em; }
+.parts-menu-row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: .7em;
+    align-items: center;
+    padding: .3em;
+    border-radius: 10px;
+}
+.parts-menu-row .material-ball { width: 36px; height: 36px; grid-row: 1 / 3; }
+.parts-menu-label { font-weight: 600; font-size: .9em; }
+.parts-menu-material { font-size: .8em; opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* rows are buttons: reset the browser look */
+.parts-menu-row { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.parts-menu-row:hover, .parts-menu-row.is-open { background: rgba(255, 255, 255, 0.1); }
+
+/* Picker under the open row */
+.parts-menu-picker { display: flex; flex-direction: column; gap: .4em; padding: .3em .2em .4em; }
+.parts-menu-tabs { display: flex; gap: .25em; }
+.parts-menu-tabs button {
+    flex: 1;
+    padding: .25em 0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: inherit;
+    font: inherit;
+    font-size: .75em;
+    cursor: pointer;
+}
+.parts-menu-tabs button.is-active { border-color: rgba(255, 154, 26, 0.9); background: rgba(255, 154, 26, 0.3); }
+.parts-menu-balls { display: grid; grid-template-columns: repeat(4, 1fr); gap: .3em; max-height: 150px; overflow-y: auto; }
+.parts-menu-ball {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .2em;
+    width: 100%;
+    padding: .25em 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: .65em;
+    cursor: pointer;
+}
+.parts-menu-ball:hover { background: rgba(255, 255, 255, 0.1); }
+.parts-menu-ball.is-active { border-color: rgba(255, 154, 26, 0.9); }
+.parts-menu-ball .material-ball { width: 32px; height: 32px; }
+.parts-menu-ball span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.parts-menu-custom { position: relative; }
+/* the custom paint's color swatch: a small dot on the ball's top left */
+.parts-menu-color {
+    position: absolute;
+    top: 0;
+    left: 4px;
+    width: 14px;
+    height: 14px;
+    overflow: hidden;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+    cursor: pointer;
+}
+.parts-menu-color input { opacity: 0; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer; }

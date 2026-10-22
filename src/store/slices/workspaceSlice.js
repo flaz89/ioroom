@@ -26,6 +26,9 @@
 * wallDetection: automatic walls found on a DXF underlay layer (plan/dxfWalls.js), previewed in the 2D plan:
 *   null | { url, layer, walls, excluded } (url: the underlay they belong to; excluded: indices of the walls the
 *   user left out, toggleDetectedWall). Per device, never synced nor undoable.
+* partsMenu: the DESIGNER's parts menu of a door / window (components/ui/parts-menu/PartsMenu.jsx), opened by a
+*   right click on it (Openings3D.jsx): { openingId, x, y } (x, y = the click in screen px), null = closed.
+*   Per device, never synced; closed when switching mode.
 * Not to be confused with view.mode (viewSlice.js: 'life' / 'tabletop' presentation in XR).
 */
 
@@ -55,6 +58,9 @@ export const createWorkspaceSlice = (set, get) => ({
 
     planTool: 'select',
     setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null }),
+
+    partsMenu: null,
+    setPartsMenu: (partsMenu) => set({ partsMenu }),
 
     selectedFloorId: null,
     setSelectedFloorId: (selectedFloorId) => set({ selectedFloorId }),
@@ -107,7 +113,7 @@ export const createWorkspaceSlice = (set, get) => ({
             if (DESIGNER_PANELS.includes(state.openPanel)) state.closePanel();
         }
         if (workspace === 'designer' && get().openPanel === 'underlay') get().closePanel(); // builder-only panel
-        set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null });
+        set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null, partsMenu: null });
     }
 });
 

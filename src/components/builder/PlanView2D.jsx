@@ -822,7 +822,7 @@ export default function PlanView2D() {
 * A door / window in the 2D plan (world meters, inside the view's transform): the gap through the wall
 * (hit target, data-wall-id + data-opening-id) and its drafting symbol, one per leaf (planModel.openingLeaves:
 * 1..4 equal leaves, each with its fixed side towards the opening's start or end):
-* - 'swing' (default): each leaf open square to the wall from its hinge, on the face it opens towards
+* - 'swing' (default) and 'flush' (a hinged door flush with the wall: the same symbol): each leaf open square to the wall from its hinge, on the face it opens towards
 *   (opening.swing: inner side = -normal, outer = +normal), with its swing arc;
 * - 'slide' (sliding outside the wall): thin leaf panels just off the face on the swing side, on two
 *   alternating tracks, each with an arrow towards the side it slides to;
@@ -896,7 +896,7 @@ function OpeningSymbol({ wall, rect, isSelected, pocketConflicts }) {
                 return [panel(leaf, near, near + half, `leaf${i}`), arrow(leaf, axis + side * (Math.abs(outer - inner) / 2 + SLIDE_GAP * 2), `arrow${i}`)];
             })
         ];
-    } else if (operation === 'swing') {
+    } else if (operation === 'swing' || operation === 'flush') {
         symbol = leaves.flatMap((leaf, i) => {
             const width = leaf.to - leaf.from;
             const [hingeT, freeT] = leaf.towardsStart ? [leaf.from, leaf.to] : [leaf.to, leaf.from];

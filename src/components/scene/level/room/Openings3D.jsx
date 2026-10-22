@@ -58,6 +58,9 @@ import SurfaceMesh from './SurfaceMesh';
 *   A CLICK on a door toggles it open / closed (store openDoors), with the mouse, a controller / hand ray or a
 *   fingertip touch; hand cursor and a light orange tint on mouse hover. Not after an orbit drag, not while
 *   the ruler / post-it tool owns the click.
+*   A RIGHT CLICK (mouse only; pmndrs emits 'contextmenu' on the release of a short press, so a right-drag
+*   pan never opens it) on any door / window with parts, fixed windows included, opens its PARTS MENU (store
+*   partsMenu, ui/parts-menu/PartsMenu.jsx); the opening stays tinted as selected while the menu is open.
 * ponytail: one mesh per leaf and per handle (a house has tens of doors); instance or merge if it shows in perf.
 */
 // Frame, leaves and handles: SurfaceMesh.jsx (library materials and system finishes, shared and tinted like
@@ -170,6 +173,15 @@ function onDoorClick(event, doorId) {
     if (state.workspace !== 'designer' || state.measures.active || state.notes.placing || !isStillClick(event)) return;
     event.stopPropagation();
     state.setDoorOpen(doorId, !state.openDoors[doorId]);
+}
+
+// Designer: a right click on an opening with parts opens its parts menu at the cursor (same guards as the click)
+function onDoorContextMenu(event, doorId) {
+    const state = useStore.getState();
+    const native = event.nativeEvent;
+    if (state.workspace !== 'designer' || native?.pointerType !== 'mouse' || state.measures.active || state.notes.placing || !isStillClick(event)) return;
+    event.stopPropagation();
+    state.setPartsMenu({ openingId: doorId, x: native.clientX, y: native.clientY });
 }
 
 // Every swing door of the level as { key, position, rotationY, frame, leaves: [{ hinge, leaf, handle }] }
@@ -345,10 +357,11 @@ export default function Openings3D({ level }) {
         setCursorHover('designer-door', doorId != null);
         setHoveredDoorId(doorId);
     };
-    // tint of an opening: builder = selected beats hovered; designer = the hovered door only
+    const partsMenuId = useStore((state) => state.partsMenu?.openingId);
+    // tint of an opening: builder = selected beats hovered; designer = the parts menu's opening beats the hovered door
     const tintOf = (id) => (isBuilder
         ? (id === selectedId ? true : id === hoveredId ? 'hover' : false)
-        : (id === hoveredDoorId ? 'hover' : false));
+        : (id === partsMenuId ? true : id === hoveredDoorId ? 'hover' : false));
     const pivotsRef = useRef(new Map()); // '<opening>:<index>' -> pivot group (mounted)
     const progressRef = useRef(new Map()); // '<opening>:<index>' -> current progress (0 closed .. 1 open)
 
@@ -376,11 +389,15 @@ export default function Openings3D({ level }) {
     }), [doors]);
 
     // designer: pointer handlers shared by every part of a door (a group catches its children's events)
-    const doorHandlers = (door) => (pickDoors && door.opens ? {
-        onClick: (event) => onDoorClick(event, door.id),
-        onPointerOver: (event) => onDoorHover(event, door.id),
-        onPointerOut: (event) => onDoorHover(event, null)
-    } : {});
+    // (the right click's parts menu for every opening; open / close and its hover only for one that opens)
+    const doorHandlers = (door) => (!pickDoors ? {} : {
+        onContextMenu: (event) => onDoorContextMenu(event, door.id),
+        ...(door.opens && {
+            onClick: (event) => onDoorClick(event, door.id),
+            onPointerOver: (event) => onDoorHover(event, door.id),
+            onPointerOut: (event) => onDoorHover(event, null)
+        })
+    });
     // builder: the pick boxes take the clicks. Designer: the mesh's own raycast, passed EXPLICITLY: R3F ignores
     // an `undefined` prop, so a door mounted in the builder kept noRaycast after switching to the designer
     const partRaycast = pickDoors ? Mesh.prototype.raycast : noRaycast;

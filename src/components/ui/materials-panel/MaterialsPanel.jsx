@@ -213,7 +213,7 @@ export default function MaterialsPanel() {
 }
 
 // Material preview ball: the color map wrapped on a disc, shaded like a lit sphere (css)
-function MaterialBall({ material }) {
+export function MaterialBall({ material }) {
     const style = material.maps ? { backgroundImage: `url(${material.maps.color})` }
         : material.finish ? { backgroundColor: material.finish.color } : undefined; // a system finish: its color
     return <span className="material-ball" style={style} aria-hidden="true" />;

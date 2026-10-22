@@ -54,6 +54,18 @@ export const createSurfacesSlice = (set) => ({
         return withPrice(state, surfaces, materialId);
     }),
 
+    // One PART of a door / window ('frame' | 'leaf' | 'handle', parts menu: ui/parts-menu/PartsMenu.jsx): its own
+    // material, which wins over the structure's (doorModel.partMaterialId); null = back to the default (key removed)
+    setPartMaterial: (openingId, part, materialId) => set((state) => {
+        const surfaces = { ...state.surfaces };
+        if (materialId == null) {
+            delete surfaces[`${openingId}:${part}`];
+            return { surfaces };
+        }
+        surfaces[`${openingId}:${part}`] = materialId;
+        return withPrice(state, surfaces, materialId);
+    }),
+
     // Replaces the frozen prices with the room's (sync/roomSync.js: all values, removed keys included)
     setPriceSnapshots: (priceSnapshots) => set({ priceSnapshots }),
 

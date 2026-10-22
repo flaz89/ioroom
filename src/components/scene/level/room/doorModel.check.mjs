@@ -138,3 +138,16 @@ assert.equal(partMaterialId(mats, 'd1', 'leaf'), 'paint:#ff0000', 'own wins');
 assert.equal(partMaterialId(mats, 'd1', 'handle'), DEFAULT_PART_MATERIALS.handle, 'the handle keeps its finish');
 assert.equal(partMaterialId({ ...mats, 'd1:handle': 'oak' }, 'd1', 'handle'), 'oak');
 console.log('doorModel: ok');
+
+// FLUSH door: no casing, the lining behind the leaf, the leaf over the lining and flush with the swing face
+{
+    const flush = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'flush' }));
+    assert.equal(flush.frame.length, 3, 'lining only (jambs + head), no casing');
+    const [fl] = flush.leaves;
+    assert.ok(Math.abs(fl.leaf.min[2] - c0) < eps, "swing 'in': flush with the face with the smaller c");
+    assert.ok(fl.leaf.min[0] < 2.55 + LINING && fl.leaf.max[0] > 3.45 - LINING, 'leaf over the lining');
+    for (const b of flush.frame) assert.ok(b.min[2] >= fl.leaf.max[2] - eps && Math.abs(b.max[2] - c1) < eps, 'lining from the leaf back to the other face');
+    assert.ok(Math.abs(Math.abs(fl.openAngle) - Math.PI / 2) < eps && fl.openShift === 0, 'hinged');
+    const flushOut = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'flush', swing: 'out' }));
+    assert.ok(Math.abs(flushOut.leaves[0].leaf.max[2] - c1) < eps && flushOut.frame.every((b) => Math.abs(b.min[2] - c0) < eps), "swing 'out': mirrored");
+}
