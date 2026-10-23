@@ -56,6 +56,11 @@
 .plan-view.is-drawing .plan-wall { cursor: crosshair; }
 .plan-view.is-drawing .plan-vertex-hit { pointer-events: none; }
 .plan-wall-preview { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
+/* hip roof ridge (ceiling tool): orange line, a wide invisible hit line to move it */
+/* exposed beams of the selected roof (ceiling tool): dashed outline */
+.plan-beam { fill: rgba(255, 154, 26, 0.08); stroke: #ffc27a; stroke-width: 1; stroke-dasharray: 4 3; pointer-events: none; }
+.plan-ridge { stroke: #ff9a1a; stroke-width: 2.5; pointer-events: none; }
+.plan-ridge-hit { stroke: transparent; stroke-linecap: round; cursor: move; }
 .plan-ceiling { fill: rgba(120, 180, 255, 0.08); stroke: rgba(140, 190, 255, 0.7); stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
 .plan-ceiling.is-selected { fill: rgba(255, 154, 26, 0.22); stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: none; }
 .plan-floor.is-selected { fill: rgba(255, 154, 26, 0.22); stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: none; }
@@ -163,6 +168,8 @@
 
 .wall-panel-field input:focus { outline: 1px solid #ff9a1a; }
 .wall-panel-unit { opacity: .6; }
+/* read-only value in a panel row (e.g. a roof's pitch, computed from its heights) */
+.wall-panel-readout { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .85; }
 
 /* Flip button (PlanView2D.jsx FlipButton): centered on the selected wall's middle */
 .plan-flip {

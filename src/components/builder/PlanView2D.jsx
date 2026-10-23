@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -52,6 +52,10 @@ const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening,
 *   line, planModel.addWall).
 * - CEILING TOOL (store planTool 'ceiling'): the floor tool below on level.ceilings (areaKey), ceilings shown
 *   dashed blue only with this tool; snaps also to the floors' outlines (and floors to the ceilings').
+*   RIDGE of a selected hip roof on 4 sides (planModel.roofRidge): an orange line with its length and two
+*   handles; a handle drag resizes it along its axis (the other end stays), a drag on the line moves it
+*   (grid snap); planModel.setRoofRidge refuses an end outside the ceiling (the last valid one stays); a
+*   local draft saved on release, one undo step.
 * - FLOOR TOOL (store planTool 'floor', button in the left toolbar): floors are DRAWN, never built from the
 *   walls. Click = place a vertex of the floor polygon; a click on its first point (or on the last one again,
 *   double click) or Enter closes it: one floor, one undo step (planModel.addFloor refuses fewer than 3
@@ -496,6 +500,12 @@ export default function PlanView2D() {
             gestureRef.current = { kind: 'floorVertex', floorId: selectedFloorId, index: Number(dataset.floorVertex) };
             return;
         }
+        // selected hip roof's ridge: a handle (data-ridge-end 0 / 1) or the line (data-ridge-line) starts a drag
+        if (isFloorTool && (dataset.ridgeEnd != null || dataset.ridgeLine != null)) {
+            const ridge = roofRidge((level.ceilings ?? []).find((c) => c.id === selectedFloorId), level);
+            gestureRef.current = { kind: 'ridge', ceilingId: selectedFloorId, end: dataset.ridgeEnd != null ? Number(dataset.ridgeEnd) : null, ridge, start: snappedWorld(point) };
+            return;
+        }
         // selected opening's resize triangle (data-opening-edge): that edge follows the pointer along the wall
         if (dataset.openingEdge != null && selectedOpening && !isDrawing && !isRuler && !underlayTool) {
             gestureRef.current = { kind: 'openingEdge', ...selectedOpening, edge: dataset.openingEdge };
@@ -531,7 +541,16 @@ export default function PlanView2D() {
         if (underlayTool && pointers.size <= 1) setToolHover(underlayToolPoint(point, event.shiftKey));
         if (previous == null) return;
         const gesture = gestureRef.current;
-        if (pointers.size === 1 && gesture?.kind === 'floorVertex') {
+        if (pointers.size === 1 && gesture?.kind === 'ridge') {
+            // an end: the other end stays, the dragged one follows the pointer (projected onto the ridge axis by
+            // setRoofRidge); the line: both ends move by the pointer's (snapped) displacement
+            const to = snappedWorld(point);
+            const { a, b } = gesture.ridge;
+            const delta = [to[0] - gesture.start[0], to[1] - gesture.start[1]];
+            const ridge = gesture.end === 0 ? [b, to] : gesture.end === 1 ? [a, to] : [[a[0] + delta[0], a[1] + delta[1]], [b[0] + delta[0], b[1] + delta[1]]];
+            const next = setRoofRidge(level, gesture.ceilingId, ridge);
+            if (next) setDraft({ level: next, point: to, guides: [], isFloor: true }); // invalid: keep the last valid one
+        } else if (pointers.size === 1 && gesture?.kind === 'floorVertex') {
             const { point: to, guides } = floorSnap(point, gesture.floorId);
             const next = moveFloorVertex(level, gesture.floorId, gesture.index, to, areaKey);
             if (next) setDraft({ level: next, point: to, guides, isFloor: true }); // invalid (edges crossing): keep the last valid one
@@ -597,7 +616,7 @@ export default function PlanView2D() {
         pointersRef.current.delete(event.pointerId);
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
-        if ((gesture.kind === 'vertex' || gesture.kind === 'floorVertex') && draft) setActiveLevel(draft.level);
+        if ((gesture.kind === 'vertex' || gesture.kind === 'floorVertex' || gesture.kind === 'ridge') && draft) setActiveLevel(draft.level);
         if (gesture.kind === 'measureEnd' && endDrag) {
             const item = measureList.find((entry) => entry.id === endDrag.id);
             const y = endDrag.which === 'a' ? item.ya : item.yb; // the end keeps its height
@@ -750,6 +769,33 @@ export default function PlanView2D() {
                             <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
                         </g>
                     ))}
+                    {/* ceiling tool: the ridge of the selected hip roof (line + 2 handles), over the vertex handles */}
+                    {isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
+                        const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
+                        const ridge = ceiling && roofRidge(ceiling, shown);
+                        if (!ridge) return null;
+                        // exposed beams (planModel.roofBeams): their plan outline, dashed (plumb ends: ridge -> eave)
+                        const beams = roofBeams(ceiling, shown).map(({ top: [r, e], across }) => {
+                            const w = BEAM_SIZE.width / 2;
+                            return [[r[0] - across[0] * w, r[2] - across[2] * w], [e[0] - across[0] * w, e[2] - across[2] * w],
+                                [e[0] + across[0] * w, e[2] + across[2] * w], [r[0] + across[0] * w, r[2] + across[2] * w]];
+                        });
+                        return (
+                            <g>
+                                {beams.map((points, index) => (
+                                    <polygon key={`beam${index}`} className="plan-beam" points={points.join(' ')} vectorEffect="non-scaling-stroke" />
+                                ))}
+                                <line className="plan-ridge-hit" data-ridge-line="" x1={ridge.a[0]} y1={ridge.a[1]} x2={ridge.b[0]} y2={ridge.b[1]} strokeWidth={VERTEX_HIT_RADIUS / view.scale} />
+                                <line className="plan-ridge" x1={ridge.a[0]} y1={ridge.a[1]} x2={ridge.b[0]} y2={ridge.b[1]} vectorEffect="non-scaling-stroke" />
+                                {[ridge.a, ridge.b].map((p, index) => (
+                                    <g key={`re${index}`}>
+                                        <circle className="plan-floor-handle-hit" data-ridge-end={index} cx={p[0]} cy={p[1]} r={VERTEX_HIT_RADIUS / view.scale} />
+                                        <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
+                                    </g>
+                                ))}
+                            </g>
+                        );
+                    })()}
                     {/* floor tool: the polygon being drawn, closed through the pointer (red when addFloor refuses it) */}
                     {isFloorTool && floorPoints.length > 0 && (() => {
                         const points = hover ? [...floorPoints, hover.point] : floorPoints;
@@ -800,6 +846,12 @@ export default function PlanView2D() {
             {isReady && isDrawing && chain && hover && lengthLabel(view, size, { a: chain, b: hover.point })}
             {isReady && isTraceTool && traceHover && lengthLabel(view, size, traceHover.level.walls.find((wall) => wall.id === 'preview'), ` · ${Math.round(traceHover.trace.thickness * 100)} cm`)}
             {isReady && isFloorTool && floorPoints.length > 0 && hover && lengthLabel(view, size, { a: floorPoints[floorPoints.length - 1], b: hover.point })}
+            {/* ceiling tool: the selected hip roof's ridge length (null for a square's point ridge) */}
+            {isReady && isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
+                const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
+                const ridge = ceiling && roofRidge(ceiling, shown);
+                return ridge ? lengthLabel(view, size, { id: 'ridge', a: ridge.a, b: ridge.b }) : null;
+            })()}
             {isReady && isDrawing && chain && hover && (chainPrev
                 ? angleIndicator(view, size, chain, chainPrev, hover.point, 180)                    // between walls
                 : angleIndicator(view, size, chain, [chain[0] + 1, chain[1]], hover.point, 0))}     // from the horizontal

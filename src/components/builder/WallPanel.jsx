@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, ceilingHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -50,6 +50,7 @@ function FloorPanel() {
     const index = areas.findIndex((area) => area.id === floorId);
     if (index < 0) return null; // removed (undo, another device)
     const name = isCeiling ? 'Ceiling' : 'Floor';
+    const type = isCeiling ? roofType(areas[index]) : null;
     const apply = (text) => {
         const value = Number(String(text).replace(',', '.'));
         const next = isCeiling ? setCeilingHeight(level, floorId, value) : setFloorElevation(level, floorId, value);
@@ -62,8 +63,39 @@ function FloorPanel() {
                 <button className="wall-panel-close" onClick={() => setSelectedFloorId(null)} title="Deselect (Esc)">×</button>
             </div>
             {isCeiling
-                ? <Field label="Height" value={ceilingHeight(areas[index], level)} onApply={apply} />
+                ? <Field label={type === 'flat' ? 'Height' : 'Eave height'} value={ceilingHeight(areas[index], level)} onApply={apply} />
                 : <Field label="Elevation" value={floorElevation(areas[index])} onApply={apply} />}
+            {/* ceiling: flat or pitched (planModel roof types: 1 pitch, gable "2 falde", hip "4 falde"), pitch in
+                degrees, and the eave side (Rotate: the next side / the other pair) */}
+            {isCeiling && <Toggle label="Roof" value={type} options={[['flat', 'Flat'], ['single', '1'], ['gable', '2'], ['hip', '4']]}
+                onChange={(next) => setActiveLevel(setCeilingRoof(level, floorId, next))} />}
+            {/* pitched: the RIDGE height above the walking level (the eave height is above); the pitch follows */}
+            {isCeiling && type !== 'flat' && <Field label="Ridge height" value={roofRidgeHeight(areas[index], level)} onApply={(text) => {
+                const next = setRoofRidgeHeight(level, floorId, Number(String(text).replace(',', '.')));
+                if (next) setActiveLevel(next);
+            }} />}
+            {isCeiling && type !== 'flat' && (
+                <div className="wall-panel-field" title="From the eave and ridge heights (a moved hip ridge: the centered one's)">
+                    <span>Pitch</span>
+                    <span className="wall-panel-readout">{`${roofPitch(areas[index], level).toFixed(1)}°`}</span>
+                </div>
+            )}
+            {isCeiling && (type === 'single' || type === 'gable') && (
+                <div className="wall-panel-actions">
+                    <button onClick={() => setActiveLevel(rotateRoof(level, floorId))} title="Move the eave to the next side">Rotate</button>
+                </div>
+            )}
+            {/* hip roof: exposed beams spread along the ridge (planModel.roofBeams), 0 = none, at least 2 */}
+            {isCeiling && roofRidge(areas[index], level) && <Field label="Beams" unit="" digits={0} value={areas[index].roof.beams ?? 0} onApply={(text) => {
+                const next = setRoofBeams(level, floorId, Number(text));
+                if (next) setActiveLevel(next);
+            }} />}
+            {/* hip roof with a moved / resized ridge (dragged in the plan): back to the centered one */}
+            {isCeiling && roofRidge(areas[index], level)?.isCustom && (
+                <div className="wall-panel-actions">
+                    <button onClick={() => setActiveLevel(setRoofRidge(level, floorId, null))} title="Ridge back to the center, default length">Center ridge</button>
+                </div>
+            )}
             <div className="wall-panel-actions">
                 <button className="is-danger" onClick={() => deleteFloor(floorId, key)} title={`Delete this ${name.toLowerCase()} (Del)`}>Delete</button>
             </div>
@@ -294,8 +326,8 @@ function Toggle({ label, value, options, onChange }) {
 * undo, another device), so it always starts from the current value. Enter applies and blurs, Esc reverts.
 * value null = several walls with different values: empty field ("mixed" placeholder).
 */
-function Field({ label, value, onApply }) {
-    const shown = value == null ? '' : value.toFixed(2);
+function Field({ label, value, onApply, unit = 'm', digits = 2 }) {
+    const shown = value == null ? '' : value.toFixed(digits);
     const apply = (input) => {
         if (input.value !== shown) onApply(input.value);
         input.value = shown; // invalid -> back to the current value; valid -> replaced by the new key anyway
@@ -315,7 +347,7 @@ function Field({ label, value, onApply }) {
                     if (event.key === 'Escape') { event.target.value = shown; event.target.blur(); event.stopPropagation(); }
                 }}
             />
-            <span className="wall-panel-unit">m</span>
+            <span className="wall-panel-unit">{unit}</span>
         </label>
     );
 }

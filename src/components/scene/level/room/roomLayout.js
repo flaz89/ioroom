@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { ceilingHeight, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { beamsFaceId, BEAM_SIZE, ceilingHeight, facetArea, facetNormal, roofBeams, roofFacets, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
@@ -20,7 +20,9 @@ import { ceilingHeight, faceOffsets, floorElevation, openingFloors, openingRects
 *   reveals (jambs, head, sill; a threshold only when no floor fills the opening) belong to the wall's
 *   "edge" face.
 * - Ceilings (level.ceilings): flat polygons at their height, both faces (from the room and from above, the
-*   same face id and material), castShadow: true (the only horizontal faces that shade the room).
+*   same face id and material), castShadow: true (the only horizontal faces that shade the room). A PITCHED
+*   ceiling (planModel.roofFacets) is one planar facet per eave, both faces; UVs in meters along the eave
+*   and up the slope (true lengths, so a pattern is not stretched).
 * Face ids: floor.id, ceiling.id, '<wall>:inner' | ':outer' | ':edge'. Every geometry is indexed with position, normal
 * and uv, so batches can be merged (roomGeometry.js mergeFaces).
 */
@@ -48,6 +50,73 @@ export function polygonGeometry(points, y = 0, facingDown = false) {
     const shape = new Shape(points.map(([x, z]) => ({ x, y: facingDown ? z : -z })));
     const geometry = new ShapeGeometry(shape).rotateX(facingDown ? Math.PI / 2 : -Math.PI / 2).translate(0, y, 0);
     return planarUVs(geometry, facingDown ? 'ny' : 'py');
+}
+
+/*
+* One planar convex polygon (3D points, any winding) as an indexed fan facing `normal`, with UVs from
+* uv(point). Used for the facets of pitched ceilings.
+*/
+function planarPolygon(points, normal, uv) {
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(points.flat(), 3));
+    geometry.setAttribute('normal', new Float32BufferAttribute(points.flatMap(() => normal), 3));
+    geometry.setAttribute('uv', new Float32BufferAttribute(points.flatMap(uv), 2));
+    const [p0, p1, p2] = points.slice(0, 3).map((p) => new Vector3(...p));
+    const facing = p1.clone().sub(p0).cross(p2.clone().sub(p0)).dot(new Vector3(...normal));
+    const index = [];
+    for (let i = 1; i < points.length - 1; i++) index.push(...(facing >= 0 ? [0, i, i + 1] : [0, i + 1, i]));
+    geometry.setIndex(index);
+    return geometry;
+}
+
+/*
+* The exposed beams of a pitched ceiling (planModel.roofBeams): BEAM_SIZE section, top on the roof's
+* underside, both ends cut PLUMB (vertical planes): at the ridge, on the vertical plane through the ridge
+* line (the two beams of a position meet there, no gap under the ridge); at the eave, on the vertical plane
+* through the eave line (nothing juts out past the eave). The bottom edge is the top edge moved down
+* (square to the roof) and run on / cut back to those planes. UVs in meters (length along the beam).
+*/
+// Beams hang this much (meters, straight down) below the roof's underside: no z-fighting between the beam's top
+// and the roof (a vertical drop keeps the plumb cuts exactly on the ridge / eave planes)
+const BEAM_DROP = 0.005;
+
+function beamsGeometry(beams) {
+    const { width } = BEAM_SIZE;
+    return mergeGeometries(beams.flatMap(({ top: [ridgeTop, eaveTop], across, down, depth }) => {
+        const [r, e] = [ridgeTop, eaveTop].map(([x, y, z]) => [x, y - BEAM_DROP, z]);
+        const along = [0, 1, 2].map((c) => e[c] - r[c]);
+        const run = Math.hypot(along[0], along[2]);             // plan length ridge -> eave
+        const plan = [along[0] / run, 0, along[2] / run];        // plan direction ridge -> eave
+        // bottom edge: top edge + down x depth, at the parameters where its plan position is the ridge / eave
+        const shift = (down[0] * plan[0] + down[2] * plan[2]) * depth / run;
+        const bottom = (s) => [0, 1, 2].map((c) => r[c] + down[c] * depth + along[c] * s);
+        const [b0, b1] = [bottom(-shift), bottom(1 - shift)];
+        const side = (p, s) => [0, 1, 2].map((c) => p[c] + across[c] * s * width / 2);
+        const length = Math.hypot(...along);
+        const up = down.map((c) => -c);
+        const faces = [
+            // [corners, normal, uvs]: top, bottom, the two sides, the plumb ends (ridge, eave)
+            [[side(r, -1), side(e, -1), side(e, 1), side(r, 1)], up, [[0, 0], [length, 0], [length, width], [0, width]]],
+            [[side(b0, -1), side(b1, -1), side(b1, 1), side(b0, 1)], down, [[0, 0], [length, 0], [length, width], [0, width]]],
+            [[side(r, -1), side(e, -1), side(b1, -1), side(b0, -1)], across.map((c) => -c), [[0, depth], [length, depth], [length, 0], [0, 0]]],
+            [[side(r, 1), side(e, 1), side(b1, 1), side(b0, 1)], across, [[0, depth], [length, depth], [length, 0], [0, 0]]],
+            [[side(r, -1), side(r, 1), side(b0, 1), side(b0, -1)], plan.map((c) => -c), [[0, depth], [width, depth], [width, 0], [0, 0]]],
+            [[side(e, -1), side(e, 1), side(b1, 1), side(b1, -1)], plan, [[0, depth], [width, depth], [width, 0], [0, 0]]]
+        ];
+        return faces.map(([points, normal, uvs]) => quad(points, normal, uvs));
+    }));
+}
+
+// A pitched ceiling's facets (planModel.roofFacets), each with its underside (the room's side) and top
+function roofGeometry(facets) {
+    return mergeGeometries(facets.flatMap(({ dir, points }) => {
+        const up = facetNormal(points);
+        // UVs in the facet's plane, true lengths: u along the eave, v = up x u (up the slope)
+        const u = [dir[0], 0, dir[1]];
+        const v = [up[1] * u[2] - up[2] * u[1], up[2] * u[0] - up[0] * u[2], up[0] * u[1] - up[1] * u[0]];
+        const uv = (p) => [p[0] * u[0] + p[2] * u[2], p[0] * v[0] + p[1] * v[1] + p[2] * v[2]];
+        return [planarPolygon(points, up.map((c) => -c), uv), planarPolygon(points, up, uv)];
+    }));
 }
 
 /*
@@ -159,15 +228,29 @@ export function roomFaces(level) {
         }),
         ...(level.ceilings ?? []).map((ceiling) => {
             const height = ceilingHeight(ceiling, level);
+            const facets = roofFacets(ceiling, level);
             return {
                 key: ceiling.id,
                 // underside (the room's side) + top (seen from above), coplanar, back faces culled
-                geometry: mergeGeometries([polygonGeometry(ceiling.points, height, true), polygonGeometry(ceiling.points, height)]),
+                geometry: facets ? roofGeometry(facets)
+                    : mergeGeometries([polygonGeometry(ceiling.points, height, true), polygonGeometry(ceiling.points, height)]),
                 surfaceId: ceiling.id,
                 vertical: false,
                 castShadow: true,
                 color: CEILING_COLOR
             };
+        }),
+        // exposed beams: their own face id (a material of their own, e.g. wood), cast shadows
+        ...(level.ceilings ?? []).flatMap((ceiling) => {
+            const beams = roofBeams(ceiling, level);
+            return beams.length === 0 ? [] : [{
+                key: beamsFaceId(ceiling.id),
+                geometry: beamsGeometry(beams),
+                surfaceId: beamsFaceId(ceiling.id),
+                vertical: false,
+                castShadow: true,
+                color: CEILING_COLOR
+            }];
         }),
         ...level.walls.flatMap((wall) => wallGeometries(wall, level, filled).map((face, index) => ({
             key: `${wall.id}-${face.part}-${index}`,
@@ -189,7 +272,16 @@ export function roomFaces(level) {
 export function surfaceAreas(level) {
     const areas = {};
     const put = (id, value) => { areas[id] = Math.round(((areas[id] ?? 0) + value) * 100) / 100; };
-    for (const area of [...level.floors, ...(level.ceilings ?? [])]) put(area.id, polygonArea(area.points));
+    for (const floor of level.floors) put(floor.id, polygonArea(floor.points));
+    // ceilings: a pitched one counts its true sloped area (plan area x sqrt(1 + slope²))
+    for (const ceiling of level.ceilings ?? []) {
+        const facets = roofFacets(ceiling, level);
+        put(ceiling.id, facets ? facets.reduce((sum, facet) => sum + facetArea(facet.points), 0) : polygonArea(ceiling.points));
+        // beams: their visible surface (bottom + two sides + ends; the top is against the roof)
+        const { width } = BEAM_SIZE;
+        const beams = roofBeams(ceiling, level);
+        if (beams.length > 0) put(beamsFaceId(ceiling.id), beams.reduce((sum, { top: [r, e], depth }) => sum + Math.hypot(e[0] - r[0], e[1] - r[1], e[2] - r[2]) * (width + 2 * depth) + 2 * width * depth, 0));
+    }
     const patches = openingFloors(level);
     for (const patch of patches) put(patch.floorId, polygonArea(patch.points));
     const filled = new Set(patches.map((patch) => patch.openingId));
@@ -219,6 +311,8 @@ export function surfaceLabel(surfaceId, level) {
     const ceilings = level.ceilings ?? [];
     const ceilingIndex = ceilings.findIndex((ceiling) => ceiling.id === surfaceId);
     if (ceilingIndex >= 0) return ceilings.length > 1 ? `Ceiling ${ceilingIndex + 1}` : 'Ceiling';
+    const beamsIndex = ceilings.findIndex((ceiling) => beamsFaceId(ceiling.id) === surfaceId);
+    if (beamsIndex >= 0) return ceilings.length > 1 ? `Ceiling ${beamsIndex + 1} · beams` : 'Ceiling · beams';
     const [wallId, side] = surfaceId.split(':');
     const index = level.walls.findIndex((wall) => wall.id === wallId);
     const name = level.walls[index]?.name ?? (index >= 0 ? `Wall ${index + 1}` : 'Removed wall');

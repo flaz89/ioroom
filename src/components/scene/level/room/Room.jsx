@@ -9,7 +9,7 @@ import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { polygonGeometry, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
-import { activeLevel } from '../../../../plan/planModel';
+import { activeLevel, beamsFaceId } from '../../../../plan/planModel';
 
 /*
 * Face ids (surfaceId): the key a face's material is saved under (store `surfaces`) and what the
@@ -101,7 +101,7 @@ export default function Room() {
     const faces = useMemo(() => {
         const hidden = new Set([
             ...(showUnderlay && level.underlay.kind !== 'dxf' ? level.floors.map((floor) => floor.id) : []),
-            ...(showCeilings ? [] : (level.ceilings ?? []).map((ceiling) => ceiling.id))
+            ...(showCeilings ? [] : (level.ceilings ?? []).flatMap((ceiling) => [ceiling.id, beamsFaceId(ceiling.id)]))
         ]);
         return hidden.size === 0 ? allFaces : allFaces.filter((face) => !hidden.has(face.surfaceId));
     }, [allFaces, showUnderlay, showCeilings, level]);

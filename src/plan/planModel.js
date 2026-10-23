@@ -6,7 +6,8 @@
 * level: { id, name, elevation (m), wallHeight (m), floors: [floor], walls: [wall] }
 * floor: { id, points: [[x, z]], elevation? (m above the level's 0, default 0: setFloorElevation) }
 * level.ceilings? : [ceiling], ceiling: { id, points: [[x, z]], height? (m above the level's 0, default the
-*   level's wallHeight: setCeilingHeight) }. Floors and ceilings are both AREAS (polygons drawn with the same
+*   level's wallHeight: setCeilingHeight; the EAVE height of a pitched one), roof? ({ ridgeHeight, eaves }:
+*   a pitched ceiling, see setCeilingRoof / roofFacets) }. Floors and ceilings are both AREAS (polygons drawn with the same
 *   tool): addFloor / moveFloorVertex / removeFloor / floorAt / fillRoom take the collection `key`
 *   ('floors' default | 'ceilings').
 * floor: { id, points: [[x, z], ...] } — polygon (room space, meters); its id is the face id of its surface.
@@ -955,11 +956,384 @@ export const CEILING_HEIGHT_LIMITS = { min: 0.5, max: 20 };
 export const newCeilingId = () => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 export const ceilingHeight = (ceiling, level) => ceiling.height ?? level.wallHeight;
 
+/*
+* PITCHED CEILINGS (roofs, attics): ceiling.roof = { ridgeHeight (m above the level's 0, like the eave
+* height), eaves: [edge indices] }, edge i = points[i] -> points[i + 1]. The two HEIGHTS are what the user
+* sets (eave = ceiling.height, ridge = roof.ridgeHeight); the pitch follows from them (roofPitch, shown
+* read-only). Every point of the roof is at
+*     eave height + slope x its distance to the NEAREST eave line
+* with slope = (ridge - eave) / the largest such distance (where the ridge is). Older roofs stored a `pitch`
+* (degrees) instead of ridgeHeight: still read (roofSlope).
+* (one rule for every type: on a rectangle, 1 eave = a single pitch; 2 opposite eaves = a gable roof, the
+* other two sides are the gables; every side an eave = a hip roof, "4 falde"). The roof is made of one
+* planar FACET per eave: the part of the polygon closer to that eave's line than to the others'.
+* No roof (or no eaves) = flat.
+* EDITABLE RIDGE (hip roofs on a 4-sided polygon): roof.ridge = [[x, z], [x, z]] moves / resizes the ridge
+* (default: the equal-pitch one, centered: roofRidge). The ridge stays at the equal-pitch ridge HEIGHT
+* (eave height + tan(pitch) x half the width) and parallel to the longest side, so every facet stays planar:
+* each side rises to the ridge end(s) on its side (trapezoids on the long sides, triangles at the ends);
+* the pitches then differ per facet. Invalid (an end outside the polygon, e.g. after a vertex move): the
+* default ridge is used.
+* ponytail: exact for CONVEX polygons (rectangles, regular shapes); on a concave one the facets are an
+* approximation (a true straight skeleton would be needed for L-shaped hip roofs).
+*/
+export const DEFAULT_ROOF_PITCH = 30; // degrees: the ridge height a new pitched ceiling starts with
+export const MAX_RIDGE_HEIGHT = 30;   // meters above the level's 0
+const MIN_RISE = 0.05;                // meters: the ridge is always at least this much above the eaves
+// The ceiling's eave edges still in range (a vertex merge can shorten the polygon)
+export const roofEaves = (ceiling) => (ceiling.roof?.eaves ?? []).filter((i) => i < ceiling.points.length);
+
+// Every edge of a polygon with its unit direction and its INWARD unit normal (towards the polygon)
+function inwardEdges(points) {
+    return points.map((p, i) => {
+        const q = points[(i + 1) % points.length];
+        const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        const dir = [(q[0] - p[0]) / length, (q[1] - p[1]) / length];
+        let n = [-dir[1], dir[0]];
+        if (!pointInPolygon([(p[0] + q[0]) / 2 + n[0] * 1e-4, (p[1] + q[1]) / 2 + n[1] * 1e-4], points)) n = [-n[0], -n[1]];
+        return { p, length, dir, n };
+    });
+}
+// Signed distance of [x, z] from an edge's LINE, positive inside the polygon
+const lineDistance = (edge, x) => (x[0] - edge.p[0]) * edge.n[0] + (x[1] - edge.p[1]) * edge.n[1];
+
+// The part of polygon `points` where the linear function f(x) <= 0 (Sutherland-Hodgman, one half-plane)
+function clipPolygon(points, f) {
+    const out = [];
+    points.forEach((a, i) => {
+        const b = points[(i + 1) % points.length];
+        const fa = f(a), fb = f(b);
+        if (fa <= 0) out.push(a);
+        if ((fa < 0 && fb > 0) || (fa > 0 && fb < 0)) {
+            const t = fa / (fa - fb);
+            out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+    });
+    return out;
+}
+
+/*
+* The FACETS of a pitched ceiling, or null when it is flat: [{ edge (eave index), dir (along the eave, plan
+* unit vector), points: [[x, y, z]] }], each a planar convex polygon above its part of the plan.
+*/
+export function roofFacets(ceiling, level) {
+    const eaves = roofEaves(ceiling);
+    if (eaves.length === 0) return null;
+    const ridge = customRidge(ceiling);
+    return ridge ? ridgeFacets(ceiling, level, ridge) : equalPitchFacets(ceiling, level, eaves);
+}
+
+// The largest distance of the polygon's points from their nearest eave line (where the ridge is), 0 if flat
+function ridgeDistance(ceiling, eaves) {
+    let best = 0;
+    for (const facet of equalPitchFacets(ceiling, null, eaves, 1, 0)) for (const p of facet.points) best = Math.max(best, p[1]);
+    return best;
+}
+
+// Rise per meter of a pitched ceiling's equal-pitch roof: from its two heights (or an old stored pitch)
+function roofSlope(ceiling, level) {
+    const { roof } = ceiling;
+    if (roof.ridgeHeight == null) return Math.tan(((roof.pitch ?? DEFAULT_ROOF_PITCH) * Math.PI) / 180);
+    const distance = ridgeDistance(ceiling, roofEaves(ceiling));
+    return distance > 1e-9 ? Math.max(0, roof.ridgeHeight - ceilingHeight(ceiling, level)) / distance : 0;
+}
+
+// The ridge height of a pitched ceiling (m above the level's 0), or null when flat
+export function roofRidgeHeight(ceiling, level) {
+    if (roofEaves(ceiling).length === 0) return null;
+    return ceiling.roof.ridgeHeight ?? ceilingHeight(ceiling, level) + roofSlope(ceiling, level) * ridgeDistance(ceiling, roofEaves(ceiling));
+}
+
+// The pitch (degrees) that follows from the two heights, or null when flat (with a moved hip ridge: the pitch
+// of the centered one; the facets then differ)
+export function roofPitch(ceiling, level) {
+    return roofEaves(ceiling).length === 0 ? null : (Math.atan(roofSlope(ceiling, level)) * 180) / Math.PI;
+}
+
+// Equal-pitch facets: one per eave, the part of the polygon closer to its line than to the other eaves'
+// (slope / base given: used with 1 / 0 to measure the ridge distance)
+function equalPitchFacets(ceiling, level, eaves, slope = roofSlope(ceiling, level), base = ceilingHeight(ceiling, level)) {
+    const edges = inwardEdges(ceiling.points);
+    return eaves.map((i) => {
+        const edge = edges[i];
+        let region = ceiling.points;
+        for (const j of eaves) if (j !== i) region = clipPolygon(region, (x) => lineDistance(edge, x) - lineDistance(edges[j], x));
+        const points = region.map((x) => [x[0], base + slope * Math.max(0, lineDistance(edge, x)), x[1]]);
+        return { edge: i, dir: edge.dir, points };
+    }).filter((facet) => facet.points.length >= 3 && polygonArea(facet.points.map((p) => [p[0], p[2]])) > 1e-6);
+}
+
+// The axis ridges of a ceiling run along: its longest side's direction
+function ridgeAxis(ceiling) {
+    const edges = inwardEdges(ceiling.points);
+    return edges.reduce((best, edge) => (edge.length > best.length + 1e-9 ? edge : best)).dir;
+}
+const canEditRidge = (ceiling) => roofType(ceiling) === 'hip' && ceiling.points.length === 4;
+
+// The stored ridge when it can be used (hip on 4 sides, both ends inside the polygon), else null
+function customRidge(ceiling) {
+    const ridge = ceiling.roof?.ridge;
+    if (!ridge || !canEditRidge(ceiling)) return null;
+    return ridge.every((p) => pointInPolygon(p, ceiling.points)) ? ridge : null;
+}
+
+/*
+* The RIDGE of a hip roof on 4 sides: { a, b ([x, z], a before b along the axis), height, axis, isCustom },
+* or null for any other roof (not editable). Default = the equal-pitch ridge (centered).
+*/
+export function roofRidge(ceiling, level) {
+    if (!canEditRidge(ceiling)) return null;
+    const axis = ridgeAxis(ceiling);
+    const facets = equalPitchFacets(ceiling, level, roofEaves(ceiling));
+    const points = facets.flatMap((facet) => facet.points);
+    const height = Math.max(...points.map((p) => p[1]));
+    const along = (p) => p[0] * axis[0] + p[1] * axis[1];
+    const custom = customRidge(ceiling);
+    // default: the highest points of the equal-pitch roof, the two extremes along the axis (one point for a square)
+    const top = points.filter((p) => p[1] > height - 1e-6).map((p) => [p[0], p[2]]);
+    const [a, b] = custom ?? [top.reduce((m, p) => (along(p) < along(m) ? p : m)), top.reduce((m, p) => (along(p) > along(m) ? p : m))];
+    return along(a) <= along(b) ? { a, b, height, axis, isCustom: custom != null } : { a: b, b: a, height, axis, isCustom: custom != null };
+}
+
+// Facets rising from each side to the ridge: a side whose two ends fall on the same side of the ridge's
+// middle (along the axis) is a triangle to that ridge end, the others are trapezoids (planar: the ridge is
+// parallel to them)
+function ridgeFacets(ceiling, level, ridge) {
+    const { height } = roofRidge(ceiling, level);
+    const axis = ridgeAxis(ceiling);
+    const base = ceilingHeight(ceiling, level);
+    const along = (p) => p[0] * axis[0] + p[1] * axis[1];
+    const [r0, r1] = along(ridge[0]) <= along(ridge[1]) ? ridge : [ridge[1], ridge[0]];
+    const middle = (along(r0) + along(r1)) / 2;
+    const ends = [[r0[0], height, r0[1]], [r1[0], height, r1[1]]];
+    const endOf = (p) => (along(p) < middle ? 0 : 1);
+    const edges = inwardEdges(ceiling.points);
+    return ceiling.points.map((p, i) => {
+        const q = ceiling.points[(i + 1) % ceiling.points.length];
+        const [ea, eb] = [endOf(p), endOf(q)];
+        const low = [[p[0], base, p[1]], [q[0], base, q[1]]];
+        const points = ea === eb ? [...low, ends[ea]] : [...low, ends[eb], ends[ea]];
+        return { edge: i, dir: edges[i].dir, points };
+    }).filter((facet) => polygonArea(facet.points.map((p) => [p[0], p[2]])) > 1e-6);
+}
+
+/*
+* Height of a pitched (or flat) ceiling above plan point [x, z] (the walls below it are cut there). The roofs
+* here are tent-shaped (every facet plane above the others outside its own part), so the height is the
+* LOWEST of the facet planes at that point: exact inside the polygon and on its outline.
+*/
+export function roofHeightAt(ceiling, level, x) {
+    const facets = roofFacets(ceiling, level);
+    if (facets == null) return ceilingHeight(ceiling, level);
+    return Math.min(...facets.map(({ points }) => {
+        const n = facetNormal(points);
+        const [x0, y0, z0] = points[0];
+        return y0 - (n[0] * (x[0] - x0) + n[2] * (x[1] - z0)) / n[1];
+    }));
+}
+
+// Unit normal of a planar facet (3D points), pointing up (y > 0); Newell's method (robust to collinear points)
+export function facetNormal(points) {
+    let nx = 0, ny = 0, nz = 0;
+    points.forEach((p, i) => {
+        const q = points[(i + 1) % points.length];
+        nx += (p[1] - q[1]) * (p[2] + q[2]);
+        ny += (p[2] - q[2]) * (p[0] + q[0]);
+        nz += (p[0] - q[0]) * (p[1] + q[1]);
+    });
+    const length = Math.hypot(nx, ny, nz) * Math.sign(ny || 1);
+    return [nx / length, ny / length, nz / length];
+}
+
+// True area of a planar facet (3D points)
+export function facetArea(points) {
+    let nx = 0, ny = 0, nz = 0;
+    points.forEach((p, i) => {
+        const q = points[(i + 1) % points.length];
+        nx += (p[1] - q[1]) * (p[2] + q[2]);
+        ny += (p[2] - q[2]) * (p[0] + q[0]);
+        nz += (p[0] - q[0]) * (p[1] + q[1]);
+    });
+    return Math.hypot(nx, ny, nz) / 2;
+}
+
+/*
+* EXPOSED BEAMS (travi a vista) of a hip roof with a ridge (roofRidge): roof.beams = count (>= 2; none when
+* missing). The beams are spread evenly along the ridge, PERPENDICULAR to it: the first and last at the
+* ridge's ends (inset by half a section, so they stay under their facet), each running from the ridge down
+* to the two long eaves, hung under the roof (section BEAM_SIZE: width along the ridge, depth square to the
+* roof's plane). The small end facets get none for now.
+* HIP BEAMS (diagonali, kind 'hip'): with the beams, one more along each hip line, from the ridge end to the
+* roof's corner (same section, plumb ends, the side faces vertical). The hip line is a fold of the roof's
+* underside, so a flat-topped hip beam is LOWERED until its top edges touch the two facets (no corner
+* sticking through the roof). ponytail: the hip beam's corner end is cut square to it in plan, so its width
+* juts a few cm past the two eaves at the corner (a real one is cut on both eave planes: later, if visible).
+* roofBeams(ceiling, level) -> [{ kind ('rafter' | 'hip'), top: [upper point, lower point] ([x, y, z]: the
+* middle of the beam's TOP), across: [x, 0, z] (unit, horizontal, square to the beam in plan), down: [x, y, z]
+* (unit, square to the beam, downwards), depth (m: BEAM_SIZE.depth, hip beams BEAM_SIZE.hipDepth; the top
+* stays against the roof either way) }], [] when none.
+* Both ends are cut plumb (roomLayout.beamsGeometry): the two beams of a position meet on the ridge's vertical
+* plane, and end on the eave's. ponytail: the eave sides must be parallel to the ridge (rectangles), others
+* get no beams.
+*/
+export const BEAM_SIZE = { width: 0.14, depth: 0.3, hipDepth: 0.23 }; // meters (hip beams: shallower)
+export const BEAM_COUNT_LIMITS = { min: 2, max: 60 };
+export const beamsFaceId = (ceilingId) => `${ceilingId}~beams`; // the beams' own surface (material, bill)
+
+export function roofBeams(ceiling, level) {
+    const count = ceiling.roof?.beams;
+    const ridge = count ? roofRidge(ceiling, level) : null;
+    if (!ridge) return [];
+    const base = ceilingHeight(ceiling, level);
+    const rise = ridge.height - base;
+    const { axis } = ridge;
+    // the two eaves parallel to the ridge (inward edges): the beams run down to them
+    const eaves = inwardEdges(ceiling.points).filter((edge) => Math.abs(edge.dir[0] * axis[0] + edge.dir[1] * axis[1]) > 1 - 1e-6);
+    if (eaves.length !== 2 || rise <= 0) return [];
+    const length = Math.hypot(ridge.b[0] - ridge.a[0], ridge.b[1] - ridge.a[1]);
+    const inset = Math.min(BEAM_SIZE.width / 2, length / 2);
+    const positions = Array.from({ length: count }, (_, i) => inset + (count > 1 ? (i * (length - 2 * inset)) / (count - 1) : 0));
+    return [...new Set(positions.map((t) => t.toFixed(6)))].map(Number).flatMap((t) => {
+        const r = [ridge.a[0] + axis[0] * t, ridge.a[1] + axis[1] * t];
+        return eaves.map((edge) => {
+            const d = lineDistance(edge, r); // plan distance from the ridge point down to this eave
+            const e = [r[0] - edge.n[0] * d, r[1] - edge.n[1] * d];
+            // the facet's up normal: the roof RISES by `rise` over `d` along n (inward, towards the ridge), so the
+            // normal leans the other way, towards the eave: (-n k, 1) normalized
+            const k = rise / d, l = Math.hypot(k, 1);
+            const up = [-edge.n[0] * k / l, 1 / l, -edge.n[1] * k / l];
+            return { kind: 'rafter', depth: BEAM_SIZE.depth, top: [[r[0], ridge.height, r[1]], [e[0], base, e[1]]], across: [axis[0], 0, axis[1]], down: up.map((c) => -c) };
+        });
+    }).concat(hipBeams(ceiling, level, ridge, base));
+}
+
+// The 4 hip beams (see roofBeams): each corner to the ridge end on its side (the same rule as ridgeFacets)
+function hipBeams(ceiling, level, ridge, base) {
+    const { a, b, axis, height } = ridge;
+    const along = (p) => p[0] * axis[0] + p[1] * axis[1];
+    const middle = (along(a) + along(b)) / 2;
+    const half = BEAM_SIZE.width / 2;
+    return ceiling.points.map((corner) => {
+        const end = along(corner) < middle ? a : b;
+        const run = Math.hypot(corner[0] - end[0], corner[1] - end[1]);
+        const plan = [(corner[0] - end[0]) / run, (corner[1] - end[1]) / run];
+        const across = [-plan[1], 0, plan[0]];
+        // lowered until the top's edges (half a width each side of the hip line) are on the facets
+        const mid = [(corner[0] + end[0]) / 2, (corner[1] + end[1]) / 2];
+        const edgeHeight = Math.min(...[-1, 1].map((s) => roofHeightAt(ceiling, level, [mid[0] + across[0] * s * half, mid[1] + across[2] * s * half])));
+        const drop = Math.max(0, roofHeightAt(ceiling, level, mid) - edgeHeight);
+        const top = [[end[0], height - drop, end[1]], [corner[0], base - drop, corner[1]]];
+        // down: square to the beam in its vertical plane (across x along, pointing down)
+        const d = [top[1][0] - top[0][0], top[1][1] - top[0][1], top[1][2] - top[0][2]];
+        let down = [across[1] * d[2] - across[2] * d[1], across[2] * d[0] - across[0] * d[2], across[0] * d[1] - across[1] * d[0]];
+        const length = Math.hypot(...down) * (down[1] > 0 ? -1 : 1);
+        down = down.map((c) => c / length);
+        return { kind: 'hip', depth: BEAM_SIZE.hipDepth, top, across, down };
+    });
+}
+
+// The level with ceiling `ceilingId`'s beam count (0 = none), or null when out of BEAM_COUNT_LIMITS / no roof
+export function setRoofBeams(level, ceilingId, count) {
+    const ceilings = level.ceilings ?? [];
+    const ceiling = ceilings.find((item) => item.id === ceilingId);
+    if (!ceiling?.roof || !Number.isInteger(count)) return null;
+    if (count !== 0 && !(count >= BEAM_COUNT_LIMITS.min && count <= BEAM_COUNT_LIMITS.max)) return null;
+    const { beams: _old, ...roof } = ceiling.roof;
+    return { ...level, ceilings: ceilings.map((item) => (item.id === ceilingId ? { ...item, roof: count ? { ...roof, beams: count } : roof } : item)) };
+}
+
+/*
+* The level with the hip ridge of ceiling `ceilingId` set to [a, b] (moved / resized in the plan; kept
+* parallel to the longest side: b is projected onto the axis through a), or null when not editable or an end
+* falls outside the polygon. `ridge` null = back to the default (centered) ridge.
+*/
+export function setRoofRidge(level, ceilingId, ridge) {
+    const ceilings = level.ceilings ?? [];
+    const ceiling = ceilings.find((item) => item.id === ceilingId);
+    if (!ceiling || !canEditRidge(ceiling)) return null;
+    let roof;
+    if (ridge == null) {
+        const { ridge: _old, ...rest } = ceiling.roof;
+        roof = rest;
+    } else {
+        const axis = ridgeAxis(ceiling);
+        const [a, b] = ridge;
+        const t = (b[0] - a[0]) * axis[0] + (b[1] - a[1]) * axis[1];
+        const aligned = [a, [a[0] + axis[0] * t, a[1] + axis[1] * t]];
+        if (!aligned.every((p) => pointInPolygon(p, ceiling.points))) return null;
+        roof = { ...ceiling.roof, ridge: aligned };
+    }
+    return { ...level, ceilings: ceilings.map((item) => (item.id === ceilingId ? { ...item, roof } : item)) };
+}
+
+/*
+* ROOF TYPES of the ceiling panel, as eaves: 'flat' (none) | 'single' (one eave: edge k) | 'gable' (edge k
+* and the opposite one, k + n/2: the other sides are the gables) | 'hip' (every edge). k = the longest edge
+* by default; rotateRoof moves it on (another side for a single pitch, the other pair for a gable).
+*/
+export function roofType(ceiling) {
+    const count = roofEaves(ceiling).length;
+    return count === 0 ? 'flat' : count === 1 ? 'single' : count === ceiling.points.length ? 'hip' : 'gable';
+}
+function eavesFor(type, n, k) {
+    if (type === 'single') return [k];
+    if (type === 'gable') return [k, (k + Math.floor(n / 2)) % n];
+    if (type === 'hip') return [...Array(n).keys()];
+    return [];
+}
+// The level with ceiling `ceilingId` turned into `type` (flat drops the roof); the ridge height is kept (a new
+// roof starts at a DEFAULT_ROOF_PITCH ridge)
+export function setCeilingRoof(level, ceilingId, type) {
+    return {
+        ...level,
+        ceilings: (level.ceilings ?? []).map((ceiling) => {
+            if (ceiling.id !== ceilingId) return ceiling;
+            const { roof, ...rest } = ceiling;
+            if (type === 'flat') return rest;
+            const edges = inwardEdges(ceiling.points);
+            const longest = edges.reduce((best, edge, i) => (edge.length > edges[best].length + 1e-9 ? i : best), 0);
+            const k = roofEaves(ceiling)[0] ?? longest; // keep the current side when switching type
+            const eaves = eavesFor(type, ceiling.points.length, k);
+            const ridgeHeight = (roof && roofRidgeHeight(ceiling, level))
+                ?? ceilingHeight(ceiling, level) + Math.tan((DEFAULT_ROOF_PITCH * Math.PI) / 180) * ridgeDistance(ceiling, eaves);
+            return { ...rest, roof: { ridgeHeight, eaves } };
+        })
+    };
+}
+// The level with ceiling `ceilingId`'s eaves moved on by one side (single / gable; hip and flat unchanged)
+export function rotateRoof(level, ceilingId) {
+    return {
+        ...level,
+        ceilings: (level.ceilings ?? []).map((ceiling) => {
+            const type = roofType(ceiling);
+            if (ceiling.id !== ceilingId || type === 'flat' || type === 'hip') return ceiling;
+            const n = ceiling.points.length;
+            return { ...ceiling, roof: { ...ceiling.roof, eaves: eavesFor(type, n, (roofEaves(ceiling)[0] + 1) % n) } };
+        })
+    };
+}
+// The level with ceiling `ceilingId`'s ridge height (m above the level's 0; an old stored pitch is dropped),
+// or null when flat, not at least MIN_RISE above the eaves, or above MAX_RIDGE_HEIGHT
+export function setRoofRidgeHeight(level, ceilingId, ridgeHeight) {
+    const ceilings = level.ceilings ?? [];
+    const ceiling = ceilings.find((item) => item.id === ceilingId);
+    if (!ceiling?.roof || !(ridgeHeight >= ceilingHeight(ceiling, level) + MIN_RISE && ridgeHeight <= MAX_RIDGE_HEIGHT)) return null;
+    const { pitch: _old, ...roof } = ceiling.roof;
+    return { ...level, ceilings: ceilings.map((item) => (item.id === ceilingId ? { ...item, roof: { ...roof, ridgeHeight } } : item)) };
+}
+
 // The level with ceiling `ceilingId` at `height`, or null when out of CEILING_HEIGHT_LIMITS
 export function setCeilingHeight(level, ceilingId, height) {
     const { min, max } = CEILING_HEIGHT_LIMITS;
     if (!(height >= min && height <= max)) return null; // also rejects NaN
-    return { ...level, ceilings: (level.ceilings ?? []).map((ceiling) => (ceiling.id === ceilingId ? { ...ceiling, height } : ceiling)) };
+    const ceilings = level.ceilings ?? [];
+    const ceiling = ceilings.find((item) => item.id === ceilingId);
+    if (!ceiling) return null;
+    // a pitched ceiling: the eaves stay below the ridge, which does not move (an old pitch becomes its ridge)
+    const ridgeHeight = roofRidgeHeight(ceiling, level);
+    if (ridgeHeight != null && height > ridgeHeight - MIN_RISE) return null;
+    const roof = ridgeHeight == null ? {} : { roof: (({ pitch: _old, ...rest }) => ({ ...rest, ridgeHeight }))(ceiling.roof) };
+    return { ...level, ceilings: ceilings.map((item) => (item.id === ceilingId ? { ...item, height, ...roof } : item)) };
 }
 
 const ROOM_GAP = 0.03;    // meters: free wall ends are run on by this much, closing hairline gaps between walls
