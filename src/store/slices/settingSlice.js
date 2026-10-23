@@ -34,7 +34,7 @@ export const RENDER_RANGES = {
 };
 // QUALITY PRESETS: each sets the effect switches and the GI quality together (intensities are artistic
 // choices and stay untouched). Ordered from the cheapest. 'auto' starts at the best one and steps down by
-// itself (lowerAutoQuality, called by the adaptive resolution in Scene.jsx); 'custom' = switches or GI
+// itself (stepDownAuto, called by scene/perf/AdaptiveQuality.jsx); 'custom' = switches or GI
 // quality changed by hand.
 export const QUALITY_PRESETS = {
     low: { label: 'Low', values: { ssgi: false, ssr: false, ssgiQuality: 'low', denoise: false, lightProbes: false } },
@@ -44,11 +44,24 @@ export const QUALITY_PRESETS = {
 const PRESET_ORDER = Object.keys(QUALITY_PRESETS); // cheapest first
 const AUTO_START = 'high';
 export const RENDER_PRESET_CHOICES = ['auto', ...PRESET_ORDER, 'custom'];
+
+// RESOLUTION (canvas pixel ratio): 'auto' follows the frame rate (stepDownAuto), or forced by the user.
+// Never above the screen's own ratio, and at most 2 (screen-space effects cost per pixel).
+export const MAX_DPR = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+export const RESOLUTION_CHOICES = ['auto', '1', '1.5', '2'];
+const AUTO_DPR_STEPS = [MAX_DPR, 1.5, 1].filter((dpr, index, all) => dpr <= MAX_DPR && all.indexOf(dpr) === index);
+// The pixel ratio the canvas uses for these settings and the current auto ratio
+export const effectiveDpr = (settings, autoDpr) =>
+    settings.renderResolution === 'auto' ? autoDpr : Math.min(Number(settings.renderResolution), MAX_DPR);
+// The quality level whose switches match the settings (the best one), null if none does (Custom)
+export const currentQualityLevel = (settings) => [...PRESET_ORDER].reverse().find((name) =>
+    Object.entries(QUALITY_PRESETS[name].values).every(([key, value]) => settings[key] === value)) ?? null;
 // settings a preset decides: changing one by hand turns the preset into 'custom'
 const PRESET_FIELDS = Object.keys(QUALITY_PRESETS.high.values);
 
 export const RENDER_DEFAULTS = {
     renderPreset: 'auto',
+    renderResolution: 'auto',
     ssgi: true, ssr: true, denoise: false, lightProbes: false,
     // giIntensity 4: Flavio's pick on the test scene (23/10); aoIntensity 2: visibly darker corners and contacts
     ssgiQuality: 'medium', giIntensity: 4, aoIntensity: 2, ssrIntensity: 1
@@ -61,6 +74,7 @@ function isValidRenderValue(key, value) {
     if (typeof value !== typeof fallback) return false;
     if (key === 'ssgiQuality') return Object.hasOwn(SSGI_QUALITIES, value);
     if (key === 'renderPreset') return RENDER_PRESET_CHOICES.includes(value);
+    if (key === 'renderResolution') return RESOLUTION_CHOICES.includes(value);
     if (typeof value === 'number') return Number.isFinite(value) && value >= RENDER_RANGES[key].min && value <= RENDER_RANGES[key].max;
     return true;
 }
@@ -142,21 +156,50 @@ export const createSettingsSlice = (set) => ({
             return { settings };
         }),
 
-    // Auto quality: one preset down (frame rate still below the minimum at the lowest resolution, Scene.jsx).
-    // Only while the preset is 'auto'; it never goes back up during the visit (no oscillation), the next visit
-    // starts again from the top.
-    lowerAutoQuality: () =>
+    // Resolution: 'auto' or a forced pixel ratio (RESOLUTION_CHOICES), saved on this device
+    setRenderResolution: (resolution) =>
         set((state) => {
-            if (state.settings.renderPreset !== 'auto') return {};
-            // current level: the best preset whose switches match the current settings
-            const current = [...PRESET_ORDER].reverse().find((name) =>
-                Object.entries(QUALITY_PRESETS[name].values).every(([key, value]) => state.settings[key] === value)) ?? AUTO_START;
-            const lower = PRESET_ORDER[PRESET_ORDER.indexOf(current) - 1];
-            if (lower === undefined) return {};
-            const settings = { ...state.settings, ...QUALITY_PRESETS[lower].values };
+            if (!RESOLUTION_CHOICES.includes(resolution)) return {};
+            const settings = { ...state.settings, renderResolution: resolution };
             saveRenderSettings(settings);
             return { settings };
         }),
+
+    // Pixel ratio chosen by the auto resolution, this visit only (never saved): starts at the screen's best
+    autoDpr: MAX_DPR,
+
+    /*
+    * AUTO LADDER: one step down when the frame rate stays below the minimum (AdaptiveQuality.jsx). Effects go
+    * before sharpness, since a blurry, noisier image shows more than missing reflections, especially on a
+    * phone screen:
+    *   High @ max -> Medium @ max -> Medium @ 1.5 -> Low @ 1.5 -> Low @ 1
+    * Only the parts set to Auto move: a forced quality keeps its effects (only the resolution steps), a forced
+    * resolution keeps its ratio (only the effects step). Never back up during the visit (no oscillation): the
+    * next visit starts again from the top. Returns whether something changed.
+    */
+    stepDownAuto: () => {
+        let changed = false;
+        set((state) => {
+            const { settings, autoDpr } = state;
+            const isQualityAuto = settings.renderPreset === 'auto';
+            const isResolutionAuto = settings.renderResolution === 'auto';
+            const level = currentQualityLevel(settings) ?? AUTO_START;
+            const lowerDpr = AUTO_DPR_STEPS[AUTO_DPR_STEPS.indexOf(autoDpr) + 1];
+            const qualityTo = (name) => {
+                const next = { ...settings, ...QUALITY_PRESETS[name].values };
+                saveRenderSettings(next);
+                return { settings: next };
+            };
+            changed = true;
+            if (isQualityAuto && level === 'high') return qualityTo('medium');
+            if (isResolutionAuto && lowerDpr !== undefined && autoDpr > 1.5) return { autoDpr: lowerDpr };
+            if (isQualityAuto && level === 'medium') return qualityTo('low');
+            if (isResolutionAuto && lowerDpr !== undefined) return { autoDpr: lowerDpr };
+            changed = false;
+            return {};
+        });
+        return changed;
+    },
 
     toggleGridSnap: () =>
         set((state) => ({

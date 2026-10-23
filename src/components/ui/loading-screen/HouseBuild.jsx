@@ -58,12 +58,15 @@ export default function HouseBuild() {
         let frame;
         const start = performance.now();
         const tick = (now) => {
+            // unmounting: React clears the refs before this effect's cleanup cancels the last frame
+            if (rowRef.current === null) return;
             const t = ((now - start) % CYCLE_MS) / CYCLE_MS; // 0..1 in the cycle
             groundRef.current.style.strokeDashoffset = String(1 - clamp01(t / groundEnd));
             pathRefs.current.forEach((paths, column) => {
                 const from = groundEnd + column * slot;
                 const share = slot / paths.length; // each stroke of the column: same slice of its slot
                 paths.forEach((path, index) => {
+                    if (path === null) return;
                     path.style.strokeDashoffset = String(1 - clamp01((t - from - index * share) / share));
                 });
             });

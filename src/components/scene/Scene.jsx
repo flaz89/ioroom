@@ -4,7 +4,9 @@ import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { NeutralToneMapping } from 'three';
 import { Canvas } from "@react-three/fiber";
-import { CameraControls, PerformanceMonitor } from '@react-three/drei';
+import { CameraControls } from '@react-three/drei';
+import AdaptiveQuality from './perf/AdaptiveQuality';
+import { effectiveDpr } from '../../store/slices/settingSlice';
 import CameraMemory from './controls/CameraMemory';
 import SceneEnvironment from '../light/SceneEnvironment';
 import PostEffects from './PostEffects';
@@ -24,21 +26,6 @@ import WallPanel from '../builder/WallPanel';
 * expereience and update the session
 */
 
-
-// ADAPTIVE RESOLUTION: the canvas pixel ratio follows the frame rate, so the scene never drops below MIN_FPS
-// (screen-space effects cost per pixel: a Retina screen at DPR 2 has 4x the pixels of DPR 1).
-// drei PerformanceMonitor averages the fps and moves a quality factor 0..1 by STEP: below MIN_FPS it goes down,
-// above COMFORT_FPS it goes back up; after FLIPFLOPS up/down swings it settles at the lowest (onFallback).
-// Below MIN_FPS already at the lowest resolution, the Auto quality preset turns effects off (onDecline).
-// Calibration knobs.
-const MIN_FPS = 30;
-const COMFORT_FPS = 45;
-const DPR_STEP = 0.1;   // factor change per decision (DPR 1..max -> ~10 steps)
-const FLIPFLOPS = 4;
-const MIN_DPR = 1;
-const MAX_DPR = Math.min(2, window.devicePixelRatio || 1);
-// quality factor 0..1 -> pixel ratio MIN_DPR..MAX_DPR, in 0.25 steps (fewer render target resizes)
-const dprFor = (factor) => Math.round((MIN_DPR + factor * (MAX_DPR - MIN_DPR)) * 4) / 4;
 
 /*
 * Async renderer factory for <Canvas gl>: WebGPURenderer must be initialized before the first frame.
@@ -66,7 +53,8 @@ export default function Scene({xrStore}) {
     const maxDistance = useMemo(() => Math.max(20, sceneBounds(level).radius * 2.5), [level]);
     const isPerfVisible = useStore((state) => state.perfOpen);
     const isWireframe = useStore((state) => state.wireframe);
-    const [dpr, setDpr] = useState(MAX_DPR); // adaptive resolution (PerformanceMonitor below)
+    // pixel ratio: forced by the user or chosen by the auto resolution (settingSlice.js, AdaptiveQuality.jsx)
+    const dpr = useStore((state) => effectiveDpr(state.settings, state.autoDpr));
     // post-processing runs when at least one of its effects is on (PostEffects.jsx)
     const hasPostEffects = useStore((state) => state.settings.ssgi || state.settings.ssr);
     const deselectObject = useStore((state) => state.deselectObject);
@@ -116,17 +104,8 @@ export default function Scene({xrStore}) {
                     so an object/gizmo press can disable orbiting before CameraControls sees the same press */}
                 <PointerEvents batchEvents={false} />
 
-                {/* adaptive resolution: keeps the frame rate at MIN_FPS or above (constants at the top) */}
-                <PerformanceMonitor
-                    bounds={() => [MIN_FPS, COMFORT_FPS]}
-                    factor={1}
-                    step={DPR_STEP}
-                    flipflops={FLIPFLOPS}
-                    onChange={({ factor }) => setDpr(dprFor(factor))}
-                    // still too slow at the lowest resolution: Auto quality steps the effects down (settingSlice.js)
-                    onDecline={({ factor }) => { if (factor <= 0) useStore.getState().lowerAutoQuality(); }}
-                    onFallback={() => setDpr(MIN_DPR)}
-                />
+                {/* Auto quality / resolution: keeps the frame rate at 30 fps or above (effects first, then sharpness) */}
+                <AdaptiveQuality />
 
                 {/* Performance stats for the DOM panel (both renderers) */}
                 {isPerfVisible && <PerfSampler />}

@@ -11,20 +11,25 @@ state = createSettingsSlice(set);
 assert.equal(state.settings.renderPreset, 'auto');
 assert.equal(state.settings.ssr, true);
 
-// Auto steps down one level at a time, never below Low
-state.lowerAutoQuality();
+// Auto ladder (MAX_DPR is 1 in node, no window): effects only, High -> Medium -> Low, then nothing
+assert.equal(state.stepDownAuto(), true);
 assert.deepEqual([state.settings.ssgi, state.settings.ssr], [true, false]); // Medium
-state.lowerAutoQuality();
+assert.equal(state.stepDownAuto(), true);
 assert.equal(state.settings.ssgi, false); // Low
-state.lowerAutoQuality();
-assert.equal(state.settings.ssgi, false);
+assert.equal(state.stepDownAuto(), false); // nothing left to lower
 assert.equal(state.settings.renderPreset, 'auto');
 
 // a named preset applies its switches; Auto does not step it
 state.setRenderPreset('high');
 assert.equal(state.settings.ssr, QUALITY_PRESETS.high.values.ssr);
-state.lowerAutoQuality();
+state.stepDownAuto();
 assert.equal(state.settings.ssr, true);
+
+// forced resolution is validated; the auto ratio is never saved as a setting
+state.setRenderResolution('1.5');
+assert.equal(state.settings.renderResolution, '1.5');
+state.setRenderResolution('4');
+assert.equal(state.settings.renderResolution, '1.5');
 
 // a switch changed by hand -> Custom; intensities do not touch the preset
 state.setRenderSetting('giIntensity', 6);
