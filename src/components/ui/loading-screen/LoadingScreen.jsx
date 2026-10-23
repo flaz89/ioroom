@@ -23,7 +23,8 @@ const MAX_WAIT_MS = 20000;    // safety: never block the app longer than this (o
 *   4. textures (drei useProgress: three's DefaultLoadingManager, used by the texture loader): done when
 *      nothing has been loading for TEXTURES_IDLE_MS.
 * Then it fades out and unmounts; it never comes back during the visit.
-* Look: glass card with a house being built in DXF-orange lines (HouseBuild.jsx), progress bar, step label.
+* Look: glass card with a house being built in DXF-orange lines (HouseBuild.jsx), progress bar with its
+* percentage, step label.
 */
 export default function LoadingScreen() {
     const isRendererReady = useStore((state) => state.renderer.readyBackend != null);
@@ -66,6 +67,7 @@ export default function LoadingScreen() {
     const textureShare = total > 0 ? loaded / total : 0;
     const progress = isReady ? 1
         : 0.1 * isRendererReady + 0.3 * isRoomReady + 0.2 * isLibraryLoaded + 0.4 * (areTexturesReady ? 1 : textureShare);
+    const percent = Math.round(progress * 100);
     const label = !isRendererReady ? 'Starting the renderer'
         : !isRoomReady ? 'Opening the environment'
         : !isLibraryLoaded ? 'Loading materials'
@@ -76,7 +78,8 @@ export default function LoadingScreen() {
         <div className={`loading-screen${isReady ? ' is-done' : ''}`} role="status" aria-live="polite">
             <div className="loading-card">
                 <HouseBuild />
-                <div className="loading-bar"><div className="loading-bar-fill" style={{ width: `${Math.round(progress * 100)}%` }} /></div>
+                <div className="loading-bar"><div className="loading-bar-fill" style={{ width: `${percent}%` }} /></div>
+                <span className="loading-percent">{percent}%</span>
                 <span className="loading-label">{label}</span>
             </div>
         </div>

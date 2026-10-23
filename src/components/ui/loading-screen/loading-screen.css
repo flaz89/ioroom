@@ -78,6 +78,14 @@
     transition: width 300ms ease;
 }
 
+/* percentage right under the bar, small, in the bar's orange; the card's gap is pulled in so it sits close */
+.loading-percent {
+    margin-top: -.6em;
+    font-size: .65em;
+    color: #ff9a1a;
+    font-variant-numeric: tabular-nums; /* digits keep their width while counting */
+}
+
 .loading-label {
     font-size: .75em;
     opacity: .75;
