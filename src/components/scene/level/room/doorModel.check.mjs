@@ -150,6 +150,18 @@ console.log('doorModel: ok');
     assert.ok(Math.abs(Math.abs(fl.openAngle) - Math.PI / 2) < eps && fl.openShift === 0, 'hinged');
     const flushOut = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'flush', swing: 'out' }));
     assert.ok(Math.abs(flushOut.leaves[0].leaf.max[2] - c1) < eps && flushOut.frame.every((b) => Math.abs(b.min[2] - c0) < eps), "swing 'out': mirrored");
+    // PUSH: flush with the inner face (c0) but opening out: inside a full-depth lining, hinged at its back face
+    const push = parts(updateOpening(withDoor, 'wall-back', 'd1', { operation: 'flush', swing: 'out', flushSide: 'in' }));
+    const [pl] = push.leaves;
+    assert.ok(Math.abs(pl.leaf.min[2] - c0) < eps, 'push: flush with the flush face, not the swing one');
+    assert.ok(pl.leaf.min[0] >= 2.55 + LINING - eps && pl.leaf.max[0] <= 3.45 - LINING + eps, 'push: leaf inside the lining');
+    assert.ok(push.frame.every((b) => Math.abs(b.min[2] - c0) < eps && Math.abs(b.max[2] - c1) < eps), 'push: full-depth lining');
+    assert.ok(Math.abs(pl.hinge[1] - pl.leaf.max[2]) < eps, 'push: hinged at the back (swing-side) face');
+    // opened 90°, every corner of the leaf is on the swing side of its flush face and clear of the lining
+    for (const dx of [0, pl.leaf.max[0] - pl.leaf.min[0]]) for (const c of [pl.leaf.min[2], pl.leaf.max[2]]) {
+        const [x, cc] = turn([dx, c - pl.hinge[1]], pl.openAngle);
+        assert.ok(pl.hinge[0] + x >= 2.55 + LINING - eps && pl.hinge[1] + cc >= pl.hinge[1] - eps, 'push: opens through the reveal');
+    }
 }
 
 // HANDLE STYLES (store partStyles): defaults per kind, a stored style only where that kind offers it

@@ -35,7 +35,11 @@ import { STEEL_ID, WHITE_ID, paintId } from '../../../../materials/finishes.js';
 * - FLUSH DOOR ('flush', "porta a raso"): a hinged door (everything above for 'swing' holds) built to vanish
 *   into the wall: NO casing, and the leaf covers the lining on its swing face (only LEAF_GAP shows around it,
 *   flush with the wall face); the lining (jambs + head) runs behind the leaf, from its back to the other face,
-*   where it is flush with the wall and acts as the stop.
+*   where it is flush with the wall and acts as the stop. That is the PULL version ("a tirare": flush with the
+*   face it opens towards, the default). opening.flushSide ('in' | 'out', default = swing) picks the face the leaf
+*   is flush with: on the OTHER face from the swing it is the PUSH version ("a spingere"): the leaf opens away
+*   from its flush face, through the reveal, so it sits INSIDE a full-depth lining (only the lining's edge and
+*   LEAF_GAP show around it on the flush face), hinged at its back (swing-side) face.
 * - SLIDE DOOR (on a face, the swing side, like the 2D symbol): the leaves hang in front of the casing, covering
 *   the reveal and the casing, on two alternating tracks; a RAIL above them runs from closed to fully open.
 * - SLIDE WINDOW (the classic one): inside the lining, EACH leaf on its own track across the reveal (centered on
@@ -146,6 +150,10 @@ export function openingParts(wall, opening, wallHeight, partStyles = {}) {
     const side = isOut ? 1 : -1;                     // the swing / slide side, along c
     const face = isOut ? c1 : c0;                    // the wall face on that side
     const axis = (c0 + c1) / 2;
+    // flush door: the face the leaf is flush with (default: the swing face = pull); on the other face = push
+    const flushOut = (opening.flushSide ?? opening.swing ?? 'in') === 'out';
+    const flushFace = flushOut ? c1 : c0;
+    const isPull = isFlush && flushOut === isOut;
 
     // which sides leaves slide to (pocket: no lining there, the wall is open into its pocket)
     const sides = openingLeaves(opening, from, to);
@@ -158,8 +166,8 @@ export function openingParts(wall, opening, wallHeight, partStyles = {}) {
 
     // a window's lining also runs under it (sill): its casing starts above that
     const sill = isWindow ? bottom + LINING : bottom;
-    // the lining's depth: the whole wall, but a flush door's stops behind its leaf (the leaf covers it there)
-    const [l0, l1] = isFlush ? (isOut ? [c0, c1 - LEAF_THICKNESS] : [c0 + LEAF_THICKNESS, c1]) : [c0, c1];
+    // the lining's depth: the whole wall, but a pull flush door's stops behind its leaf (the leaf covers it there)
+    const [l0, l1] = isPull ? (flushOut ? [c0, c1 - LEAF_THICKNESS] : [c0 + LEAF_THICKNESS, c1]) : [c0, c1];
     const frame = [
         ...(pocketStart ? [] : [box(from, from + LINING, bottom, top, l0, l1)]), // jambs
         ...(pocketEnd ? [] : [box(to - LINING, to, bottom, top, l0, l1)]),
@@ -181,10 +189,11 @@ export function openingParts(wall, opening, wallHeight, partStyles = {}) {
     let lo, hi, y1, track;
     const sashDepth = Math.min(SASH_DEPTH, (c1 - c0) / 2);
     if (isFlush) {
-        // over the lining, the whole reveal but the gap all round: flush with the swing face
-        [lo, hi] = [from + LEAF_GAP, to - LEAF_GAP];
-        y1 = top - LEAF_GAP;
-        track = () => [face, face - side * LEAF_THICKNESS];
+        // pull: over the lining, the whole reveal but the gap all round; push: inside the lining (it swings
+        // through the reveal); both flush with the flush face
+        [lo, hi] = isPull ? [from + LEAF_GAP, to - LEAF_GAP] : [from + LINING + LEAF_GAP, to - LINING - LEAF_GAP];
+        y1 = isPull ? top - LEAF_GAP : top - LINING - LEAF_GAP;
+        track = () => [flushFace, flushFace - (flushOut ? 1 : -1) * LEAF_THICKNESS];
     } else if (operation === 'swing' || operation === 'standard') {
         [lo, hi] = [from + LINING + LEAF_GAP, to - LINING - LEAF_GAP];
         y1 = top - LINING - LEAF_GAP;
@@ -241,7 +250,8 @@ export function openingParts(wall, opening, wallHeight, partStyles = {}) {
         const leaf = box(span.from, span.to, y0, y1, leafC[0], leafC[1]);
         return {
             // pivot origin of the leaf (renderer): the hinge for a swing leaf, its fixed edge on the track otherwise
-            hinge: [hingeX, operation === 'swing' ? face : leafC[0]],
+            // (swing: on the leaf's swing-side face, so the opened leaf clears the lining; a push flush leaf's back)
+            hinge: [hingeX, operation === 'swing' ? (side > 0 ? cMax : cMin) : leafC[0]],
             // swing: the free edge (dx = toFree * w) must end on the swing side (dc = side * w): sin a = side * toFree
             openAngle: operation === 'swing' ? (Math.PI / 2) * side * toFree : 0,
             // sliding: mirrored out of the leaves' extent on its side (stacked leaves never overlap)

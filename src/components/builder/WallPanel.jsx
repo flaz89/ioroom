@@ -222,6 +222,8 @@ function OpeningPanel() {
             {/* a sliding window: always (the end whose leaf stays, the others slide onto it, doorModel.js) */}
             {hasLeaves && (leaves % 2 === 1 || isSlidingWindow) && <Toggle label={isHinged ? 'Hinge' : 'Slides to'} value={opening.hinge ?? 'start'} options={[['start', 'Start'], ['end', 'End']]} onChange={(hinge) => apply({ hinge })} />}
             {hasLeaves && operation !== 'pocket' && !isSlidingWindow && <Toggle label={isHinged ? 'Opens' : 'Side'} value={opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(swing) => apply({ swing })} />}
+            {/* flush door: the face the leaf is flush with, independent of the swing (same = pull, other = push) */}
+            {operation === 'flush' && <Toggle label="Flush" value={opening.flushSide ?? opening.swing ?? 'in'} options={[['in', 'In'], ['out', 'Out']]} onChange={(flushSide) => apply({ flushSide })} />}
             {/* open / closed in 3D (store openDoors: shared, animated by Openings3D.jsx, NOT an undo step; hinged doors for now) */}
             {hasLeaves && <Toggle label="State" value={isOpen ? 'open' : 'closed'} options={[['closed', 'Closed'], ['open', 'Open']]} onChange={(state) => setDoorOpen(openingId, state === 'open')} />}
             {/* floor-level opening: which side's floor runs on through the wall's depth (planModel.openingFloors) */}

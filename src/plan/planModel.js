@@ -350,6 +350,7 @@ export function flipWall(level, wallId) {
         offset: length - o.offset,
         hinge: o.hinge === 'end' ? 'start' : 'end', // doors and windows: hinged / sliding leaves (openingLeaves)
         swing: o.swing === 'out' ? 'in' : 'out',
+        ...(o.flushSide ? { flushSide: o.flushSide === 'out' ? 'in' : 'out' } : {}), // flush door: its flush face
         // the floor filling a floor-level opening stays the same room's
         ...(o.sill === 0 ? { floorSide: o.floorSide === 'out' ? 'in' : 'out' } : {})
     });
@@ -391,7 +392,8 @@ export function splitWall(level, wallId, newId = newWallId()) {
 // leaf opens on the wall's inner side, -normal) | 'out'. Floor-level openings (sill 0): floorSide 'in'
 // (default) | 'out' = the room whose floor runs on through the wall's thickness under it (openingFloors).
 // Doors and windows alike: operation 'swing' (hinged leaves) | 'flush' (doors only: hinged, flush with the wall,
-// no casing: "porta a raso"; drawn as 'swing' in 2D) | 'slide' (doors: sliding on a wall face, the
+// no casing: "porta a raso"; drawn as 'swing' in 2D; flushSide 'in' | 'out' = the face the leaf is flush with,
+// default the swing side = pull, the other = push: doorModel.js) | 'slide' (doors: sliding on a wall face, the
 // swing side; windows: each leaf on its own track in the reveal, all sliding over the one fixed at the
 // hinge end) | 'pocket' (doors only: sliding into the wall); leaves 1..4 (default 1): see openingLeaves. Windows also have
 // 'standard' (their default: the plain window symbol; a fixed sash in 3D) and 'hole' (a bare hole: no frame,
