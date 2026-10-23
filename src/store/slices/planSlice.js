@@ -49,9 +49,10 @@ export const createPlanSlice = (set, get) => ({
         set({ surfaces: remaining });
     },
 
-    // Deletes a floor and its material (no orphan material in the bill of quantities): one undo step
-    deleteFloor: (floorId) => {
-        get().setActiveLevel(removeFloor(activeLevel(get().plan), floorId));
+    // Deletes a floor (or a ceiling: key 'ceilings') and its material (no orphan material in the bill of
+    // quantities): one undo step
+    deleteFloor: (floorId, key = 'floors') => {
+        get().setActiveLevel(removeFloor(activeLevel(get().plan), floorId, key));
         const { [floorId]: _removed, ...remaining } = get().surfaces;
         set({ surfaces: remaining, selectedFloorId: null });
     },

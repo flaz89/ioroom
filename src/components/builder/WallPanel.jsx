@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, ceilingHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -28,7 +28,47 @@ const LINE_JUSTIFY = [
 
 export default function WallPanel() {
     const isOpening = useStore((state) => state.selectedOpening != null);
-    return isOpening ? <OpeningPanel /> : <WallsPanel />;
+    const isFloor = useStore((state) => state.selectedFloorId != null);
+    return isOpening ? <OpeningPanel /> : isFloor ? <FloorPanel /> : <WallsPanel />;
+}
+
+/*
+* Panel of the floor (or ceiling: ceiling tool) selected with the area tool (store selectedFloorId): a floor's
+* ELEVATION above the level's walking height (planModel.setFloorElevation: e.g. +0.30 for a raised zone), a
+* ceiling's HEIGHT (planModel.setCeilingHeight); one undo step per edit; Delete removes it. Esc / Del /
+* Backspace are handled by the 2D plan view (PlanView2D.jsx).
+*/
+function FloorPanel() {
+    const floorId = useStore((state) => state.selectedFloorId);
+    const isCeiling = useStore((state) => state.planTool === 'ceiling');
+    const level = useStore((state) => activeLevel(state.plan));
+    const setActiveLevel = useStore((state) => state.setActiveLevel);
+    const setSelectedFloorId = useStore((state) => state.setSelectedFloorId);
+    const deleteFloor = useStore((state) => state.deleteFloor);
+    const key = isCeiling ? 'ceilings' : 'floors';
+    const areas = level[key] ?? [];
+    const index = areas.findIndex((area) => area.id === floorId);
+    if (index < 0) return null; // removed (undo, another device)
+    const name = isCeiling ? 'Ceiling' : 'Floor';
+    const apply = (text) => {
+        const value = Number(String(text).replace(',', '.'));
+        const next = isCeiling ? setCeilingHeight(level, floorId, value) : setFloorElevation(level, floorId, value);
+        if (next) setActiveLevel(next);
+    };
+    return (
+        <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="wall-panel-header">
+                <span>{areas.length > 1 ? `${name} ${index + 1}` : name}</span>
+                <button className="wall-panel-close" onClick={() => setSelectedFloorId(null)} title="Deselect (Esc)">×</button>
+            </div>
+            {isCeiling
+                ? <Field label="Height" value={ceilingHeight(areas[index], level)} onApply={apply} />
+                : <Field label="Elevation" value={floorElevation(areas[index])} onApply={apply} />}
+            <div className="wall-panel-actions">
+                <button className="is-danger" onClick={() => deleteFloor(floorId, key)} title={`Delete this ${name.toLowerCase()} (Del)`}>Delete</button>
+            </div>
+        </div>
+    );
 }
 
 function WallsPanel() {

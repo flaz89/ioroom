@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { faceOffsets, openingFloors, openingRects, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { ceilingHeight, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
@@ -9,7 +9,9 @@ import { faceOffsets, openingFloors, openingRects, polygonArea, wallFootprint, w
 *
 * - Floors: polygons, world-space UVs in meters (planarUVs, same rule as before), plus the strips under the
 *   floor-level openings they run through (planModel.openingFloors: the chosen room's floor fills the
-*   opening's depth, no threshold; same UVs, so the pattern continues).
+*   opening's depth, no threshold; same UVs, so the pattern continues). A floor at an ELEVATION
+*   (floor.elevation) is drawn at that height, with its STEP sides (from 0 to the elevation, outwards, part
+*   of the floor's face) all round; the opening strips stay at 0 (doors stay at the level's 0 for now).
 * - Walls: prisms on their mitered footprint (wallFootprint), height = wall.height ?? level.wallHeight.
 *   Faces: inner, outer, top and the free ends ("edge"); the bottom sits on the floor (not built) and the
 *   ends at a joint are inside the neighbour (not built). UVs in meters, anchored to the world along the
@@ -17,11 +19,14 @@ import { faceOffsets, openingFloors, openingRects, polygonArea, wallFootprint, w
 *   Openings (doors / windows, planModel.openingRects) are cut through the inner and outer faces; their
 *   reveals (jambs, head, sill; a threshold only when no floor fills the opening) belong to the wall's
 *   "edge" face.
-* Face ids: floor.id, '<wall>:inner' | ':outer' | ':edge'. Every geometry is indexed with position, normal
+* - Ceilings (level.ceilings): flat polygons at their height, both faces (from the room and from above, the
+*   same face id and material), castShadow: true (the only horizontal faces that shade the room).
+* Face ids: floor.id, ceiling.id, '<wall>:inner' | ':outer' | ':edge'. Every geometry is indexed with position, normal
 * and uv, so batches can be merged (roomGeometry.js mergeFaces).
 */
 const FLOOR_COLOR = '#d4d4d4'; // plain material colors
 const WALL_COLOR = '#ffffff';
+const CEILING_COLOR = '#f4f4f4';
 
 const wallHeight = (wall, level) => wall.height ?? level.wallHeight;
 
@@ -43,6 +48,27 @@ export function polygonGeometry(points, y = 0, facingDown = false) {
     const shape = new Shape(points.map(([x, z]) => ({ x, y: facingDown ? z : -z })));
     const geometry = new ShapeGeometry(shape).rotateX(facingDown ? Math.PI / 2 : -Math.PI / 2).translate(0, y, 0);
     return planarUVs(geometry, facingDown ? 'ny' : 'py');
+}
+
+/*
+* The vertical sides of a floor polygon raised (or lowered) by `elevation`: one quad per edge from 0 to the
+* elevation, facing outwards; UVs in meters (along the edge, up), so a pattern looks like the floor's.
+* ponytail: sides are built all round, also where a wall covers them (hidden inside it: no visible harm);
+* the bill of quantities does not count them yet.
+*/
+function stepSides(points, elevation) {
+    const [y0, y1] = elevation > 0 ? [0, elevation] : [elevation, 0];
+    let run = 0;
+    return points.map((p, i) => {
+        const q = points[(i + 1) % points.length];
+        const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        // outward normal: the edge's perpendicular whose side does not hold the polygon
+        let normal = [(q[1] - p[1]) / length, 0, -(q[0] - p[0]) / length];
+        const probe = [(p[0] + q[0]) / 2 + normal[0] * 1e-4, (p[1] + q[1]) / 2 + normal[2] * 1e-4];
+        if (pointInPolygon(probe, points)) normal = normal.map((v) => -v);
+        const u0 = run, u1 = (run += length);
+        return quad([[p[0], y0, p[1]], [q[0], y0, q[1]], [q[0], y1, q[1]], [p[0], y1, p[1]]], normal, [[u0, y0], [u1, y0], [u1, y1], [u0, y1]]);
+    }); // no zero-length edges: planModel.floorPolygon drops consecutive duplicates
 }
 
 /*
@@ -125,8 +151,23 @@ export function roomFaces(level) {
     return [
         ...level.floors.map((floor) => {
             const strips = patches.filter((patch) => patch.floorId === floor.id).map((patch) => polygonGeometry(patch.points));
-            const geometry = strips.length > 0 ? mergeGeometries([polygonGeometry(floor.points), ...strips]) : polygonGeometry(floor.points);
+            const elevation = floorElevation(floor);
+            const sides = Math.abs(elevation) > 1e-6 ? stepSides(floor.points, elevation) : [];
+            const parts = [polygonGeometry(floor.points, elevation), ...strips, ...sides];
+            const geometry = parts.length > 1 ? mergeGeometries(parts) : parts[0];
             return { key: floor.id, geometry, surfaceId: floor.id, vertical: false, color: FLOOR_COLOR };
+        }),
+        ...(level.ceilings ?? []).map((ceiling) => {
+            const height = ceilingHeight(ceiling, level);
+            return {
+                key: ceiling.id,
+                // underside (the room's side) + top (seen from above), coplanar, back faces culled
+                geometry: mergeGeometries([polygonGeometry(ceiling.points, height, true), polygonGeometry(ceiling.points, height)]),
+                surfaceId: ceiling.id,
+                vertical: false,
+                castShadow: true,
+                color: CEILING_COLOR
+            };
         }),
         ...level.walls.flatMap((wall) => wallGeometries(wall, level, filled).map((face, index) => ({
             key: `${wall.id}-${face.part}-${index}`,
@@ -148,7 +189,7 @@ export function roomFaces(level) {
 export function surfaceAreas(level) {
     const areas = {};
     const put = (id, value) => { areas[id] = Math.round(((areas[id] ?? 0) + value) * 100) / 100; };
-    for (const floor of level.floors) put(floor.id, polygonArea(floor.points));
+    for (const area of [...level.floors, ...(level.ceilings ?? [])]) put(area.id, polygonArea(area.points));
     const patches = openingFloors(level);
     for (const patch of patches) put(patch.floorId, polygonArea(patch.points));
     const filled = new Set(patches.map((patch) => patch.openingId));
@@ -175,6 +216,9 @@ export function surfaceAreas(level) {
 export function surfaceLabel(surfaceId, level) {
     const floorIndex = level.floors.findIndex((floor) => floor.id === surfaceId);
     if (floorIndex >= 0) return level.floors.length > 1 ? `Floor ${floorIndex + 1}` : 'Floor';
+    const ceilings = level.ceilings ?? [];
+    const ceilingIndex = ceilings.findIndex((ceiling) => ceiling.id === surfaceId);
+    if (ceilingIndex >= 0) return ceilings.length > 1 ? `Ceiling ${ceilingIndex + 1}` : 'Ceiling';
     const [wallId, side] = surfaceId.split(':');
     const index = level.walls.findIndex((wall) => wall.id === wallId);
     const name = level.walls[index]?.name ?? (index >= 0 ? `Wall ${index + 1}` : 'Removed wall');

@@ -56,6 +56,8 @@
 .plan-view.is-drawing .plan-wall { cursor: crosshair; }
 .plan-view.is-drawing .plan-vertex-hit { pointer-events: none; }
 .plan-wall-preview { fill: rgba(255, 154, 26, 0.35); stroke: #ff9a1a; stroke-width: 1.5; stroke-dasharray: 5 4; pointer-events: none; }
+.plan-ceiling { fill: rgba(120, 180, 255, 0.08); stroke: rgba(140, 190, 255, 0.7); stroke-width: 1; stroke-dasharray: 2 3; pointer-events: none; }
+.plan-ceiling.is-selected { fill: rgba(255, 154, 26, 0.22); stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: none; }
 .plan-floor.is-selected { fill: rgba(255, 154, 26, 0.22); stroke: #ff9a1a; stroke-width: 2; stroke-dasharray: none; }
 .plan-floor-handle-hit { fill: transparent; cursor: move; }
 .plan-edge-handle-hit { fill: transparent; cursor: move; }

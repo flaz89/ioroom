@@ -31,6 +31,31 @@ const OPENING_TITLES = {
     window: 'Windows: click on a wall between the drawing\'s jambs, or in a gap between two walls'
 };
 
+/*
+* Ceiling button (same hover pattern as SnapControl): hover reveals a round button that shows / hides the
+* ceilings in 3D on this device (store ceilingVisible). onClick / isActive / title: the button's own action
+* (2D plan: the ceiling tool); without onClick (3D views) the button itself toggles the visibility.
+*/
+function CeilingControl({ onClick, isActive, title }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const isVisible = useStore((state) => state.ceilingVisible);
+    const setCeilingVisible = useStore((state) => state.setCeilingVisible);
+    const toggle = () => setCeilingVisible(!isVisible);
+    const visibilityTitle = isVisible ? 'Ceilings shown in 3D: click to hide' : 'Ceilings hidden in 3D: click to show';
+    return (
+        <div className="snap-control" onMouseEnter={() => setIsOpen(true)} onMouseLeave={() => setIsOpen(false)}>
+            <CircleButton svg={svg.ceiling} onClick={onClick ?? toggle} isActive={onClick ? isActive : isVisible} title={onClick ? title : visibilityTitle} />
+            {isOpen && (
+                <div className="snap-steps is-right">
+                    <button className={`snap-step${isVisible ? ' is-active' : ''}`} onClick={toggle} title={visibilityTitle}>
+                        {isVisible ? svg.eye : svg.eyeOff}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function LeftToolBar() {
 
     // Performance stats: stays open alongside the other panels (closes them only on phones, panelSlice.js)
@@ -63,6 +88,7 @@ export default function LeftToolBar() {
     const setOpeningType = useStore((state) => state.setOpeningType);
     // assisted tracing needs the drawing's lines: a DXF underlay (later also vector PDFs, tappa 4c)
     const hasVectorUnderlay = useStore((state) => activeLevel(state.plan).underlay?.kind === 'dxf');
+    const hasCeilings = useStore((state) => (activeLevel(state.plan).ceilings ?? []).length > 0);
 
     // svg logos
     const { settingsMenu, performance } = svg;
@@ -109,12 +135,19 @@ export default function LeftToolBar() {
                     {/* draw floors (polygons snapped to the wall faces, PlanView2D.jsx) */}
                     <CircleButton svg={svg.floor} isActive={planTool === 'floor'} title="Draw floors"
                         onClick={() => setPlanTool(planTool === 'floor' ? 'select' : 'floor')} />
+                    {/* draw ceilings (same tool as the floors, planModel level.ceilings); hover: show / hide in 3D */}
+                    <CeilingControl onClick={() => setPlanTool(planTool === 'ceiling' ? 'select' : 'ceiling')} isActive={planTool === 'ceiling'} title="Draw ceilings" />
                 </div>}
 
                 {/* floor plan underlay (builder, 2D and 3D views, owner only): uploaded in a room, kept in the
                     browser in local mode (UnderlayPanel.jsx) */}
                 {isBuilder && isAdmin && <div className="scene-settings">
                     <UnderlayPanel />
+                </div>}
+
+                {/* 3D views (builder 3D, designer) with drawn ceilings: the button only shows / hides them */}
+                {!isPlanView && hasCeilings && <div className="scene-settings">
+                    <CeilingControl />
                 </div>}
 
                 {isDesigner && <div className="scene-settings">

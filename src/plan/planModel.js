@@ -4,6 +4,11 @@
 * plan: { levels: [level] } — one level for now; the model is ready for several (multi-storey projects,
 *   worked on one level at a time, the others shown as a hologram later).
 * level: { id, name, elevation (m), wallHeight (m), floors: [floor], walls: [wall] }
+* floor: { id, points: [[x, z]], elevation? (m above the level's 0, default 0: setFloorElevation) }
+* level.ceilings? : [ceiling], ceiling: { id, points: [[x, z]], height? (m above the level's 0, default the
+*   level's wallHeight: setCeilingHeight) }. Floors and ceilings are both AREAS (polygons drawn with the same
+*   tool): addFloor / moveFloorVertex / removeFloor / floorAt / fillRoom take the collection `key`
+*   ('floors' default | 'ceilings').
 * floor: { id, points: [[x, z], ...] } — polygon (room space, meters); its id is the face id of its surface.
 * wall:  { id, name?, a: [x, z], b: [x, z], thickness, height?, align? }
 *   a -> b is the wall's drawn line. align undefined: the line is the INNER face (the side the room sees)
@@ -886,25 +891,48 @@ function floorPolygon(points) {
 
 // The level with a new DRAWN floor (floor tool) from the closed polygon `points` (drawing order), or null
 // when it is not a valid floor (floorPolygon)
-export function addFloor(level, points, id = newFloorId()) {
+export function addFloor(level, points, id = undefined, key = 'floors') {
+    id ??= key === 'ceilings' ? newCeilingId() : newFloorId();
     const clean = floorPolygon(points);
-    return clean && { ...level, floors: [...level.floors, { id, points: clean }] };
+    return clean && { ...level, [key]: [...(level[key] ?? []), { id, points: clean }] };
 }
 
 // The level with vertex `index` of floor `floorId` moved to `to` (floor tool, vertex drag); null when the
 // result is not a valid floor (floorPolygon: e.g. edges crossing). A vertex dropped on a neighbour merges.
-export function moveFloorVertex(level, floorId, index, to) {
-    const floor = level.floors.find((item) => item.id === floorId);
+export function moveFloorVertex(level, floorId, index, to, key = 'floors') {
+    const areas = level[key] ?? [];
+    const floor = areas.find((item) => item.id === floorId);
     const clean = floor && floorPolygon(floor.points.map((p, i) => (i === index ? to : p)));
-    return clean && { ...level, floors: level.floors.map((item) => (item.id === floorId ? { ...item, points: clean } : item)) };
+    return clean && { ...level, [key]: areas.map((item) => (item.id === floorId ? { ...item, points: clean } : item)) };
+}
+
+/*
+* FLOOR ELEVATION: floor.elevation (meters, default 0) = the floor's top above the level's walking height
+* (e.g. a raised zone at +0.30). Walls and openings still start at the level's 0 (doors stay at 0 for now).
+*/
+export const FLOOR_ELEVATION_LIMITS = { min: -2, max: 5 };
+export const floorElevation = (floor) => floor.elevation ?? 0;
+
+// The level with floor `floorId` at `elevation` (0 drops the field), or null when out of FLOOR_ELEVATION_LIMITS
+export function setFloorElevation(level, floorId, elevation) {
+    const { min, max } = FLOOR_ELEVATION_LIMITS;
+    if (!(elevation >= min && elevation <= max)) return null; // also rejects NaN
+    return {
+        ...level,
+        floors: level.floors.map((floor) => {
+            if (floor.id !== floorId) return floor;
+            const { elevation: _old, ...rest } = floor;
+            return Math.abs(elevation) < 1e-9 ? rest : { ...rest, elevation };
+        })
+    };
 }
 
 // The level without floor `floorId`
-export const removeFloor = (level, floorId) => ({ ...level, floors: level.floors.filter((floor) => floor.id !== floorId) });
+export const removeFloor = (level, floorId, key = 'floors') => ({ ...level, [key]: (level[key] ?? []).filter((floor) => floor.id !== floorId) });
 
 // The floor under `point` (the smallest one, if they overlap), or null
-export function floorAt(level, point) {
-    const hits = level.floors.filter((floor) => pointInPolygon(point, floor.points));
+export function floorAt(level, point, key = 'floors') {
+    const hits = (level[key] ?? []).filter((floor) => pointInPolygon(point, floor.points));
     return hits.reduce((best, floor) => (best == null || polygonArea(floor.points) < polygonArea(best.points) ? floor : best), null);
 }
 
@@ -913,10 +941,25 @@ export function floorAt(level, point) {
 * around `point` (roomAt: bounded by the walls' footprints). Returns null when the point is not enclosed
 * (or is inside a wall), or when a floor already covers it (no double floors in the bill of quantities).
 */
-export function fillRoom(level, point, id = newFloorId()) {
-    if (level.floors.some((floor) => pointInPolygon(point, floor.points))) return null;
+export function fillRoom(level, point, id = undefined, key = 'floors') {
+    if ((level[key] ?? []).some((floor) => pointInPolygon(point, floor.points))) return null;
     const room = roomAt(level.walls, point);
-    return room && addFloor(level, room, id);
+    return room && addFloor(level, room, id, key);
+}
+
+/*
+* CEILINGS (level.ceilings, drawn with the floor tool's code: planTool 'ceiling'): flat, facing down, at
+* `height` above the level's 0 (default the level's wall height). Sloped roofs: next step.
+*/
+export const CEILING_HEIGHT_LIMITS = { min: 0.5, max: 20 };
+export const newCeilingId = () => `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+export const ceilingHeight = (ceiling, level) => ceiling.height ?? level.wallHeight;
+
+// The level with ceiling `ceilingId` at `height`, or null when out of CEILING_HEIGHT_LIMITS
+export function setCeilingHeight(level, ceilingId, height) {
+    const { min, max } = CEILING_HEIGHT_LIMITS;
+    if (!(height >= min && height <= max)) return null; // also rejects NaN
+    return { ...level, ceilings: (level.ceilings ?? []).map((ceiling) => (ceiling.id === ceilingId ? { ...ceiling, height } : ceiling)) };
 }
 
 const ROOM_GAP = 0.03;    // meters: free wall ends are run on by this much, closing hairline gaps between walls

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useXR } from '@react-three/xr';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import UnderlayPlane from './UnderlayPlane';
@@ -93,13 +94,21 @@ export default function Room() {
 
     // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
     const allFaces = useMemo(() => roomFaces(level), [level]);
+    // Ceilings: hidden by this device's toggle (store ceilingVisible) and always in the XR tabletop view
+    // (the miniature is looked at from above: a lid would hide the room)
+    const isXR = useXR((state) => state.mode != null);
+    const showCeilings = useStore((state) => state.ceilingVisible && !(isXR && state.view.mode === 'tabletop'));
     const faces = useMemo(() => {
-        if (!showUnderlay || level.underlay.kind === 'dxf') return allFaces;
-        const floorIds = new Set(level.floors.map((floor) => floor.id));
-        return allFaces.filter((face) => !floorIds.has(face.surfaceId));
-    }, [allFaces, showUnderlay, level]);
-    // Ceiling: the floor polygons at wall height, facing down (no ceiling material yet: not drawn)
-    const ceilings = useMemo(() => level.floors.map((floor) => polygonGeometry(floor.points, level.wallHeight, true)), [level]);
+        const hidden = new Set([
+            ...(showUnderlay && level.underlay.kind !== 'dxf' ? level.floors.map((floor) => floor.id) : []),
+            ...(showCeilings ? [] : (level.ceilings ?? []).map((ceiling) => ceiling.id))
+        ]);
+        return hidden.size === 0 ? allFaces : allFaces.filter((face) => !hidden.has(face.surfaceId));
+    }, [allFaces, showUnderlay, showCeilings, level]);
+    // Invisible ceiling for placing objects (lamps) while no ceiling is drawn: the floor polygons at wall
+    // height, facing down. Drawn ceilings (level.ceilings) are real faces (roomFaces) and replace it.
+    const ceilings = useMemo(() => ((level.ceilings ?? []).length > 0 ? []
+        : level.floors.map((floor) => polygonGeometry(floor.points, level.wallHeight, true))), [level]);
     useEffect(() => () => ceilings.forEach((geometry) => geometry.dispose()), [ceilings]);
     useEffect(() => () => allFaces.forEach((face) => face.geometry.dispose()), [allFaces]);
 
@@ -136,8 +145,9 @@ export default function Room() {
             const hovered = hoveredWallId != null && face.surfaceId.startsWith(`${hoveredWallId}:`);
             const materialId = previewed ? drag.materialId : (surfaces[face.surfaceId] ?? PLAIN_ID);
             const tinted = previewed || selected || (hovered ? 'hover' : false); // SurfaceMesh: 'hover' = lighter
-            const key = `${materialId}|${tinted}|${face.vertical}|${face.color}`;
-            if (!groups.has(key)) groups.set(key, { key, materialId, tinted, vertical: face.vertical, color: face.color, faces: [] });
+            const castShadow = face.vertical || face.castShadow === true; // walls and ceilings shade the room
+            const key = `${materialId}|${tinted}|${face.vertical}|${castShadow}|${face.color}`;
+            if (!groups.has(key)) groups.set(key, { key, materialId, tinted, vertical: face.vertical, castShadow, color: face.color, faces: [] });
             groups.get(key).faces.push(face);
         }
         return [...groups.values()].map((group) => {
@@ -159,7 +169,7 @@ export default function Room() {
                     geometry={batch.geometry}
                     userData={batch.userData}
                     spherecast={batch.spherecast}
-                    castShadow={batch.vertical}
+                    castShadow={batch.castShadow}
                     receiveShadow
                 />
             ))}

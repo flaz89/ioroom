@@ -117,6 +117,21 @@ export const svg = {
         <path d="M6 8a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6"/>
     </svg>,
 
+    // eye / crossed eye: shown / hidden (ceiling visibility)
+    eye: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <circle cx="10" cy="10" r="2.6" stroke="currentColor" strokeWidth="1.6"/>
+    </svg>,
+    eyeOff: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <path d="M3 17L17 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+    // ceiling: a ceiling seen from below in perspective, with a hanging lamp (ceiling tool)
+    ceiling: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2 3h16l-3 6H5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <path d="M10 9v4" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M7 16a3 3 0 0 1 6 0z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
+    </svg>,
     // floor: tiles seen in perspective (floor tool)
     floor: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M5 6h10l3 9H2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

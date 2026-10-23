@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel, addOpening } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, addFloor, addOpening, fillRoom, setCeilingHeight, setFloorElevation } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -49,4 +49,42 @@ const inner = roomFaces(level).find((face) => face.surfaceId === 'wall-back:inne
 assert.ok(new Vector3().fromBufferAttribute(inner.geometry.attributes.normal, 0).equals(new Vector3(0, 0, 1)));
 assert.equal(surfaceLabel('wall-right:outer', level), 'Right wall · outside');
 assert.equal(surfaceLabel('floor', level), 'Floor');
+// RAISED FLOOR (+0.30): top at the elevation, step sides all round facing outwards
+{
+    assert.equal(setFloorElevation(level, 'floor', 9), null, 'out of range');
+    const raised = setFloorElevation(level, 'floor', 0.3);
+    assert.equal(raised.floors[0].elevation, 0.3);
+    assert.equal(setFloorElevation(raised, 'floor', 0).floors[0].elevation, undefined, '0 drops the field');
+    const { geometry } = roomFaces(raised).find((face) => face.surfaceId === 'floor');
+    const pos = geometry.attributes.position, nor = geometry.attributes.normal;
+    let maxY = -Infinity, sides = 0;
+    for (let i = 0; i < pos.count; i++) {
+        maxY = Math.max(maxY, pos.getY(i));
+        if (Math.abs(nor.getY(i)) < 1e-6) {
+            sides++;
+            // outwards: the normal points away from the room's center (0, 0)
+            assert.ok(pos.getX(i) * nor.getX(i) + pos.getZ(i) * nor.getZ(i) > 0, 'side faces outwards');
+        }
+    }
+    assert.ok(Math.abs(maxY - 0.3) < 1e-6 && sides === 4 * 4, 'top at +0.30, 4 side quads');
+}
+// CEILING (area tool, key 'ceilings'): a face at the wall height facing down, own id, area and label
+{
+    const withCeiling = addFloor(level, level.floors[0].points, undefined, 'ceilings');
+    assert.ok(withCeiling.ceilings.length === 1 && withCeiling.ceilings[0].id.startsWith('c-'), 'ceiling ids: c-...');
+    assert.equal(fillRoom(withCeiling, [0, 0], undefined, 'ceilings'), null, 'never a second ceiling over a ceiled point');
+    const [ceiling] = withCeiling.ceilings;
+    const face = roomFaces(withCeiling).find((f) => f.surfaceId === ceiling.id);
+    const { position, normal } = face.geometry.attributes;
+    let down = 0, up = 0;
+    for (let i = 0; i < position.count; i++) {
+        assert.ok(Math.abs(position.getY(i) - 2.7) < 1e-6, 'at 2.7');
+        if (normal.getY(i) < -0.99) down++; else if (normal.getY(i) > 0.99) up++;
+    }
+    assert.ok(down > 0 && down === up && face.castShadow === true, 'underside + top, casts shadow');
+    assert.ok(near(surfaceAreas(withCeiling)[ceiling.id], 36) && surfaceLabel(ceiling.id, withCeiling) === 'Ceiling');
+    assert.equal(setCeilingHeight(withCeiling, ceiling.id, 0.1), null, 'out of range');
+    assert.equal(setCeilingHeight(withCeiling, ceiling.id, 3).ceilings[0].height, 3);
+    assert.ok(addFloor(level, [[0, 0], [1, 0], [1, 1]], 'x', 'ceilings').floors === level.floors, 'floors untouched');
+}
 console.log('roomLayout: ok');

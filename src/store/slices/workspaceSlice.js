@@ -12,13 +12,16 @@
 *   is WallPanel.jsx too. Exclusive with selectedWallIds: selecting one clears the other.
 * selectedFloorId: floor selected with the floor tool (2D plan: vertex handles, Delete removes it), null = none.
 *   Cleared when changing tool.
-* planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls) | 'floor' (draw floors) | 'trace' (walls traced on a vector underlay) | 'opening' (doors / windows: plan/placeOpening.js).
+* planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls) | 'floor' (draw floors) | 'ceiling' (draw ceilings, same code) | 'trace' (walls traced on a vector underlay) | 'opening' (doors / windows: plan/placeOpening.js).
 * openingType: what the door / window tool places: 'door' | 'window' (picked on hover, LeftToolBar.jsx).
 * wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
 * planGrid: { minor, major } grid steps (meters) of the open 2D plan view, null when it is closed
 *   (published by PlanView2D.jsx, shown by PlanGridLegend.jsx in the bottom bar).
 * underlayVisible / underlayOpacity: how this device shows the floor plan underlay (planModel.js level.underlay):
 *   a view preference, per device, never synced nor undoable. Hidden = the floor is back in the 3D view.
+* ceilingVisible: this device shows the drawn ceilings in 3D (planModel level.ceilings; toggle on hover of the
+*   ceiling button, LeftToolBar.jsx): a view preference, per device, never synced nor undoable. Hidden = no
+*   ceiling at all (nor its shadow). Always hidden in the XR tabletop view (Room.jsx).
 * planWallOpacity: fill opacity of the walls in the 2D plan (per device, from the underlay panel): lowered to
 *   see the drawing through the walls while tracing (their outline stays).
 * underlayTool: active underlay adjustment of the 2D plan (two clicks each, PlanView2D.jsx): null |
@@ -81,6 +84,8 @@ export const createWorkspaceSlice = (set, get) => ({
     underlayOpacity: 0.5,
     setUnderlayVisible: (underlayVisible) => set({ underlayVisible }),
     setUnderlayOpacity: (underlayOpacity) => set({ underlayOpacity }),
+    ceilingVisible: true,
+    setCeilingVisible: (ceilingVisible) => set({ ceilingVisible }),
     planWallOpacity: 1,
     setPlanWallOpacity: (planWallOpacity) => set({ planWallOpacity }),
     underlayTool: null,
