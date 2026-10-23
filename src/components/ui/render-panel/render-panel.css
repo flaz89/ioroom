@@ -1,0 +1,73 @@
+/* Render settings panel (RenderPanel.jsx): floats to the right of the left toolbar, bottom-aligned with its
+   button (the settings group sits at the bottom edge), glass style like the sun panel */
+.render-control {
+    position: relative;
+    display: flex;
+}
+
+.render-panel {
+    position: absolute;
+    left: calc(100% + 12px);
+    bottom: 0;
+    z-index: 100;
+    width: 220px;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .55em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+
+.render-title { font-weight: 600; }
+
+.render-note { color: #ffb733; opacity: .9; }
+
+.render-row {
+    display: flex;
+    align-items: center;
+    gap: .5em;
+    cursor: pointer;
+}
+
+/* checkboxes in the selection orange */
+.render-row input { accent-color: #ff9a1a; cursor: inherit; }
+
+.render-row.is-disabled { opacity: .45; cursor: default; }
+
+.render-group {
+    display: flex;
+    flex-direction: column;
+    gap: .35em;
+}
+
+/* a knob of the effect above it (quality preset, intensity slider), indented under its switch */
+.render-knob {
+    display: flex;
+    flex-direction: column;
+    gap: .25em;
+    padding-left: 1.6em;
+}
+
+.render-knob b { color: #ffb733; }
+
+.render-knob select {
+    padding: .3em .5em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: white;
+    font: inherit;
+}
+
+/* sliders in the selection orange */
+.render-knob input[type="range"] {
+    width: 100%;
+    accent-color: #ff9a1a;
+}

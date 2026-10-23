@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:http": "VITE_HTTP=1 vite",
     "build": "vite build",
     "deploy": "vercel --prod",
     "sync:dev": "npm --prefix server run dev",

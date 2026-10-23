@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '../../store/appStore';
 import { sunLighting } from '../scene/sun/sunLighting';
 import SunArc from '../scene/sun/SunArc';
+import LightProbes from './LightProbes';
 import { activeLevel, levelBounds } from '../../plan/planModel';
 
 // Sizes from the plan (planModel.levelBounds: center + radius of the walls' footprint), room meters
@@ -14,6 +15,9 @@ const SHADOW_MARGIN = 1.5;  // shadow camera half side = plan radius + this (wal
 const MAX_SHADOW_HALF = 15;
 const SHADOW_NEAR = 0.5;   // room meters
 const NORMAL_BIAS = 0.02;  // room meters: removes shadow acne on the walls/floor
+// With a GI technique on (light probes or SSGI), the environment mostly gives the reflections: the GI does
+// the fill light (the environment's diffuse would light every room evenly again). Calibration knob.
+const ENVIRONMENT_WITH_GI = 0.25;
 
 const _scale = new Vector3();
 
@@ -38,11 +42,18 @@ export default function Light() {
     const lightRef = useRef();
     // fill light follows the sun (scene-wide: the environment is set on the scene, not on the board)
     const scene = useThree((state) => state.scene);
-    useLayoutEffect(() => { scene.environmentIntensity = lighting.environment; }, [scene, lighting]);
+    // light probes: WebGPU only for now (the WebGL / XR version comes later)
+    const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
+    const hasProbes = useStore((state) => state.settings.lightProbes) && isWebGPU;
+    const hasSsgi = useStore((state) => state.settings.ssgi) && isWebGPU; // PostEffects.jsx (Scene.jsx)
+    useLayoutEffect(() => {
+        scene.environmentIntensity = lighting.environment * (hasProbes || hasSsgi ? ENVIRONMENT_WITH_GI : 1);
+    }, [scene, lighting, hasProbes, hasSsgi]);
     const appliedScale = useRef(''); // scale | shadow size | sun distance last applied to the shadow camera
     // Plan size: center [x, z] and radius (m) of the level being worked on
     const level = useStore((state) => activeLevel(state.plan));
-    const { center, radius } = useMemo(() => levelBounds(level), [level]);
+    const { min, max, center, radius } = useMemo(() => levelBounds(level), [level]);
+    const wallHeight = level.wallHeight;
     const sunDistance = radius + SUN_MARGIN;
     const shadowHalf = Math.min(radius + SHADOW_MARGIN, MAX_SHADOW_HALF);
 
@@ -79,6 +90,8 @@ export default function Light() {
             />
 
             <SunArc sun={sun} lighting={lighting} center={center} radius={radius} />
+
+            {hasProbes && <LightProbes min={min} max={max} wallHeight={wallHeight} skyIntensity={lighting.environment} />}
         </>
     );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, Vector3 } from 'three';
+import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { activeLevel, faceOffsets, openingClearances, openingRects, resizeOpening, wallFrame } from '../../../../plan/planModel';
 import { Html } from '@react-three/drei';
@@ -68,15 +68,25 @@ import SurfaceMesh from './SurfaceMesh';
 // tint (module lifetime, like SurfaceMesh's cache).
 const TINT = '#ff9a1a';
 const TINT_STRENGTH = { hover: 0.08, selected: 0.18 };
-// window pane: see-through, never hides what is behind it in the depth buffer
-const GLASS = { color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false };
-const glassMaterials = new Map();
-function glassMaterial(tinted) {
-    if (!glassMaterials.has(tinted)) {
+/*
+* Window pane, two versions:
+* - WebGPU (desktop): PHYSICAL glass, transmission (refracts the opaque scene behind it). It is drawn as a solid
+*   surface, so it writes depth, normals and velocity: the post-processing (PostEffects.jsx: SSGI + TRAA) sees
+*   the moving pane of a sliding door, without ghosting or GI noise. Also a more realistic glass.
+* - WebGL (XR): plain alpha-blended glass, never hiding what is behind it in the depth buffer. Transmission
+*   would cost an extra render of the opaque scene every frame, too much for the Quest; no post-processing
+*   there, so nothing to ghost.
+*/
+const GLASS_PHYSICAL = { color: '#e8f2f6', roughness: 0.05, metalness: 0, transmission: 1, ior: 1.5, thickness: 0.01 };
+const GLASS_BLENDED = { color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.22, depthWrite: false };
+const glassMaterials = new Map(); // `${physical}|${tinted}` -> material
+function glassMaterial(tinted, physical) {
+    const key = `${physical}|${tinted}`;
+    if (!glassMaterials.has(key)) {
         const glow = tinted ? { emissive: TINT, emissiveIntensity: tinted === 'hover' ? TINT_STRENGTH.hover : TINT_STRENGTH.selected } : {};
-        glassMaterials.set(tinted, new MeshStandardMaterial({ ...GLASS, ...glow }));
+        glassMaterials.set(key, physical ? new MeshPhysicalMaterial({ ...GLASS_PHYSICAL, ...glow }) : new MeshStandardMaterial({ ...GLASS_BLENDED, ...glow }));
     }
-    return glassMaterials.get(tinted);
+    return glassMaterials.get(key);
 }
 const noRaycast = () => null;
 const PICK_OUTSET = 0.002; // m: the pick box pokes out of the wall faces (its tint never z-fights the leaf)
@@ -333,6 +343,7 @@ function ResizeHandles({ level, wallId, openingId }) {
 
 export default function Openings3D({ level }) {
     const partStyles = useStore((state) => state.partStyles); // handle styles (doorModel.handleStyle)
+    const isPhysicalGlass = useThree((state) => state.gl.isWebGPURenderer === true); // glassMaterial
     const doors = useMemo(() => buildDoors(level, partStyles), [level, partStyles]);
     const openDoors = useStore((state) => state.openDoors);
     const surfaces = useStore((state) => state.surfaces); // part materials (doorModel.partMaterialId)
@@ -414,7 +425,7 @@ export default function Openings3D({ level }) {
                     else pivotsRef.current.delete(key);
                 }}>
                     <SurfaceMesh geometry={leaf.leaf} materialId={materialOf(door, 'leaf')} tinted={partTint(door, 'leaf')} userData={DOOR_USER_DATA(door.id, 'leaf')} raycast={partRaycast} castShadow receiveShadow />
-                    {leaf.glass && <mesh geometry={leaf.glass} material={glassMaterial(tintOf(door.id))} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
+                    {leaf.glass && <mesh geometry={leaf.glass} material={glassMaterial(tintOf(door.id), isPhysicalGlass)} userData={DOOR_USER_DATA(door.id, 'glass')} raycast={partRaycast} />}
                     {leaf.handle && <SurfaceMesh geometry={leaf.handle} materialId={materialOf(door, 'handle')} tinted={partTint(door, 'handle')} userData={DOOR_USER_DATA(door.id, 'handle')} raycast={partRaycast} castShadow />}
                 </group>
             ))}

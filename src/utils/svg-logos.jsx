@@ -59,6 +59,13 @@ export const svg = {
         <path d="M10 1.8v2.2M10 16v2.2M1.8 10H4M16 10h2.2M4.2 4.2l1.6 1.6M14.2 14.2l1.6 1.6M4.2 15.8l1.6-1.6M14.2 5.8l1.6-1.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
     </svg>,
 
+    // aperture blades around a light point (render settings)
+    render: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="10" cy="10" r="7.4" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M10 2.6l2.6 5.2M17.4 10l-5.2 2.4M10 17.4l-2.6-5.2M2.6 10l5.2-2.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+        <circle cx="10" cy="10" r="1.6" fill="currentColor"/>
+    </svg>,
+
     // stacked layers (list of saved environments)
     environments: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M10 2.5l7.5 4-7.5 4-7.5-4z" fill="currentColor"/>

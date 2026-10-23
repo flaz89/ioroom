@@ -18,6 +18,7 @@ const MIN_SIZE = 20;    // meters
 const MARGIN = 4;       // meters around the project
 const CELL_SIZE = 0.5;  // meters
 const SECTION = 2;      // meters
+const GRID_DROP = 0.03; // meters below the floor plane (WebGPU grid, see below)
 export default function SceneGrid({ visible }) {
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
     const level = useStore((state) => activeLevel(state.plan));
@@ -30,8 +31,15 @@ export default function SceneGrid({ visible }) {
     const SIZE = size;
 
     if (isWebGPU) {
-        // Slightly below y=0 so the room floor hides it, as drei's Grid does on WebGL (avoids z-fighting)
-        return <gridHelper args={[SIZE, SIZE / CELL_SIZE, '#888888', '#555555']} position={[center[0], -0.005, center[1]]} visible={visible} />;
+        // Below y=0 so the room floor hides it, as drei's Grid does on WebGL (avoids z-fighting). GRID_DROP, not
+        // a hair: the overlay pass depth-tests it against the opaque pass, whose depth is rendered with TRAA's
+        // sub-pixel jitter; on a floor seen at a grazing angle that shifts the depth by more than a few mm.
+        // transparent material (fully opaque look): drawn in the post-processing's overlay pass
+        // (PostEffects.jsx), sharp and stable, not through SSGI / TRAA (which faded and flickered its thin lines)
+        return (
+            <gridHelper args={[SIZE, SIZE / CELL_SIZE, '#888888', '#555555']} position={[center[0], -GRID_DROP, center[1]]} visible={visible}
+                material-transparent />
+        );
     }
     return (
         <Grid

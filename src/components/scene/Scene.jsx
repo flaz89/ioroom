@@ -4,9 +4,10 @@ import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { NeutralToneMapping } from 'three';
 import { Canvas } from "@react-three/fiber";
-import { CameraControls } from '@react-three/drei';
+import { CameraControls, PerformanceMonitor } from '@react-three/drei';
 import CameraMemory from './controls/CameraMemory';
 import SceneEnvironment from '../light/SceneEnvironment';
+import PostEffects from './PostEffects';
 import SceneGrid from './helpers/SceneGrid';
 import OrbitAtCursor from './controls/OrbitAtCursor';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
@@ -23,6 +24,20 @@ import WallPanel from '../builder/WallPanel';
 * expereience and update the session
 */
 
+
+// ADAPTIVE RESOLUTION: the canvas pixel ratio follows the frame rate, so the scene never drops below MIN_FPS
+// (screen-space effects cost per pixel: a Retina screen at DPR 2 has 4x the pixels of DPR 1).
+// drei PerformanceMonitor averages the fps and moves a quality factor 0..1 by STEP: below MIN_FPS it goes down,
+// above COMFORT_FPS it goes back up; after FLIPFLOPS up/down swings it settles at the lowest (onFallback).
+// Calibration knobs.
+const MIN_FPS = 30;
+const COMFORT_FPS = 45;
+const DPR_STEP = 0.1;   // factor change per decision (DPR 1..max -> ~10 steps)
+const FLIPFLOPS = 4;
+const MIN_DPR = 1;
+const MAX_DPR = Math.min(2, window.devicePixelRatio || 1);
+// quality factor 0..1 -> pixel ratio MIN_DPR..MAX_DPR, in 0.25 steps (fewer render target resizes)
+const dprFor = (factor) => Math.round((MIN_DPR + factor * (MAX_DPR - MIN_DPR)) * 4) / 4;
 
 /*
 * Async renderer factory for <Canvas gl>: WebGPURenderer must be initialized before the first frame.
@@ -50,6 +65,9 @@ export default function Scene({xrStore}) {
     const maxDistance = useMemo(() => Math.max(20, sceneBounds(level).radius * 2.5), [level]);
     const isPerfVisible = useStore((state) => state.perfOpen);
     const isWireframe = useStore((state) => state.wireframe);
+    const [dpr, setDpr] = useState(MAX_DPR); // adaptive resolution (PerformanceMonitor below)
+    // post-processing runs when at least one of its effects is on (PostEffects.jsx)
+    const hasPostEffects = useStore((state) => state.settings.ssgi || state.settings.ssr);
     const deselectObject = useStore((state) => state.deselectObject);
     // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
@@ -88,7 +106,7 @@ export default function Scene({xrStore}) {
                     position: [4,3,7],
                     fov: 50
                 }}
-                dpr={ [1, 2] }
+                dpr={ dpr }
                 shadows
                 onPointerMissed={onPointerMissed}
                 events={noEvents} // pmndrs pointer events (below) replace R3F's: one event system for mouse, touch, controllers and hands
@@ -96,6 +114,16 @@ export default function Scene({xrStore}) {
                 {/* batchEvents={false}: handlers run inside the DOM event. Registered before CameraControls,
                     so an object/gizmo press can disable orbiting before CameraControls sees the same press */}
                 <PointerEvents batchEvents={false} />
+
+                {/* adaptive resolution: keeps the frame rate at MIN_FPS or above (constants at the top) */}
+                <PerformanceMonitor
+                    bounds={() => [MIN_FPS, COMFORT_FPS]}
+                    factor={1}
+                    step={DPR_STEP}
+                    flipflops={FLIPFLOPS}
+                    onChange={({ factor }) => setDpr(dprFor(factor))}
+                    onFallback={() => setDpr(MIN_DPR)}
+                />
 
                 {/* Performance stats for the DOM panel (both renderers) */}
                 {isPerfVisible && <PerfSampler />}
@@ -128,6 +156,8 @@ export default function Scene({xrStore}) {
                 <CameraMemory />
                 {/* environment lighting (reflections + indirect light) for every material, both backends */}
                 <SceneEnvironment />
+                {/* desktop WebGPU only: SSGI / SSR + TRAA post-processing (takes over the frame render) */}
+                {backend === 'webgpu' && hasPostEffects && <PostEffects />}
 
                 <XR store={xrStore}>
                     <SceneGrid visible={isGridVisible} />

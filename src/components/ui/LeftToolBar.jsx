@@ -4,6 +4,7 @@ import { svg } from "../../utils/svg-logos";
 import { useStore } from "../../store/appStore";
 import SharePanel from "./share-panel/SharePanel";
 import RoomsPanel from "./rooms-panel/RoomsPanel";
+import RenderPanel from "./render-panel/RenderPanel";
 import SunPanel from "./sun-panel/SunPanel";
 import MaterialsPanel from "./materials-panel/MaterialsPanel";
 import BillPanel from "./bill-panel/BillPanel";
@@ -38,14 +39,14 @@ export default function LeftToolBar() {
     const isWireframe = useStore((state) => state.wireframe);
     const toggleWireframe = useStore((state) => state.toggleWireframe);
 
-    // Settings group (performance, environments, share): expanded/collapsed, per device and per page view
+    // Settings group (performance, rendering, environments, share): expanded/collapsed, per device and per page view
     const [isSettingsOpen, setSettingsOpen] = useState(false);
     const openPanel = useStore((state) => state.openPanel);
     const closePanel = useStore((state) => state.closePanel);
     // Collapsing the group unmounts its buttons: a panel opened from it (environments, share) is closed too,
     // otherwise openPanel would keep pointing at a panel that is no longer rendered
     const toggleSettings = () => {
-        if (isSettingsOpen && (openPanel === 'rooms' || openPanel === 'share')) closePanel();
+        if (isSettingsOpen && (openPanel === 'rooms' || openPanel === 'share' || openPanel === 'render')) closePanel();
         setSettingsOpen(!isSettingsOpen);
     };
 
@@ -131,6 +132,8 @@ export default function LeftToolBar() {
                         <>
                             <CircleButton svg={performance} onClick={togglePerf} isActive={isPerfVisible} title={"Performance"}/>
                             <CircleButton text="WF" onClick={toggleWireframe} isActive={isWireframe} title={"Wireframe"}/>
+                            {/* render effects on / off, per device (everyone: it only changes this device's view) */}
+                            <RenderPanel />
                             {/* shared rooms and sharing: owner only for now (guests must not spread new rooms) */}
                             {SYNC_HOST && isAdmin && <RoomsPanel />}
                             {SYNC_HOST && isAdmin && <SharePanel />}
