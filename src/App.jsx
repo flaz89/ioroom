@@ -16,6 +16,7 @@ import PartsMenu from './components/ui/parts-menu/PartsMenu';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
 import PlanGridLegend from './components/builder/PlanGridLegend';
+import LoadingScreen from './components/ui/loading-screen/LoadingScreen';
 
 
 /* 
@@ -28,10 +29,16 @@ export default function App() {
   // Material library (textures stored in R2, server/src/materials.js): loaded once for everyone, rooms
   // may use any of them. Without the sync server only the plain material exists.
   useEffect(() => {
-    if (!SYNC_HOST) return;
+    if (!SYNC_HOST) {
+      useStore.getState().setLibraryMaterials([]); // nothing to load (loading screen)
+      return;
+    }
     listMaterials()
       .then((list) => useStore.getState().setLibraryMaterials(list))
-      .catch((error) => console.warn('Material library not loaded:', error.message));
+      .catch((error) => {
+        console.warn('Material library not loaded:', error.message);
+        useStore.getState().setLibraryMaterials([]); // the scene opens with plain surfaces
+      });
   }, []);
 
   // Environment document: always created (undo / redo, sync/history.js). Shared room (?room=<id> in the
@@ -82,6 +89,9 @@ export default function App() {
       <div className="scene-container">
         <Scene xrStore={xrStore}/>
       </div>
+
+      {/* over everything while the environment loads (opening the app or another environment: a page load) */}
+      <LoadingScreen/>
     </>
   )
 }

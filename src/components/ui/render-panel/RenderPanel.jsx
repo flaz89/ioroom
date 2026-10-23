@@ -1,7 +1,7 @@
 import CircleButton from '../circle-button/CircleButton';
 import { useStore } from '../../../store/appStore';
 import { svg } from '../../../utils/svg-logos';
-import { SSGI_QUALITIES, RENDER_RANGES } from '../../../store/slices/settingSlice';
+import { SSGI_QUALITIES, RENDER_RANGES, QUALITY_PRESETS, RENDER_PRESET_CHOICES } from '../../../store/slices/settingSlice';
 import { LOOK_RANGES } from '../../../store/slices/lookSlice';
 import { isAdmin } from '../../../sync/roomSync';
 import './render-panel.css';
@@ -48,6 +48,15 @@ export default function RenderPanel() {
     const isWebGPU = useStore((state) => state.renderer.backend === 'webgpu');
     const look = useStore((state) => state.look);
     const setLook = useStore((state) => state.setLook);
+    const setRenderPreset = useStore((state) => state.setRenderPreset);
+    // label of the level Auto is at right now (the preset whose switches match), shown next to "Auto"
+    const autoLevel = Object.keys(QUALITY_PRESETS).reverse().find((name) =>
+        Object.entries(QUALITY_PRESETS[name].values).every(([key, value]) => settings[key] === value));
+    const presetLabel = (choice) => {
+        if (choice === 'auto') return autoLevel ? `Auto (${QUALITY_PRESETS[autoLevel].label})` : 'Auto';
+        if (choice === 'custom') return 'Custom';
+        return QUALITY_PRESETS[choice].label;
+    };
 
     return (
         <div className="render-control">
@@ -56,6 +65,17 @@ export default function RenderPanel() {
                 <div className="render-panel">
                     <span className="render-title">Rendering</span>
                     {!isWebGPU && <span className="render-note">These effects need WebGPU: not active on this renderer.</span>}
+                    {/* quality preset: sets the switches below together (Custom = changed by hand) */}
+                    <div className="render-knob render-knob--flush" title="Auto lowers the quality by itself if the frame rate stays below 30 fps">
+                        <span>Quality</span>
+                        <select value={settings.renderPreset} onChange={(event) => setRenderPreset(event.target.value)}>
+                            {RENDER_PRESET_CHOICES.map((choice) => (
+                                // Custom is a state, not a pick: listed only while it is the current one
+                                (choice !== 'custom' || settings.renderPreset === 'custom') &&
+                                    <option key={choice} value={choice}>{presetLabel(choice)}</option>
+                            ))}
+                        </select>
+                    </div>
                     {ROWS.map(({ key, label, hint, needs }) => {
                         const isDisabled = needs != null && !settings[needs];
                         return (
@@ -68,7 +88,7 @@ export default function RenderPanel() {
                                 {/* GI quality preset */}
                                 {key === 'ssgi' && settings.ssgi && (
                                     <div className="render-knob">
-                                        <span>Quality</span>
+                                        <span>GI quality</span>
                                         <select value={settings.ssgiQuality} onChange={(event) => setRenderSetting('ssgiQuality', event.target.value)}>
                                             {Object.entries(SSGI_QUALITIES).map(([id, { label: name }]) => <option key={id} value={id}>{name}</option>)}
                                         </select>

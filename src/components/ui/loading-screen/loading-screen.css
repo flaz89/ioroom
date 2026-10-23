@@ -1,0 +1,84 @@
+/* Loading screen (LoadingScreen.jsx): over the whole app, same background as the scene, glass card */
+.loading-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: radial-gradient(circle at bottom left, #1e1941, transparent 70%),
+                      radial-gradient(circle at top right, rgba(18, 12, 35, 1), transparent 50%),
+                      linear-gradient(-35deg, #091332 0%, #080e2a 100%);
+    opacity: 1;
+    transition: opacity 500ms ease; /* LoadingScreen.jsx FADE_MS */
+    pointer-events: all;            /* nothing behind it can be clicked while loading */
+}
+
+.loading-screen.is-done {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loading-card {
+    width: min(260px, 84vw); /* hugs the 200 px house strip and progress bar */
+    padding: 1.4em 1.2em 1.1em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .9em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 18px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .14) 0%, rgba(255, 255, 255, 0.03) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+}
+
+/* house time-lapse (HouseBuild.jsx): thin lines in the DXF underlay orange (plan-view.css), a small strip */
+.house-build {
+    /* fixed strip width: the houses keep their size whatever the card width (~1.3 px per viewBox unit,
+       viewBox WIDTH = 5 x COLUMN = 155 in HouseBuild.jsx) */
+    width: 200px;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.house-build path {
+    fill: none;
+    stroke: #ff9a1a;
+    stroke-width: 0.6; /* viewBox units: under 1 px at the card's width, like the DXF lines */
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0; /* finished house when the animation does not run (reduced motion) */
+}
+
+/* the houses are drawn in their own units, scaled by HOUSE_SCALE (0.26): same line as the ground */
+.house-build g g path { stroke-width: 2.3; }
+
+/* phases already built in the previous columns: dimmed, the column's own phase stands out */
+.house-build path.is-earlier { opacity: .4; }
+
+.loading-bar {
+    width: 200px;    /* as wide as the house strip (.house-build) */
+    max-width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+}
+
+/* the selection orange of the app */
+.loading-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #ffb733 0%, #ff8c00 100%);
+    transition: width 300ms ease;
+}
+
+.loading-label {
+    font-size: .75em;
+    opacity: .75;
+}

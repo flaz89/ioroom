@@ -29,6 +29,7 @@ import WallPanel from '../builder/WallPanel';
 // (screen-space effects cost per pixel: a Retina screen at DPR 2 has 4x the pixels of DPR 1).
 // drei PerformanceMonitor averages the fps and moves a quality factor 0..1 by STEP: below MIN_FPS it goes down,
 // above COMFORT_FPS it goes back up; after FLIPFLOPS up/down swings it settles at the lowest (onFallback).
+// Below MIN_FPS already at the lowest resolution, the Auto quality preset turns effects off (onDecline).
 // Calibration knobs.
 const MIN_FPS = 30;
 const COMFORT_FPS = 45;
@@ -122,6 +123,8 @@ export default function Scene({xrStore}) {
                     step={DPR_STEP}
                     flipflops={FLIPFLOPS}
                     onChange={({ factor }) => setDpr(dprFor(factor))}
+                    // still too slow at the lowest resolution: Auto quality steps the effects down (settingSlice.js)
+                    onDecline={({ factor }) => { if (factor <= 0) useStore.getState().lowerAutoQuality(); }}
                     onFallback={() => setDpr(MIN_DPR)}
                 />
 

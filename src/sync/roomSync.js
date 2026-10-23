@@ -66,7 +66,8 @@ export const adminToken = readAdminToken();
 // Whether this device belongs to the owner (can create rooms and share them)
 export const isAdmin = adminToken != null && adminToken !== '';
 
-// ROOM STATUS (React: useRoomStatus): 'local' (no room) | 'connecting' | 'connected' | 'not-found' |
+// ROOM STATUS (React: useRoomStatus): 'local' (no room) | 'connecting' | 'connected' | 'synced' (connected
+// and the room's content received: the scene shows the real environment) | 'not-found' |
 // 'elsewhere' (the room was opened in another tab of this browser: this one disconnected)
 let roomStatus = 'local';
 const statusListeners = new Set();
@@ -143,6 +144,10 @@ export function connectRoom(room) {
         setRoomStatus('connecting');
         provider.on('status', ({ status }) => {
             if (status === 'connected') setRoomStatus('connected');
+        });
+        // first (and every re-) sync done: the document holds the room's content (loading screen)
+        provider.on('sync', (isSynced) => {
+            if (isSynced) setRoomStatus('synced');
         });
         provider.on('connection-close', (event) => {
             if (event?.code !== ROOM_NOT_FOUND) return;

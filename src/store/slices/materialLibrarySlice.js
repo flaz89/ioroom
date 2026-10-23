@@ -6,10 +6,12 @@
 */
 export const createMaterialLibrarySlice = (set) => ({
     libraryMaterials: [],
+    // the startup load is over (loaded or failed): the loading screen waits for it (LoadingScreen.jsx)
+    libraryLoaded: false,
 
     libraryFilter: { category: 'floor', kind: null },
 
-    setLibraryMaterials: (libraryMaterials) => set({ libraryMaterials }),
+    setLibraryMaterials: (libraryMaterials) => set({ libraryMaterials, libraryLoaded: true }),
 
     // Another tab resets the chip (its kinds differ)
     setLibraryFilter: (patch) => set((state) => {
