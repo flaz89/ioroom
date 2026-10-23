@@ -13,6 +13,7 @@ export const ROTATION_SNAP_STEPS = [1, 5, 15, 45, 90]; // degrees
 *   default, kept for VR later
 * - ssgiQuality: SSGI sample preset (SSGI_QUALITIES)
 * - giIntensity: strength of the SSGI indirect light (three.js default 10, ours 4)
+* - aoIntensity: darkness of the SSGI ambient occlusion (three.js default 1, range [0, 4])
 * - ssrIntensity: strength of the reflections (1 = physical)
 */
 const RENDER_KEY = 'ioroom.render';
@@ -28,11 +29,13 @@ export const SSGI_QUALITIES = {
 // Slider ranges of the numeric render settings (RenderPanel.jsx), also used to validate saved values
 export const RENDER_RANGES = {
     giIntensity: { min: 0, max: 30, step: 0.5 },
+    aoIntensity: { min: 0, max: 4, step: 0.1 },
     ssrIntensity: { min: 0, max: 2, step: 0.05 }
 };
 export const RENDER_DEFAULTS = {
     ssgi: true, ssr: true, denoise: false, lightProbes: false,
-    ssgiQuality: 'medium', giIntensity: 4, ssrIntensity: 1 // giIntensity 4: Flavio's pick on the test scene (23/10)
+    // giIntensity 4: Flavio's pick on the test scene (23/10); aoIntensity 2: visibly darker corners and contacts
+    ssgiQuality: 'medium', giIntensity: 4, aoIntensity: 2, ssrIntensity: 1
 };
 
 // A saved value is kept only if it has the default's type and is in range / a known preset, so a stale or

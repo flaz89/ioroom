@@ -71,3 +71,15 @@
     width: 100%;
     accent-color: #ff9a1a;
 }
+
+/* "Environment look" heading: separates the shared settings from the device ones above */
+.render-section {
+    margin-top: .3em;
+    padding-top: .55em;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.render-section i { font-weight: 400; opacity: .7; font-style: normal; }
+
+/* knobs not under a switch */
+.render-knob--flush { padding-left: 0; }

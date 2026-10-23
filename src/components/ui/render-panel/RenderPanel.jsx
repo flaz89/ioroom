@@ -2,12 +2,21 @@ import CircleButton from '../circle-button/CircleButton';
 import { useStore } from '../../../store/appStore';
 import { svg } from '../../../utils/svg-logos';
 import { SSGI_QUALITIES, RENDER_RANGES } from '../../../store/slices/settingSlice';
+import { LOOK_RANGES } from '../../../store/slices/lookSlice';
+import { isAdmin } from '../../../sync/roomSync';
 import './render-panel.css';
 
 // Sliders of the numeric settings, each shown under the switch it belongs to (`after`)
 const SLIDERS = [
     { key: 'giIntensity', label: 'GI intensity', after: 'ssgi', format: (value) => value.toFixed(1) },
+    { key: 'aoIntensity', label: 'Ambient occlusion', after: 'ssgi', format: (value) => value.toFixed(1) },
     { key: 'ssrIntensity', label: 'Reflection intensity', after: 'ssr', format: (value) => value.toFixed(2) }
+];
+
+// Look of the environment (store look, lookSlice.js): shared with the room, owner only
+const LOOK_SLIDERS = [
+    { key: 'exposure', label: 'Exposure', hint: 'Overall brightness (tone mapping exposure)' },
+    { key: 'environment', label: 'Environment light', hint: 'Reflections and fill light from the environment map' }
 ];
 
 // One row per render setting (store settings, settingSlice.js RENDER_DEFAULTS), in pipeline order.
@@ -26,6 +35,8 @@ const ROWS = [
 * effect is on.
 * The effects run on the desktop WebGPU renderer only: elsewhere (WebGL fallback, XR) the panel says so and
 * the switches only take effect there.
+* The owner also gets the LOOK of the environment (exposure, environment light): saved in the environment and
+* shared with everyone, VR included (lookSlice.js), unlike the device settings above.
 */
 export default function RenderPanel() {
     // Open state shared with the other toolbar panels: only one open at a time (store/slices/panelSlice.js)
@@ -35,6 +46,8 @@ export default function RenderPanel() {
     const toggleRenderSetting = useStore((state) => state.toggleRenderSetting);
     const setRenderSetting = useStore((state) => state.setRenderSetting);
     const isWebGPU = useStore((state) => state.renderer.backend === 'webgpu');
+    const look = useStore((state) => state.look);
+    const setLook = useStore((state) => state.setLook);
 
     return (
         <div className="render-control">
@@ -71,6 +84,18 @@ export default function RenderPanel() {
                             </div>
                         );
                     })}
+                    {isAdmin && (
+                        <>
+                            <span className="render-title render-section">Environment look <i>(shared)</i></span>
+                            {LOOK_SLIDERS.map(({ key, label, hint }) => (
+                                <div key={key} className="render-knob render-knob--flush" title={hint}>
+                                    <span>{label} <b>{look[key].toFixed(2)}</b></span>
+                                    <input type="range" {...LOOK_RANGES[key]} value={look[key]}
+                                        onChange={(event) => setLook({ [key]: Number(event.target.value) })} />
+                                </div>
+                            ))}
+                        </>
+                    )}
                 </div>
             )}
         </div>

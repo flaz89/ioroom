@@ -46,9 +46,14 @@ export default function Light() {
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
     const hasProbes = useStore((state) => state.settings.lightProbes) && isWebGPU;
     const hasSsgi = useStore((state) => state.settings.ssgi) && isWebGPU; // PostEffects.jsx (Scene.jsx)
+    // look of the environment (store look, shared): environment multiplier and exposure, chosen by the owner
+    const look = useStore((state) => state.look);
+    const gl = useThree((state) => state.gl);
     useLayoutEffect(() => {
-        scene.environmentIntensity = lighting.environment * (hasProbes || hasSsgi ? ENVIRONMENT_WITH_GI : 1);
-    }, [scene, lighting, hasProbes, hasSsgi]);
+        scene.environmentIntensity = lighting.environment * look.environment * (hasProbes || hasSsgi ? ENVIRONMENT_WITH_GI : 1);
+    }, [scene, lighting, hasProbes, hasSsgi, look.environment]);
+    // tone mapping exposure: read by the renderer's output transform (and by the WebGPU post-processing's)
+    useLayoutEffect(() => { gl.toneMappingExposure = look.exposure; }, [gl, look.exposure]);
     const appliedScale = useRef(''); // scale | shadow size | sun distance last applied to the shadow camera
     // Plan size: center [x, z] and radius (m) of the level being worked on
     const level = useStore((state) => activeLevel(state.plan));

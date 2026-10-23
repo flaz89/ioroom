@@ -20,6 +20,7 @@ import { LOCAL, SEED, isOwnOrigin, startHistory } from './history';
 * Saved ruler measures (store measures.items, see store/slices/measuresSlice.js): same, Y.Map "measures".
 * Selection, grab state and settings stay per device. Live motion during drags and object locks: see presence.js.
 * Sun settings of the environment (location, north, day, time): see sunSync.js.
+* Look of the environment (store look: exposure, environment light): Y.Map "look", one key per field.
 * Materials of the room surfaces (store surfaces): Y.Map "surfaces", one key per surface (fieldMapSync.js).
 * Styles of door / window parts (store partStyles, e.g. the handle type): Y.Map "partStyles", one key per part.
 * Prices frozen in the project (store priceSnapshots, bill of quantities): Y.Map "prices", one key per material.
@@ -216,6 +217,12 @@ export function connectRoom(room) {
         read: (state) => state.openDoors,
         write: (values) => useStore.getState().setOpenDoors(values)
     });
+    // look of the environment (exposure, environment light): shared, never in the undo history
+    const unbindLook = bindFieldMap(doc, provider, {
+        name: 'look',
+        read: (state) => state.look,
+        write: (values) => useStore.getState().setLook(values)
+    });
     const unbindPrices = bindFieldMap(doc, provider, {
         name: 'prices',
         read: (state) => state.priceSnapshots,
@@ -229,6 +236,7 @@ export function connectRoom(room) {
         setRoomStatus('local');
         stopHistory();
         unbindPrices();
+        unbindLook();
         unbindDoors();
         unbindPlan();
         unbindAwareness();

@@ -31,7 +31,7 @@ const SSR_RESOLUTION = 0.5;
 *    would inherit it, but TRAA copies the pass depth into its single-sampled history (copyTextureToTexture:
 *    sample counts must match -> a WebGPU validation error every frame). TRAA does the anti-aliasing anyway;
 * 2. SSGI (optional) from color + depth + normal: ambient occlusion and one bounce of indirect diffuse light,
-*    EVERY FRAME from what is on screen (no bake): color * AO + albedo * GI; AO and GI optionally denoised
+*    EVERY FRAME from what is on screen (no bake): (color + albedo * GI) * AO; AO and GI optionally denoised
 *    (settings.denoise: edge-aware spatial filter, on top of the temporal one of TRAA);
 * 3. SSR (optional): screen-space reflections from the same buffers, added on top (it outputs premultiplied
 *    color). reflectNonMetals: dielectrics reflect too (polished marble, glossy wood, ceramics), not only
@@ -101,7 +101,11 @@ export default function PostEffects() {
                 ao = denoise(ao, depth, normal, camera).r;
                 gi = denoise(gi, depth, normal, camera);
             }
-            lit = lit.mul(ao).add(albedo.rgb.mul(gi.rgb));
+            // AO darkens the BOUNCED light too, not only the direct + environment light: a shadowed room is lit
+            // almost only by the bounce, so with `lit * AO + albedo * GI` the AO had nothing to darken and the
+            // bounce from a sunlit wall made the creases next to it BRIGHTER than the rest (corners, objects
+            // against a wall). Applied to the sum, corners and contacts get darker as expected.
+            lit = lit.add(albedo.rgb.mul(gi.rgb)).mul(ao);
         }
         if (isSsr) {
             ssrPass = ssr(color, depth, normal, {
@@ -154,6 +158,7 @@ export default function PostEffects() {
     // live knobs: uniforms only, no rebuild
     const ssgiQuality = useStore((state) => state.settings.ssgiQuality);
     const giIntensity = useStore((state) => state.settings.giIntensity);
+    const aoIntensity = useStore((state) => state.settings.aoIntensity);
     const ssrIntensity = useStore((state) => state.settings.ssrIntensity);
     useEffect(() => {
         if (giPass === null) return;
@@ -161,7 +166,8 @@ export default function PostEffects() {
         giPass.sliceCount.value = slices;
         giPass.stepCount.value = steps;
         giPass.giIntensity.value = giIntensity;
-    }, [giPass, ssgiQuality, giIntensity]);
+        giPass.aoIntensity.value = aoIntensity;
+    }, [giPass, ssgiQuality, giIntensity, aoIntensity]);
     useEffect(() => {
         if (ssrPass !== null) ssrPass.intensity.value = ssrIntensity;
     }, [ssrPass, ssrIntensity]);
