@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { RenderPipeline, UnsignedByteType } from 'three/webgpu';
 import { pass, mrt, output, normalView, diffuseColor, metalness, roughness, velocity, vec4, packNormalToRGB, unpackRGBToNormal, sample } from 'three/tsl';
@@ -7,6 +7,7 @@ import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { useStore } from '../../store/appStore';
+import './perf/viewportTextureLeakFix'; // three r186: glass screen copies freed with their render targets
 import { SSGI_QUALITIES } from '../../store/slices/settingSlice';
 
 // SSGI sampling radius in meters (three.js default 12, sized for big scenes). Indoors light bounces over a
@@ -18,6 +19,14 @@ const SSR_QUALITY = 0.5;
 // SSR rendered at this share of the canvas resolution (each axis): reflections are blurred by roughness
 // anyway, half resolution costs a quarter. 1 = full.
 const SSR_RESOLUTION = 0.5;
+// SSGI render scale (1 = full). Tried 0.5 (24/10): on a Retina screen the SSGI noise pattern (screen-space
+// offsets meant to be resolved by TRAA at full resolution) upscaled into fixed vertical stripes on walls and
+// ceilings that TRAA cannot remove -> kept at full resolution.
+const GI_RESOLUTION = 1;
+// Frame cap on flatscreen: twice the frames of 60 Hz cost twice the GPU (and heat) for a barely visible gain.
+// -1 ms of slack: a 60 Hz screen's frames arrive every 16.6 ms give or take, none must be skipped.
+const MAX_FPS = 60;
+const MIN_FRAME_MS = 1000 / MAX_FPS - 1;
 
 /*
 * Desktop WebGPU post-processing (three.js RenderPipeline, TSL nodes), each effect switchable from the store
@@ -104,6 +113,13 @@ export default function PostEffects() {
         let ssrPass = null;
         if (isSsgi) {
             giPass = own(ssgi(color, depth, normal, camera));
+            // GI_RESOLUTION < 1: SSGINode has no resolution option, but it sizes itself every frame through
+            // setSize (drawing buffer size) and derives every pixel step from that size, so scaling it here
+            // scales the whole effect (see GI_RESOLUTION for why it stays at 1)
+            if (GI_RESOLUTION !== 1) {
+                const setFullSize = giPass.setSize.bind(giPass);
+                giPass.setSize = (width, height) => setFullSize(Math.max(1, Math.round(width * GI_RESOLUTION)), Math.max(1, Math.round(height * GI_RESOLUTION)));
+            }
             giPass.radius.value = SSGI_RADIUS; // quality and intensity: uniforms, set below from the settings
             let ao = giPass.getAONode();
             let gi = giPass.getGINode();
@@ -188,8 +204,18 @@ export default function PostEffects() {
         if (ssrPass !== null) ssrPass.intensity.value = ssrIntensity;
     }, [ssrPass, ssrIntensity]);
 
-    // priority 1: this callback renders the frame (R3F skips its own render)
-    useFrame(() => {
+    // priority 1: this callback renders the frame (R3F skips its own render).
+    // FRAME CAP (flatscreen): at most MAX_FPS; a frame asked for sooner (ProMotion screens run animation frames
+    // at 120 Hz) is skipped and asked again for the next animation frame (the canvas keeps the last image). Not
+    // in XR (the headset sets the pace; WebGL there anyway).
+    const lastRenderRef = useRef(0);
+    useFrame((state) => {
+        const now = performance.now();
+        if (!state.gl.xr?.isPresenting && now - lastRenderRef.current < MIN_FRAME_MS) {
+            state.invalidate();
+            return;
+        }
+        lastRenderRef.current = now;
         overlayCamera.copy(camera); // before the pipeline jitters `camera` (TRAA)
         pipeline.render();
     }, 1);

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { removeAwarenessStates } from 'y-protocols/awareness';
+import { wakeRender } from '../components/scene/perf/renderWake.js';
 
 /*
 * Presence in a shared room, through the room's Yjs AWARENESS (ephemeral: never saved, gone when the
@@ -130,8 +131,21 @@ function deviceName() {
     return 'Device';
 }
 
+// Last visible presence (every client's state without the heartbeat's 'seen'): see wakeOnVisibleChange
+let lastVisible = '';
+// Wakes the on-demand renderer (renderWake.js) only when something VISIBLE changed in the presence (pointers,
+// avatars, live poses, holders, users joining / leaving / going away): the heartbeat renews 'seen' every
+// HEARTBEAT_MS on every device, and waking on it redrew the still scene for nothing (fans on).
+function wakeOnVisibleChange() {
+    const visible = JSON.stringify([...awareness.getStates()].map(([clientId, { seen: _seen, ...state }]) => [clientId, state]));
+    if (visible === lastVisible) return;
+    lastVisible = visible;
+    wakeRender();
+}
+
 // Rebuilds remotePoses / remoteHolders from every other client's awareness state
 function readRemoteStates() {
+    wakeOnVisibleChange();
     remotePoses.clear();
     remoteHolders.clear();
     remotePointers.clear();

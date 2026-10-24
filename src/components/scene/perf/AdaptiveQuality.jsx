@@ -31,9 +31,11 @@ export default function AdaptiveQuality() {
     useFrame(() => {
         const now = performance.now();
         const state = measure.current;
+        state.failed ??= new Set(); // a ref kept by hot reload from an older shape
+        state.good ??= 0;
         if (state.settleUntil === null) state.settleUntil = now + START_SETTLE_MS; // first frame
         if (now < state.settleUntil) return;
-        if (state.start === null) {
+        if (state.start === null || state.deltas === undefined) { // (undefined: a ref kept by hot reload from an older shape)
             state.start = now;
             state.last = now;
             state.deltas = [];

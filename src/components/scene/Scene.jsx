@@ -1,11 +1,12 @@
 import './scene.css'
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Level from './level/Level';
 import { WebGPURenderer } from 'three/webgpu';
 import { NeutralToneMapping } from 'three';
 import { Canvas } from "@react-three/fiber";
 import { CameraControls } from '@react-three/drei';
 import AdaptiveQuality from './perf/AdaptiveQuality';
+import FrameDriver from './perf/FrameDriver';
 import { effectiveDpr } from '../../store/slices/settingSlice';
 import CameraMemory from './controls/CameraMemory';
 import SceneEnvironment from '../light/SceneEnvironment';
@@ -61,6 +62,10 @@ export default function Scene({xrStore}) {
     // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const isBuilder = useStore((state) => state.workspace === 'builder');
+    // FRAME LOOP: in XR the headset drives every frame ('always'); under the 2D plan the 3D is hidden ('never':
+    // nothing drawn at all); otherwise 'demand': frames only while something changes (perf/FrameDriver.jsx)
+    const isXR = useSyncExternalStore(xrStore.subscribe, () => xrStore.getState().mode != null);
+    const frameloop = isXR ? 'always' : isPlanView ? 'never' : 'demand';
 
     // CAMERA DRAG (orbit / pan / zoom with CameraControls): while the camera actually moves, the scene takes no
     // pointer events, so nothing gets hovered (no tint, no hand cursor) under a sweeping mouse.
@@ -96,6 +101,7 @@ export default function Scene({xrStore}) {
                     fov: 50
                 }}
                 dpr={ dpr }
+                frameloop={ frameloop }
                 shadows
                 onPointerMissed={onPointerMissed}
                 events={noEvents} // pmndrs pointer events (below) replace R3F's: one event system for mouse, touch, controllers and hands
@@ -106,6 +112,8 @@ export default function Scene({xrStore}) {
 
                 {/* Auto quality / resolution: keeps the frame rate at 30 fps or above (effects first, then sharpness) */}
                 <AdaptiveQuality />
+                {/* on-demand rendering: keeps frames coming while something changes, then lets the GPU rest */}
+                {frameloop === 'demand' && <FrameDriver />}
 
                 {/* Performance stats for the DOM panel (both renderers) */}
                 {isPerfVisible && <PerfSampler />}
