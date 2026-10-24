@@ -40,13 +40,18 @@ export const RENDER_RANGES = {
 // choices and stay untouched). Ordered from the cheapest. 'auto' starts at the best one and steps down by
 // itself (stepAuto, called by scene/perf/AdaptiveQuality.jsx); 'custom' = switches or GI
 // quality changed by hand.
+// Calibrated on Flavio's MacBook Pro M2 Max at 2x, his case-study room (24/10): GI Medium vs Low quality is
+// hardly visible after TRAA but costs a lot; the reflections (half resolution) are cheap and show on glossy
+// floors (marble, parquet); the GI itself is the big cost. Medium holds 30 fps at 2x on battery, about twice
+// that on the charger. GI quality 'high' (3 x 16) is left to Custom: no preset is worth its cost.
 export const QUALITY_PRESETS = {
     low: { label: 'Low', values: { ssgi: false, ssr: false, ssgiQuality: 'low', denoise: false, lightProbes: false } },
     medium: { label: 'Medium', values: { ssgi: true, ssr: false, ssgiQuality: 'low', denoise: false, lightProbes: false } },
-    high: { label: 'High', values: { ssgi: true, ssr: true, ssgiQuality: 'medium', denoise: false, lightProbes: false } }
+    high: { label: 'High', values: { ssgi: true, ssr: true, ssgiQuality: 'low', denoise: false, lightProbes: false } },
+    ultra: { label: 'Ultra', values: { ssgi: true, ssr: true, ssgiQuality: 'medium', denoise: false, lightProbes: false } }
 };
 const PRESET_ORDER = Object.keys(QUALITY_PRESETS); // cheapest first
-const AUTO_START = 'high';
+const AUTO_START = 'ultra';
 export const RENDER_PRESET_CHOICES = ['auto', ...PRESET_ORDER, 'custom'];
 
 // RESOLUTION (canvas pixel ratio): 'auto' follows the frame rate (stepAuto), or forced by the user.
@@ -116,8 +121,8 @@ function saveAuto(level, dpr) {
 * AUTO LADDER: the steps Auto moves along, best first, as [quality level | null, pixel ratio | null] (null =
 * that part is forced by the user and never moves). Effects go before sharpness (a blurry, noisier image
 * shows more than missing reflections, especially on a phone):
-*   both Auto:       High @ max -> Medium @ max -> Medium @ 1.5 -> Low @ 1.5 -> Low @ 1
-*   quality only:    High -> Medium -> Low
+*   both Auto:       Ultra @ max -> High @ max -> Medium @ max -> Medium @ 1.5 -> Low @ 1.5 -> Low @ 1
+*   quality only:    Ultra -> High -> Medium -> Low
 *   resolution only: max -> 1.5 -> 1
 */
 export function autoLadder(settings) {
@@ -127,7 +132,9 @@ export function autoLadder(settings) {
     if (isQualityAuto && isResolutionAuto) {
         const [top, last] = [dprs[0], dprs[dprs.length - 1]];
         const mid = dprs.length > 2 ? dprs[1] : top;
-        return [['high', top], ['medium', top], ...(mid !== top ? [['medium', mid]] : []), ['low', mid], ...(last !== mid ? [['low', last]] : [])];
+        // every level but Low at full sharpness first, then Medium sharper-to-softer, then Low
+        const sharp = [...PRESET_ORDER].reverse().filter((level) => level !== 'low').map((level) => [level, top]);
+        return [...sharp, ...(mid !== top ? [['medium', mid]] : []), ['low', mid], ...(last !== mid ? [['low', last]] : [])];
     }
     if (isQualityAuto) return [...PRESET_ORDER].reverse().map((level) => [level, null]);
     if (isResolutionAuto) return dprs.map((dpr) => [null, dpr]);

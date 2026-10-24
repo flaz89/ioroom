@@ -6,6 +6,10 @@ import { setWakeHandler } from './renderWake';
 // Calibration knobs
 const AWAKE_MS = 1500; // frames keep coming this long after the last change: camera damping, door easing
                        // (~0.6 s) and TRAA converging on a still image (it averages ~30 jittered frames)
+// Store keys that only REPORT on the rendering and change nothing on screen: they must not wake it, or the
+// report feeds itself (the performance panel publishes stats every 500 ms -> wake -> frames -> new stats...:
+// with the panel open the scene never rested)
+const REPORT_ONLY_KEYS = new Set(['perf']); // perfSlice.js: { stats }
 
 /*
 * ON-DEMAND RENDERING (flatscreen; the Canvas uses frameloop "demand", Scene.jsx): nothing is drawn while the
@@ -16,7 +20,8 @@ const AWAKE_MS = 1500; // frames keep coming this long after the last change: ca
 * avatars) needs frames to keep coming: this driver keeps invalidating every animation frame while AWAKE, i.e.
 * for AWAKE_MS after the last
 *   - pointer / wheel / keyboard event or window resize,
-*   - change of the app store (settings, plan, materials, sun, room content from the other devices...),
+*   - change of the app store (settings, plan, materials, sun, room content from the other devices...;
+*     not the REPORT_ONLY_KEYS),
 *   - wakeRender() call (renderWake.js: presence updates).
 * The frame-rate cap (60 fps) is in PostEffects.jsx, where the frame is actually rendered.
 * ponytail: continuous animations (the post-it motion graphics) freeze while the scene is still; give them a
@@ -40,7 +45,12 @@ export default function FrameDriver() {
         };
         const events = ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'keyup', 'resize'];
         events.forEach((type) => window.addEventListener(type, wake, { passive: true }));
-        const unsubscribe = useStore.subscribe(wake);
+        // a store change wakes the rendering unless it touched only REPORT_ONLY_KEYS
+        const unsubscribe = useStore.subscribe((state, previous) => {
+            for (const key in state) {
+                if (state[key] !== previous[key] && !REPORT_ONLY_KEYS.has(key)) return wake();
+            }
+        });
         setWakeHandler(wake);
         wake(); // a few frames to start with (and after coming back from XR / the 2D plan)
         return () => {
