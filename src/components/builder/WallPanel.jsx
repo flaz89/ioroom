@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, dormerLines, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -29,7 +29,54 @@ const LINE_JUSTIFY = [
 export default function WallPanel() {
     const isOpening = useStore((state) => state.selectedOpening != null);
     const isFloor = useStore((state) => state.selectedFloorId != null);
-    return isOpening ? <OpeningPanel /> : isFloor ? <FloorPanel /> : <WallsPanel />;
+    const isDormer = useStore((state) => state.selectedDormer != null);
+    return isOpening ? <OpeningPanel /> : isDormer ? <DormerPanel /> : isFloor ? <FloorPanel /> : <WallsPanel />;
+}
+
+/*
+* Panel of the selected DORMER (store selectedDormer; planModel dormers): width, setback (front from the eave),
+* eave and ridge heights (above the walking level, like the roof's); the ridge length in the plan follows
+* the ridge height. A value that would not fit (planModel.dormerFits) is ignored. ← back to the roof.
+*/
+function DormerPanel() {
+    const { ceilingId, dormerId } = useStore((state) => state.selectedDormer);
+    const level = useStore((state) => activeLevel(state.plan));
+    const setActiveLevel = useStore((state) => state.setActiveLevel);
+    const setSelectedDormer = useStore((state) => state.setSelectedDormer);
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === dormerId);
+    if (!dormer) return null; // removed (undo, another device)
+    const lines = dormerLines(ceiling, level, dormer);
+    const apply = (key) => (text) => {
+        const next = updateDormer(level, ceilingId, dormerId, { [key]: Number(String(text).replace(',', '.')) });
+        if (next) setActiveLevel(next);
+    };
+    const remove = () => {
+        setActiveLevel(removeDormer(level, ceilingId, dormerId));
+        setSelectedDormer(null);
+    };
+    return (
+        <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="wall-panel-header">
+                <button className="wall-panel-close" onClick={() => setSelectedDormer(null)} title="Back to the roof">←</button>
+                <span>Dormer</span>
+                <button className="wall-panel-close" onClick={() => setSelectedDormer(null)} title="Deselect (Esc)">×</button>
+            </div>
+            <Field label="Width" value={dormer.width} onApply={apply('width')} />
+            <Field label="From eave" value={dormer.setback} onApply={apply('setback')} />
+            <Field label="Eave height" value={dormer.eaveHeight} onApply={apply('eaveHeight')} />
+            <Field label="Ridge height" value={dormer.ridgeHeight} onApply={apply('ridgeHeight')} />
+            {lines && (
+                <div className="wall-panel-field" title="Front wall above the roof (eave height - roof height at the front) and pitch of the dormer's roof">
+                    <span>Front · pitch</span>
+                    <span className="wall-panel-readout">{`${(dormer.eaveHeight - lines.frontHeight).toFixed(2)} m · ${(Math.atan((dormer.ridgeHeight - dormer.eaveHeight) / (dormer.width / 2)) * 180 / Math.PI).toFixed(1)}°`}</span>
+                </div>
+            )}
+            <div className="wall-panel-actions">
+                <button className="is-danger" onClick={remove} title="Delete this dormer">Delete</button>
+            </div>
+        </div>
+    );
 }
 
 /*
@@ -45,6 +92,8 @@ function FloorPanel() {
     const setActiveLevel = useStore((state) => state.setActiveLevel);
     const setSelectedFloorId = useStore((state) => state.setSelectedFloorId);
     const deleteFloor = useStore((state) => state.deleteFloor);
+    const dormerPlacing = useStore((state) => state.dormerPlacing);
+    const setDormerPlacing = useStore((state) => state.setDormerPlacing);
     const key = isCeiling ? 'ceilings' : 'floors';
     const areas = level[key] ?? [];
     const index = areas.findIndex((area) => area.id === floorId);
@@ -90,6 +139,16 @@ function FloorPanel() {
                 const next = setRoofBeams(level, floorId, Number(text));
                 if (next) setActiveLevel(next);
             }} />}
+            {/* pitched roof: add a dormer (the next click on one of its facets places it, PlanView2D.jsx) */}
+            {isCeiling && type !== 'flat' && (
+                <div className="wall-panel-actions">
+                    <button className={dormerPlacing === floorId ? 'is-active' : undefined}
+                        onClick={() => setDormerPlacing(dormerPlacing === floorId ? null : floorId)}
+                        title="Click on a facet of this roof to place a dormer (Esc cancels)">
+                        {dormerPlacing === floorId ? 'Click on a facet…' : 'Add dormer'}
+                    </button>
+                </div>
+            )}
             {/* hip roof with a moved / resized ridge (dragged in the plan): back to the centered one */}
             {isCeiling && roofRidge(areas[index], level)?.isCustom && (
                 <div className="wall-panel-actions">

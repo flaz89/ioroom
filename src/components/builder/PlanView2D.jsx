@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addDormer, newDormerId, dormerLines, dragDormer, roofDormers, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -16,6 +16,7 @@ const CLICK_SLOP = 4;            // px: a press that moves less than this is a c
 const VERTEX_RADIUS = 6;         // px: visible corner handle
 const VERTEX_HIT_RADIUS = 14;    // px: touch-friendly invisible hit area around each handle
 const LABEL_OFFSET = 14;         // px: length labels sit this far inside the room from the wall's inner line
+const DORMER_SNAP_RADIUS = 6;   // px: dormer cheeks onto wall faces, its ridge onto the main ridge (gentler)
 const VERTEX_SNAP_RADIUS = 12;   // px: the wall tool snaps to an existing corner closer than this
 const FLIP_GAP = 18;             // px: flip button center, beyond the wall's outer face
 const CAD_SNAP_MARK = 5;         // px: radius of the mark of a point snapped on a DXF underlay
@@ -56,6 +57,13 @@ const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening,
 *   handles; a handle drag resizes it along its axis (the other end stays), a drag on the line moves it
 *   (grid snap); planModel.setRoofRidge refuses an end outside the ceiling (the last valid one stays); a
 *   local draft saved on release, one undo step.
+*   DORMERS of the selected pitched ceiling (planModel dormerLines): front, two cheeks (the width) and ridge
+*   lines; handles: the ridge's back end (ridge height: length <-> height; snaps onto the main ridge), the front
+*   (setback), each cheek's front end (that cheek only; snaps onto wall faces), a drag on any of its lines
+*   moves it (along the eave and up / down the slope; the nearer cheek snaps onto a wall face). While a
+*   dormer is dragged its measures show live: width, front from the eave, ridge length. A press
+*   that does not move selects it (WallPanel.jsx DormerPanel). "Add dormer" (store dormerPlacing): the next
+*   click on that roof places one there (planModel.addDormer).
 * - FLOOR TOOL (store planTool 'floor', button in the left toolbar): floors are DRAWN, never built from the
 *   walls. Click = place a vertex of the floor polygon; a click on its first point (or on the last one again,
 *   double click) or Enter closes it: one floor, one undo step (planModel.addFloor refuses fewer than 3
@@ -166,6 +174,7 @@ export default function PlanView2D() {
     const setSelectedWallId = useStore((state) => state.setSelectedWallId);
     const selectedOpening = useStore((state) => state.selectedOpening);
     const selectedOpeningId = selectedOpening?.openingId;
+    const selectedDormer = useStore((state) => state.selectedDormer);
     const [box, setBox] = useState(null);           // { start, end } screen points of the box being dragged
     const [isPanning, setIsPanning] = useState(false); // right / middle mouse pan: grabbing cursor
     const [draft, setDraft] = useState(null); // { level, point } while a corner is dragged: preview, not saved
@@ -266,7 +275,10 @@ export default function PlanView2D() {
                 if (toolPoints.length > 0 || lengthAsk) { setToolPoints([]); setLengthAsk(null); } else setUnderlayTool(null);
                 return;
             }
-            if (chain) setChain(null);
+            const { dormerPlacing, selectedDormer, setDormerPlacing, setSelectedDormer } = useStore.getState();
+            if (dormerPlacing) setDormerPlacing(null);
+            else if (selectedDormer) setSelectedDormer(null);
+            else if (chain) setChain(null);
             else if (floorPoints.length > 0) setFloorPoints([]);
             else if (selectedFloorId) setSelectedFloorId(null);
             else if (isDrawing) setPlanTool('select');
@@ -399,6 +411,19 @@ export default function PlanView2D() {
 
     // Floor tool click: a new vertex; on the first point (or the last one again) the polygon closes
     const placeFloorPoint = ({ point, raw, kind }) => {
+        // "Add dormer": this click places a dormer on the facet under the pointer (raw: never snapped)
+        const placing = useStore.getState().dormerPlacing;
+        if (placing) {
+            const id = newDormerId();
+            const next = addDormer(level, placing, raw, id);
+            if (next) {
+                setActiveLevel(next);
+                useStore.getState().setSelectedDormer({ ceilingId: placing, dormerId: id });
+            }
+            return;
+        }
+        // a dormer selected: a click elsewhere only deselects it (back to its roof)
+        if (useStore.getState().selectedDormer) return useStore.getState().setSelectedDormer(null);
         // no polygon being drawn: a click inside a floor (not on a snap target) selects it; a click inside the
         // floor ALREADY selected starts a new polygon there (a floor drawn over another one: e.g. a raised zone);
         // with a floor selected, a click on empty space only deselects
@@ -501,6 +526,15 @@ export default function PlanView2D() {
             return;
         }
         // selected hip roof's ridge: a handle (data-ridge-end 0 / 1) or the line (data-ridge-line) starts a drag
+        // a dormer's handle or line (data-dormer-id + data-dormer-handle): drag it, or select it on a plain click
+        if (isFloorTool && dataset.dormerId != null) {
+            const ceiling = (level.ceilings ?? []).find((c) => c.id === selectedFloorId);
+            const dormer = ceiling && roofDormers(ceiling).find((d) => d.id === dataset.dormerId);
+            if (dormer) {
+                gestureRef.current = { kind: 'dormer', ceilingId: selectedFloorId, dormer, handle: dataset.dormerHandle, start: toWorld(view, size.w, size.h, point.x, point.y), moved: false };
+                return;
+            }
+        }
         if (isFloorTool && (dataset.ridgeEnd != null || dataset.ridgeLine != null)) {
             const ridge = roofRidge((level.ceilings ?? []).find((c) => c.id === selectedFloorId), level);
             gestureRef.current = { kind: 'ridge', ceilingId: selectedFloorId, end: dataset.ridgeEnd != null ? Number(dataset.ridgeEnd) : null, ridge, start: snappedWorld(point) };
@@ -541,7 +575,17 @@ export default function PlanView2D() {
         if (underlayTool && pointers.size <= 1) setToolHover(underlayToolPoint(point, event.shiftKey));
         if (previous == null) return;
         const gesture = gestureRef.current;
-        if (pointers.size === 1 && gesture?.kind === 'ridge') {
+        if (pointers.size === 1 && gesture?.kind === 'dormer') {
+            // the pointer as is: dragDormer projects it onto the eave / the slope
+            // ponytail: no grid snap on dormer drags (the panel takes exact values)
+            const to = toWorld(view, size.w, size.h, point.x, point.y);
+            const { start } = gesture;
+            if (Math.hypot(to[0] - start[0], to[1] - start[1]) > 1e-6) gesture.moved = true;
+            // snaps: the cheeks onto wall faces, the ridge's back end onto the main ridge (planModel.dragDormer)
+            const snap = { lines: rulerTargets(level, []).segments, radius: DORMER_SNAP_RADIUS / view.scale };
+            const next = gesture.moved && dragDormer(level, gesture.ceilingId, gesture.dormer.id, gesture.handle, to, start, gesture.dormer, snap);
+            if (next) setDraft({ level: next, point: to, guides: [], isFloor: true }); // invalid: keep the last valid one
+        } else if (pointers.size === 1 && gesture?.kind === 'ridge') {
             // an end: the other end stays, the dragged one follows the pointer (projected onto the ridge axis by
             // setRoofRidge); the line: both ends move by the pointer's (snapped) displacement
             const to = snappedWorld(point);
@@ -617,6 +661,10 @@ export default function PlanView2D() {
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
         if ((gesture.kind === 'vertex' || gesture.kind === 'floorVertex' || gesture.kind === 'ridge') && draft) setActiveLevel(draft.level);
+        if (gesture.kind === 'dormer') {
+            if (gesture.moved && draft) setActiveLevel(draft.level); // one undo step
+            useStore.getState().setSelectedDormer({ ceilingId: gesture.ceilingId, dormerId: gesture.dormer.id });
+        }
         if (gesture.kind === 'measureEnd' && endDrag) {
             const item = measureList.find((entry) => entry.id === endDrag.id);
             const y = endDrag.which === 'a' ? item.ya : item.yb; // the end keeps its height
@@ -769,6 +817,39 @@ export default function PlanView2D() {
                             <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
                         </g>
                     ))}
+                    {/* ceiling tool: the dormers of the selected pitched ceiling (lines + handles) */}
+                    {isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
+                        const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
+                        if (!ceiling) return null;
+                        const selectedId = selectedDormer?.ceilingId === ceiling.id ? selectedDormer.dormerId : null;
+                        return roofDormers(ceiling).map((dormer) => {
+                            const lines = dormerLines(ceiling, shown, dormer);
+                            if (!lines) return null;
+                            const segments = [lines.front, ...lines.cheeks, lines.ridge];
+                            const handle = (key, p, name) => (
+                                <g key={key}>
+                                    <circle className="plan-floor-handle-hit" data-dormer-id={dormer.id} data-dormer-handle={name} cx={p[0]} cy={p[1]} r={VERTEX_HIT_RADIUS / view.scale} />
+                                    <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
+                                </g>
+                            );
+                            return (
+                                <g key={dormer.id} className={dormer.id === selectedId ? 'plan-dormer is-selected' : 'plan-dormer'}>
+                                    {segments.map(([a, b], i) => (
+                                        <line key={`hit${i}`} className="plan-ridge-hit" data-dormer-id={dormer.id} data-dormer-handle="move" x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} strokeWidth={VERTEX_HIT_RADIUS / view.scale} />
+                                    ))}
+                                    {segments.map(([a, b], i) => (
+                                        <line key={`l${i}`} className={i === segments.length - 1 ? 'plan-dormer-ridge' : 'plan-dormer-line'} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} vectorEffect="non-scaling-stroke" />
+                                    ))}
+                                    {dormer.id === selectedId && [
+                                        handle('rb', lines.ridge[1], 'ridgeBack'),
+                                        handle('fr', lines.ridge[0], 'front'),
+                                        handle('c0', lines.cheeks[0][0], 'cheek0'),
+                                        handle('c1', lines.cheeks[1][0], 'cheek1')
+                                    ]}
+                                </g>
+                            );
+                        });
+                    })()}
                     {/* ceiling tool: the ridge of the selected hip roof (line + 2 handles), over the vertex handles */}
                     {isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
                         const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
@@ -846,6 +927,21 @@ export default function PlanView2D() {
             {isReady && isDrawing && chain && hover && lengthLabel(view, size, { a: chain, b: hover.point })}
             {isReady && isTraceTool && traceHover && lengthLabel(view, size, traceHover.level.walls.find((wall) => wall.id === 'preview'), ` · ${Math.round(traceHover.trace.thickness * 100)} cm`)}
             {isReady && isFloorTool && floorPoints.length > 0 && hover && lengthLabel(view, size, { a: floorPoints[floorPoints.length - 1], b: hover.point })}
+            {/* ceiling tool: LIVE measures of the dormer being dragged (width, front from the eave, ridge length) */}
+            {isReady && gestureRef.current?.kind === 'dormer' && draft && (() => {
+                const { ceilingId, dormer: { id } } = gestureRef.current;
+                const ceiling = (shown.ceilings ?? []).find((item) => item.id === ceilingId);
+                const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === id);
+                const lines = dormer && dormerLines(ceiling, shown, dormer);
+                if (!lines) return null;
+                const [front, back] = lines.ridge;
+                const eavePoint = [front[0] - lines.edge.n[0] * dormer.setback, front[1] - lines.edge.n[1] * dormer.setback];
+                return [
+                    lengthLabel(view, size, { id: 'dormer-width', a: lines.front[0], b: lines.front[1] }),
+                    dormer.setback > 0.005 ? lengthLabel(view, size, { id: 'dormer-setback', a: eavePoint, b: front }) : null,
+                    lengthLabel(view, size, { id: 'dormer-ridge', a: front, b: back })
+                ];
+            })()}
             {/* ceiling tool: the selected hip roof's ridge length (null for a square's point ridge) */}
             {isReady && isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
                 const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);

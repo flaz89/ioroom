@@ -60,7 +60,14 @@ export const createWorkspaceSlice = (set, get) => ({
     setSelectedOpening: (selectedOpening) => set({ selectedOpening, selectedWallIds: [] }),
 
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null, selectedDormer: null, dormerPlacing: null }),
+
+    // DORMERS (ceiling tool, PlanView2D.jsx / WallPanel.jsx): the selected one { ceilingId, dormerId } and the
+    // ceiling a new one is being placed on ("Add dormer": the next click on that roof's facet places it)
+    selectedDormer: null,
+    setSelectedDormer: (selectedDormer) => set({ selectedDormer, dormerPlacing: null }),
+    dormerPlacing: null,
+    setDormerPlacing: (dormerPlacing) => set({ dormerPlacing, selectedDormer: null }),
 
     partsMenu: null,
     setPartsMenu: (partsMenu) => set({ partsMenu }),

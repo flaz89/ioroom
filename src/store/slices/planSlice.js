@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN, activeLevel, beamsFaceId, flipWall, newWallId, removeFloor, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
+import { DEFAULT_PLAN, activeLevel, beamsFaceId, dormerWallsFaceId, flipWall, newWallId, removeFloor, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
 
 /*
 * The floor plan of the environment (plan/planModel.js): walls and floors the room is built from.
@@ -53,7 +53,8 @@ export const createPlanSlice = (set, get) => ({
     // quantities): one undo step
     deleteFloor: (floorId, key = 'floors') => {
         get().setActiveLevel(removeFloor(activeLevel(get().plan), floorId, key));
-        const { [floorId]: _removed, [beamsFaceId(floorId)]: _beams, ...remaining } = get().surfaces; // a ceiling's beams too
+        // a ceiling's beams and dormer walls too
+        const { [floorId]: _removed, [beamsFaceId(floorId)]: _beams, [dormerWallsFaceId(floorId)]: _dormers, ...remaining } = get().surfaces;
         set({ surfaces: remaining, selectedFloorId: null });
     },
 

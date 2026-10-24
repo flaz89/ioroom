@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -132,6 +132,11 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
     const ridge = roofRidge(hip.ceilings.at(-1), hip);
     assert.ok(!ridge.isCustom && Math.abs(ridge.height - 4.5) < 1e-9 && ridge.a[0] === 2 && ridge.b[0] === 6 && ridge.a[1] === 2, 'default ridge');
     assert.equal(roofRidge(gable.ceilings.at(-1), gable), null, 'only hip roofs');
+    // a plan a few mm off a rectangle: the ridge ends differ by a hair in height, both must be kept (24/10 bug:
+    // "Center ridge" collapsed the ridge to one point)
+    const skew = setRoofRidgeHeight(setCeilingHeight(setCeilingRoof(addFloor(level, [[0, 0], [12, 0], [12.003, 6], [0, 6.002]], 's', 'ceilings'), 's', 'hip'), 's', 2.5), 's', 5);
+    const skewRidge = roofRidge(skew.ceilings.at(-1), skew);
+    assert.ok(Math.abs(Math.hypot(skewRidge.b[0] - skewRidge.a[0], skewRidge.b[1] - skewRidge.a[1]) - 6) < 0.01, 'near-rectangle: a 6 m ridge, not a point');
     const moved = setRoofRidge(hip, 'r', [[1, 1], [7, 1.3]]); // b off the axis: projected back onto it
     const mr = moved.ceilings.at(-1);
     assert.deepEqual(mr.roof.ridge, [[1, 1], [7, 1]], 'kept parallel to the longest side');
@@ -181,6 +186,139 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
     for (let i = 0; i < bp.count; i++) if (Math.abs(bp.getZ(i) - 2) < 1e-6 && bp.getY(i) < 4.5 - 0.3) atRidge++;
     assert.ok(atRidge > 0, 'bottom corners reach the ridge plane (beams joined under the ridge)');
     assert.equal(setRoofBeams(beamed, 'r', 0).ceilings.at(-1).roof.beams, undefined, '0 removes them');
+    // DORMERS on the gable (eaves z = 0 and z = 4 at 2.5, ridge z = 2 at 4.5: 1 m rise per meter)
+    assert.equal(addDormer(gable, 'r', [4, 9]), null, 'not on the roof');
+    const withDormer = addDormer(gable, 'r', [3, 0.8], 'd1');
+    const dormer = roofDormers(withDormer.ceilings.at(-1))[0];
+    assert.ok(dormer.eave === 0 && Math.abs(dormer.t - 3) < 1e-9 && dormer.width === 1.4 && dormer.setback === 0.5, 'placed on the facet clicked');
+    assert.ok(Math.abs(dormer.eaveHeight - (2.5 + 0.5 + 1.2)) < 1e-9 && dormer.ridgeHeight > dormer.eaveHeight && dormer.ridgeHeight < 4.5, 'default heights');
+    const lines = dormerLines(withDormer.ceilings.at(-1), withDormer, dormer);
+    assert.ok(Math.abs(lines.front[0][0] - 2.3) < 1e-9 && Math.abs(lines.front[1][0] - 3.7) < 1e-9 && Math.abs(lines.front[0][1] - 0.5) < 1e-9, 'front line');
+    assert.ok(Math.abs(lines.cheeks[0][1][1] - 1.7) < 1e-9, 'cheeks end where the roof reaches the dormer eave (4.2 m: 1.7 m in)');
+    assert.ok(Math.abs(lines.ridge[1][1] - (dormer.ridgeHeight - 2.5)) < 1e-9, 'ridge ends where the roof reaches its height');
+    // ridge back end dragged 0.1 m back towards the eave: ridge height -0.1 (length <-> height); the default one
+    // is as long as the facet allows, so a longer one is refused
+    const shorter = dragDormer(withDormer, 'r', 'd1', 'ridgeBack', [3, lines.ridge[1][1] - 0.1], null, dormer);
+    assert.ok(Math.abs(roofDormers(shorter.ceilings.at(-1))[0].ridgeHeight - dormer.ridgeHeight + 0.1) < 1e-9, 'shorter ridge = lower ridge');
+    assert.equal(dragDormer(withDormer, 'r', 'd1', 'ridgeBack', [3, 2.5], null, dormer), null, 'never past the main ridge');
+    // front to the eave, width by a cheek, the whole dormer moved: heights follow the roof under it
+    assert.equal(roofDormers(dragDormer(withDormer, 'r', 'd1', 'front', [3, 0], null, dormer).ceilings.at(-1))[0].setback, 0, 'front flush with the eave');
+    // a cheek alone: the right one to x = 4, the left one stays at 2.3
+    const wider = roofDormers(dragDormer(withDormer, 'r', 'd1', 'cheek1', [4, 0.5], null, dormer).ceilings.at(-1))[0];
+    assert.ok(Math.abs(wider.width - 1.7) < 1e-9 && Math.abs(wider.t - 3.15) < 1e-9, 'one cheek moved');
+    // SNAPS: a wall face along z (x = 4.1) catches the right cheek within 0.2 m; the ridge's back end near the
+    // main ridge (z = 2) goes onto it
+    const snap = { lines: [[[4.1, 0], [4.1, 4]], [[0, 1], [8, 1]]], radius: 0.2 };
+    const onWall = roofDormers(dragDormer(withDormer, 'r', 'd1', 'cheek1', [4, 0.5], null, dormer, snap).ceilings.at(-1))[0];
+    assert.ok(Math.abs(onWall.t + onWall.width / 2 - 4.1) < 1e-9, 'cheek on the wall face');
+    const movedOnWall = roofDormers(dragDormer(withDormer, 'r', 'd1', 'move', [3.3, 0.8], [3, 0.8], dormer, snap).ceilings.at(-1))[0];
+    assert.ok(Math.abs(movedOnWall.t + movedOnWall.width / 2 - 4.1) < 1e-9, 'moved: the nearer cheek snaps');
+    const lowered = updateDormer(withDormer, 'r', 'd1', { ridgeHeight: 4.35 });
+    const toMain = roofDormers(dragDormer(lowered, 'r', 'd1', 'ridgeBack', [3, 1.9], null, roofDormers(lowered.ceilings.at(-1))[0], snap).ceilings.at(-1))[0];
+    assert.ok(Math.abs(toMain.ridgeHeight - 4.5) < 1e-9, 'ridge back end onto the main ridge');
+    const shifted = roofDormers(dragDormer(withDormer, 'r', 'd1', 'move', [4, 0.7], [3, 0.8], dormer).ceilings.at(-1))[0];
+    assert.ok(Math.abs(shifted.t - 4) < 1e-9 && Math.abs(shifted.setback - 0.4) < 1e-9 && Math.abs(shifted.eaveHeight - dormer.eaveHeight + 0.1) < 1e-9, 'moved with the roof');
+    // never: an eave below the front, a ridge below the eave, a ridge past the facet, outside the eave
+    assert.equal(updateDormer(withDormer, 'r', 'd1', { eaveHeight: 2.9 }), null, 'front wall needed');
+    assert.equal(updateDormer(withDormer, 'r', 'd1', { ridgeHeight: dormer.eaveHeight }), null, 'pitched roof needed');
+    assert.equal(updateDormer(withDormer, 'r', 'd1', { ridgeHeight: 4.6 }), null, 'ridge inside the facet');
+    assert.equal(updateDormer(withDormer, 'r', 'd1', { t: 0.5 }), null, 'inside the eave');
+    assert.equal(roofDormers(removeDormer(withDormer, 'r', 'd1').ceilings.at(-1)).length, 0, 'removed');
+    // 3D: 2 cheeks + 2 small facets (front open, its outline kept); every roof point on its plane, valley points on the main roof
+    const rc = withDormer.ceilings.at(-1);
+    const solids = dormerSolids(rc, withDormer, dormer);
+    assert.equal(solids.walls.length, 2, 'the two cheeks: the front is open');
+    assert.equal(solids.roofs.length, 2);
+    const { front } = solids;
+    assert.ok(front.points.every((p) => Math.abs(p[2] - 0.5) < 1e-9) && Math.abs(front.points[0][1] - 3) < 1e-9 && Math.abs(Math.max(...front.points.map((p) => p[1])) - dormer.ridgeHeight) < 1e-9, 'front: on the setback line, from the roof (3.0) to the ridge');
+    for (const roof of solids.roofs) {
+        const [, , ridgeBack, valley] = roof.points;
+        assert.ok(Math.abs(roofHeightAt(rc, withDormer, [ridgeBack[0], ridgeBack[2]]) - ridgeBack[1]) < 1e-9 && Math.abs(roofHeightAt(rc, withDormer, [valley[0], valley[2]]) - valley[1]) < 1e-9, 'valley ends on the main roof');
+    }
+    const faces = roomFaces(withDormer);
+    assert.ok(faces.some((f) => f.surfaceId === 'r~dormerwalls') && surfaceLabel('r~dormerwalls', withDormer) === 'Ceiling · dormer walls', 'dormer walls: own surface');
+    assert.ok(surfaceAreas(withDormer)['r~dormerwalls'] > 0, 'dormer walls in the bill');
+    // the main facet is OPEN under the dormer: no triangle of the ceiling covers a point inside the footprint
+    // (except the dormer's own small roofs, which are higher), and its area drops by the hole
+    const ceilingGeometry = faces.find((f) => f.surfaceId === 'r').geometry;
+    const pos = ceilingGeometry.attributes.position, idx = ceilingGeometry.index.array;
+    const probe = [3, 1.0]; // inside the footprint (x 2.3..3.7, z 0.5..), on the main roof at y = 3.5
+    let covered = false;
+    for (let i = 0; i < idx.length; i += 3) {
+        const tri = [0, 1, 2].map((j) => [pos.getX(idx[i + j]), pos.getY(idx[i + j]), pos.getZ(idx[i + j])]);
+        const inside = pointInPolygon(probe, tri.map((p) => [p[0], p[2]]));
+        if (inside && Math.min(...tri.map((p) => p[1])) < 3.6) covered = true; // a main-roof triangle under it
+    }
+    assert.ok(!covered, 'hole in the main facet under the dormer');
+    assert.ok(surfaceAreas(withDormer).r < surfaceAreas(gable).r + 3, 'area: hole subtracted, small roofs added');
     assert.equal(setCeilingRoof(hip, 'r', 'flat').ceilings.at(-1).roof, undefined, 'flat drops the roof');
+}
+// WALLS UNDER A PITCHED ROOF (3c): the 6 x 6 m test room (walls at x = +-3 and z = -3, 2.7 m) under a gable
+// 7 x 7 m roof, eaves on z = -3.5 / 3.5 at 2.0 m, ridge on z = 0 at 4.0 m (rise 2 / 3.5 per meter)
+{
+    const covered = setRoofRidgeHeight(setCeilingHeight(setCeilingRoof(addFloor(level, [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]], 'g', 'ceilings'), 'g', 'gable'), 'g', 2), 'g', 4);
+    const roofY = (z) => 2 + (3.5 - Math.abs(z)) * (2 / 3.5);
+    const faceOf = (id) => roomFaces(covered).find((f) => f.surfaceId === id).geometry.attributes.position;
+    const maxY = (pos) => Math.max(...Array.from({ length: pos.count }, (_, i) => pos.getY(i)));
+    // eave wall (z = -3): every top vertex on the roof, lower than its 2.7 m
+    const back = faceOf('wall-back:inner');
+    for (let i = 0; i < back.count; i++) if (back.getY(i) > 0.01) assert.ok(Math.abs(back.getY(i) - roofY(back.getZ(i))) < 1e-6, 'eave wall: top on the roof');
+    assert.ok(maxY(back) < 2.7, 'eave wall cut down');
+    // gable wall (x = -3, z from -3 to 3): its top rises to the ridge at z = 0 -> the gable is closed
+    const left = faceOf('wall-left:inner');
+    assert.ok(Math.abs(maxY(left) - 4) < 1e-6, 'gable wall up to the ridge');
+    for (let i = 0; i < left.count; i++) if (left.getY(i) > 0.01) assert.ok(Math.abs(left.getY(i) - roofY(left.getZ(i))) < 1e-6, 'gable wall: top on the roof');
+    // no top cap under the roof; areas follow the cut (eave wall smaller, gable wall bigger)
+    const areasCovered = surfaceAreas(covered);
+    assert.ok(areasCovered['wall-back:inner'] < areas['wall-back:inner'] && areasCovered['wall-left:inner'] > areas['wall-left:inner'], 'areas follow the roof');
+    // a DORMER over the eave wall (front flush with the eave, 1.4 m wide around x = 0): that wall's top follows
+    // the dormer's roof there, up to its ridge over the axis (a step at its cheeks)
+    const withDormerOver = updateDormer(addDormer(covered, 'g', [0, -2.8], 'dd'), 'g', 'dd', { setback: 0 });
+    const dd = roofDormers(withDormerOver.ceilings.at(-1))[0];
+    const backUnder = roomFaces(withDormerOver).find((f) => f.surfaceId === 'wall-back:outer').geometry.attributes.position;
+    const pitchD = (dd.ridgeHeight - dd.eaveHeight) / (dd.width / 2);
+    let peak = 0;
+    for (let i = 0; i < backUnder.count; i++) {
+        const [x, y] = [backUnder.getX(i), backUnder.getY(i)];
+        if (y < 0.01 || Math.abs(x) >= dd.width / 2 - 1e-6) continue;
+        assert.ok(Math.abs(y - (dd.ridgeHeight - pitchD * Math.abs(x - dd.t + 3.5))) < 1e-6 || y <= roofY(-3.2) + 1e-6, 'under the dormer: its roof');
+        peak = Math.max(peak, y);
+    }
+    assert.ok(Math.abs(peak - dd.ridgeHeight) < 0.01, 'the wall rises to the dormer ridge');
+    // no wedge at the cheeks (24/10 bug): every top vertex of that face is EITHER on the main roof OR on the dormer's
+    // roof (at a cheek both exist: a vertical step), never in between
+    for (let i = 0; i < backUnder.count; i++) {
+        const [x, y, z] = [backUnder.getX(i), backUnder.getY(i), backUnder.getZ(i)];
+        if (y < 0.01) continue;
+        const onMain = Math.abs(y - roofY(z)) < 1e-6;
+        const onDormer = Math.abs(x) <= dd.width / 2 + 1e-6 && Math.abs(y - (dd.ridgeHeight - pitchD * Math.abs(x - dd.t + 3.5))) < 1e-6;
+        assert.ok(onMain || onDormer, `top vertex (${x.toFixed(3)}, ${y.toFixed(3)}) on a roof`);
+    }
+    // wall tops under the roof: a cap following the roof, flagged to show only without the roof
+    const caps = roomFaces(covered).filter((f) => f.onlyWithoutRoof);
+    assert.ok(caps.some((f) => f.surfaceId === 'wall-left:edge'), 'gable wall: a top cap for the hidden-roof view');
+    const capPos = caps.find((f) => f.surfaceId === 'wall-left:edge').geometry.attributes.position;
+    assert.ok(Math.abs(Math.max(...Array.from({ length: capPos.count }, (_, i) => capPos.getY(i))) - 4) < 0.1, 'it follows the roof up to the ridge');
+    // the eave wall's TOP under the dormer (ceilings hidden): cut along the roof lines, every vertex on the main roof
+    // or on the dormer's roof (risers at the cheeks), and every triangle flat on one of them (no twisted quads)
+    const cap = roomFaces(withDormerOver).find((f) => f.surfaceId === 'wall-back:edge' && f.onlyWithoutRoof).geometry;
+    const cp = cap.attributes.position, ci = cap.index.array;
+    const onMainY = (x, z) => roofY(z), onDormerY = (x) => dd.ridgeHeight - pitchD * Math.abs(x - dd.t + 3.5);
+    for (let i = 0; i < ci.length; i += 3) {
+        const tri = [0, 1, 2].map((j) => [cp.getX(ci[i + j]), cp.getY(ci[i + j]), cp.getZ(ci[i + j])]);
+        const flatOn = (f) => tri.every(([x, y, z]) => Math.abs(y - f(x, z)) < 1e-6);
+        const vertical = Math.abs((tri[1][0] - tri[0][0]) * (tri[2][2] - tri[0][2]) - (tri[2][0] - tri[0][0]) * (tri[1][2] - tri[0][2])) < 1e-9;
+        assert.ok(vertical || flatOn(onMainY) || flatOn(onDormerY), 'cap triangle on one roof (or a vertical riser)');
+    }
+    // a dormer cheek EXACTLY on a wall's face (snapped onto it): that wall does not rise to the dormer (no doubled
+    // cheek). wall-left's inner face is its drawn line, x = -3 (its thickness goes outwards): the left cheek put there
+    const leftFace = -3;
+    const onFace = updateDormer(addDormer(covered, 'g', [-2, -2.8], 'dc'), 'g', 'dc', { t: leftFace + 3.5 + 0.7, width: 1.4, setback: 0.2 });
+    assert.ok(onFace, 'cheek on the wall face');
+    const leftInner = roomFaces(onFace).find((f) => f.surfaceId === 'wall-left:inner').geometry.attributes.position;
+    for (let i = 0; i < leftInner.count; i++) if (leftInner.getY(i) > 0.01) assert.ok(Math.abs(leftInner.getY(i) - roofY(leftInner.getZ(i))) < 1e-6, 'wall beside the dormer stays under the main roof');
+    // a flat ceiling changes nothing
+    const flat = addFloor(level, [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]], 'f', 'ceilings');
+    assert.ok(Math.abs(surfaceAreas(flat)['wall-back:inner'] - areas['wall-back:inner']) < 1e-9, 'flat ceiling: walls unchanged');
 }
 console.log('roomLayout: ok');

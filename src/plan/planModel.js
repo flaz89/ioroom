@@ -1089,8 +1089,12 @@ export function roofRidge(ceiling, level) {
     const height = Math.max(...points.map((p) => p[1]));
     const along = (p) => p[0] * axis[0] + p[1] * axis[1];
     const custom = customRidge(ceiling);
-    // default: the highest points of the equal-pitch roof, the two extremes along the axis (one point for a square)
-    const top = points.filter((p) => p[1] > height - 1e-6).map((p) => [p[0], p[2]]);
+    // default: the INNER vertices of the equal-pitch roof (off the outline: above the eaves), the two extremes
+    // along the axis (one point for a square). Not "the highest points": on a plan that is not an exact
+    // rectangle the two ridge ends differ by a hair in height and only one of them was kept (the ridge
+    // collapsed to a point, 24/10)
+    const base = ceilingHeight(ceiling, level);
+    const top = points.filter((p) => p[1] > base + 1e-6).map((p) => [p[0], p[2]]);
     const [a, b] = custom ?? [top.reduce((m, p) => (along(p) < along(m) ? p : m)), top.reduce((m, p) => (along(p) > along(m) ? p : m))];
     return along(a) <= along(b) ? { a, b, height, axis, isCustom: custom != null } : { a: b, b: a, height, axis, isCustom: custom != null };
 }
@@ -1240,6 +1244,229 @@ export function setRoofBeams(level, ceilingId, count) {
     if (count !== 0 && !(count >= BEAM_COUNT_LIMITS.min && count <= BEAM_COUNT_LIMITS.max)) return null;
     const { beams: _old, ...roof } = ceiling.roof;
     return { ...level, ceilings: ceilings.map((item) => (item.id === ceilingId ? { ...item, roof: count ? { ...roof, beams: count } : roof } : item)) };
+}
+
+/*
+* DORMERS (abbaini) on a pitched ceiling: roof.dormers = [{ id, eave, t, width, setback, eaveHeight,
+* ridgeHeight }]. A gable dormer standing on the facet of eave `eave` (any facet), its ridge HORIZONTAL and
+* square to that eave:
+* - t: the dormer's axis along the eave (meters from the eave's start point), width: between its cheeks;
+* - setback: from the eave line to the dormer's front (0 = flush with the eave);
+* - eaveHeight / ridgeHeight: its own eave and ridge, m above the level's 0 like the roof's (the pitch of its
+*   two small facets follows).
+* In plan (dormerLines) it is three lines square to the eave: the two cheeks (the width) and the ridge. The
+* facet under it rises by k per meter from its eave (facetSlope), so every plan distance d from the eave is a
+* roof height base + k d: the cheeks run from the front back to where the roof reaches the dormer's eave
+* height, the ridge to where it reaches the ridge height (the dormer's roof meets the main one there). So the
+* ridge's LENGTH and the ridge HEIGHT are the same thing seen twice: dragging the ridge's back end sets the
+* height, and the other way round.
+* In 3D (dormerSolids): two triangular CHEEKS and two small roof facets reaching back to the valley lines
+* where they meet the main roof. The FRONT is left OPEN (Flavio, 24/10): the wall with its windows there is
+* placed by the user (dormerSolids.front gives its outline for that later). The main facet is OPEN under the dormer (dormerFootprint:
+* the hole, so the dormer's room is seen from inside).
+*/
+export const DORMER_LIMITS = { minWidth: 0.4, minWall: 0.05 }; // m: narrowest dormer; front wall / rise above
+export const newDormerId = () => `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+// Rise per meter (square to the eave) of the facet of eave `eave`, and its depth (largest distance of its
+// points from the eave line): from the facet's plane, so it holds for moved hip ridges too. null: no facet
+function facetSlope(ceiling, level, eave) {
+    const facet = (roofFacets(ceiling, level) ?? []).find((item) => item.edge === eave);
+    if (!facet) return null;
+    const edge = inwardEdges(ceiling.points)[eave];
+    const [nx, ny, nz] = facetNormal(facet.points);
+    const k = (-nx / ny) * edge.n[0] + (-nz / ny) * edge.n[1];
+    const depth = Math.max(...facet.points.map((p) => lineDistance(edge, [p[0], p[2]])));
+    return { edge, k, depth, base: ceilingHeight(ceiling, level) };
+}
+
+/*
+* A dormer's PLAN lines, or null when it does not fit (see dormerFits): { front: [left, right], cheeks:
+* [[front, back], [front, back]], ridge: [front, back], frontHeight (the main roof's height along the front),
+* k (the facet's slope), edge }. Points [x, z]; "left" = towards the eave's start point.
+*/
+export function dormerLines(ceiling, level, dormer) {
+    const facet = facetSlope(ceiling, level, dormer.eave);
+    if (!facet || facet.k <= 1e-6) return null;
+    const { edge, k, base } = facet;
+    const at = (along, inward) => [edge.p[0] + edge.dir[0] * along + edge.n[0] * inward, edge.p[1] + edge.dir[1] * along + edge.n[1] * inward];
+    const sideDistance = (dormer.eaveHeight - base) / k;  // where the roof reaches the dormer's eave height
+    const ridgeDistance = (dormer.ridgeHeight - base) / k; // ... its ridge height
+    const half = dormer.width / 2;
+    return {
+        edge, k, depth: facet.depth,
+        frontHeight: base + k * dormer.setback,
+        sideDistance, ridgeDistance,
+        front: [at(dormer.t - half, dormer.setback), at(dormer.t + half, dormer.setback)],
+        cheeks: [-1, 1].map((s) => [at(dormer.t + s * half, dormer.setback), at(dormer.t + s * half, sideDistance)]),
+        ridge: [at(dormer.t, dormer.setback), at(dormer.t, ridgeDistance)]
+    };
+}
+
+// True when the dormer fits its facet: inside the eave's length, a front wall above the roof, an eave below
+// the ridge, its ridge meeting the roof before the facet ends
+export function dormerFits(ceiling, level, dormer) {
+    const facet = facetSlope(ceiling, level, dormer.eave);
+    if (!facet || facet.k <= 1e-6) return false;
+    const { edge, k, depth, base } = facet;
+    const { minWidth, minWall } = DORMER_LIMITS;
+    const ridgeDistance = (dormer.ridgeHeight - base) / k;
+    return dormer.width >= minWidth - 1e-9
+        && dormer.t - dormer.width / 2 >= -1e-9 && dormer.t + dormer.width / 2 <= edge.length + 1e-9
+        && dormer.setback >= -1e-9
+        && dormer.eaveHeight >= base + k * dormer.setback + minWall - 1e-9 // a front wall
+        && dormer.ridgeHeight >= dormer.eaveHeight + minWall - 1e-9         // a pitched roof
+        && ridgeDistance <= depth + 1e-9;                                   // meets the roof inside the facet
+}
+
+/*
+* A dormer's SOLIDS for the 3D, or null when it does not fit: { roofs: [{ dir, points }] (the two small
+* facets, same shape as roofFacets: dir = along the dormer's eaves), walls: [{ normal, along, points }]
+* (the two cheeks: outward normal, horizontal direction along the wall, for the UVs), front: the open gable's
+* outline (not built) }.
+* Points [x, y, z]. Frame: a = along the main eave, d = in from it (planModel inward normal), y = height.
+*/
+export function dormerSolids(ceiling, level, dormer) {
+    if (!dormerFits(ceiling, level, dormer)) return null;
+    const { edge, k, frontHeight, sideDistance, ridgeDistance } = dormerLines(ceiling, level, dormer);
+    const P = (a, d, y) => [edge.p[0] + edge.dir[0] * a + edge.n[0] * d, y, edge.p[1] + edge.dir[1] * a + edge.n[1] * d];
+    const { t, setback: sb, eaveHeight: e, ridgeHeight: h } = dormer;
+    const w = dormer.width / 2;
+    const along3 = [edge.dir[0], 0, edge.dir[1]], in3 = [edge.n[0], 0, edge.n[1]];
+    return {
+        // each small facet: its eave (a = t -/+ w, at the eave height), the ridge (a = t, at the ridge height),
+        // back to the valley: from where the main roof reaches the eave height to where it reaches the ridge's
+        roofs: [-1, 1].map((s) => ({ dir: edge.n, points: [P(t + s * w, sb, e), P(t, sb, h), P(t, ridgeDistance, h), P(t + s * w, sideDistance, e)] })),
+        // cheeks: triangles between the main roof, the dormer's eave line and the front
+        walls: [-1, 1].map((s) => ({ normal: along3.map((c) => s * c), along: in3, points: [P(t + s * w, sb, frontHeight), P(t + s * w, sb, e), P(t + s * w, sideDistance, e)] })),
+        // the OPEN front (gable): from the main roof (horizontal there: the front is parallel to the eave) up to
+        // the eaves and the ridge; not built
+        front: { normal: in3.map((c) => -c), along: along3, points: [P(t - w, sb, frontHeight), P(t + w, sb, frontHeight), P(t + w, sb, e), P(t, sb, h), P(t - w, sb, e)] }
+    };
+}
+/*
+* The plan outline of what a dormer covers on its facet, the HOLE cut in the main roof (roomLayout.js):
+* [front left, front right, right cheek's back, ridge's back, left cheek's back], [x, z]; null when it does
+* not fit. ponytail: a dormer reaching past its facet (a hip line) is cut on its own facet only.
+*/
+export function dormerFootprint(ceiling, level, dormer) {
+    if (!dormerFits(ceiling, level, dormer)) return null;
+    const { front, cheeks, ridge } = dormerLines(ceiling, level, dormer);
+    return [front[0], front[1], cheeks[1][1], ridge[1], cheeks[0][1]];
+}
+
+/*
+* The DORMER over plan point `p` of a ceiling: { dormer, heightAt([x, z]) } (heightAt: its roof's underside,
+* ridge height minus its pitch x the distance from its axis; valid inside its footprint), or null when no
+* dormer covers p. Used by the walls (roomLayout wallTops): under a dormer their top follows its roof.
+*/
+export function dormerAt(ceiling, level, p) {
+    for (const dormer of roofDormers(ceiling)) {
+        const footprint = dormerFootprint(ceiling, level, dormer);
+        if (!footprint || !pointInPolygon(p, footprint)) continue;
+        const { edge } = dormerLines(ceiling, level, dormer);
+        const pitch = (dormer.ridgeHeight - dormer.eaveHeight) / (dormer.width / 2);
+        const offAxis = (q) => Math.abs((q[0] - edge.p[0]) * edge.dir[0] + (q[1] - edge.p[1]) * edge.dir[1] - dormer.t);
+        return { dormer, heightAt: (q) => dormer.ridgeHeight - pitch * offAxis(q) };
+    }
+    return null;
+}
+
+// Surface id of a ceiling's dormer walls (fronts and cheeks: a material of their own, bill of quantities)
+export const dormerWallsFaceId = (ceilingId) => `${ceilingId}~dormerwalls`;
+
+// The ceiling's dormers (none: [])
+export const roofDormers = (ceiling) => ceiling.roof?.dormers ?? [];
+
+// The level with ceiling `ceilingId`'s dormers replaced by fn(dormers)
+const withDormers = (level, ceilingId, fn) => ({
+    ...level,
+    ceilings: (level.ceilings ?? []).map((item) => (item.id === ceilingId ? { ...item, roof: { ...item.roof, dormers: fn(roofDormers(item)) } } : item))
+});
+
+/*
+* The level with a NEW dormer on the facet under plan point `point` (its axis there), or null when the point
+* is on no facet or a default dormer does not fit. Defaults: 1.40 m wide, front 0.50 m back from the eave, a
+* 1.20 m front wall, a 30 degree roof (all edited afterwards); narrower / lower when the facet is small.
+*/
+export function addDormer(level, ceilingId, point, id = newDormerId()) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const facet = ceiling && (roofFacets(ceiling, level) ?? []).find((item) => pointInPolygon(point, item.points.map((p) => [p[0], p[2]])));
+    if (!facet) return null;
+    const { edge, k, depth, base } = facetSlope(ceiling, level, facet.edge);
+    const t = (point[0] - edge.p[0]) * edge.dir[0] + (point[1] - edge.p[1]) * edge.dir[1];
+    for (const [width, setback, wall] of [[1.4, 0.5, 1.2], [1, 0.3, 0.8], [0.6, 0.1, 0.4]]) {
+        const half = width / 2;
+        const eaveHeight = base + k * setback + wall;
+        const dormer = {
+            id, eave: facet.edge, width, setback, eaveHeight,
+            t: Math.min(Math.max(t, half), edge.length - half),
+            // a 30 degree dormer roof, but never past the facet (its ridge must meet the roof)
+            ridgeHeight: Math.min(eaveHeight + Math.tan(Math.PI / 6) * half, base + k * depth - 0.01)
+        };
+        if (dormerFits(ceiling, level, dormer)) return withDormers(level, ceilingId, (dormers) => [...dormers, dormer]);
+    }
+    return null;
+}
+
+// The level with dormer `dormerId` of ceiling `ceilingId` merged with `patch`, or null when it would not fit
+export function updateDormer(level, ceilingId, dormerId, patch) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === dormerId);
+    if (!dormer) return null;
+    const next = { ...dormer, ...patch };
+    return dormerFits(ceiling, level, next) ? withDormers(level, ceilingId, (dormers) => dormers.map((item) => (item.id === dormerId ? next : item))) : null;
+}
+
+// The level without dormer `dormerId` of ceiling `ceilingId`
+export const removeDormer = (level, ceilingId, dormerId) => withDormers(level, ceilingId, (dormers) => dormers.filter((item) => item.id !== dormerId));
+
+/*
+* A dormer dragged in the plan (PlanView2D.jsx): `handle` = 'ridgeBack' (sets the ridge height: the roof's
+* height where the back end is), 'front' (the setback), 'cheek0' / 'cheek1' (that cheek only: the other one
+* stays, so each can sit on its own wall) or 'move' (along the eave and the setback together, by the pointer's
+* displacement from `start`). `to` = the pointer, plan [x, z].
+* SNAPS (`snap` = { lines: [[p, q]] (wall faces), radius (m) }): a cheek moved near a wall face parallel to the
+* dormer's axis sits on it (for 'move': the cheek closer to a face); the ridge's back end near the MAIN ridge
+* (the facet's top) goes to it (same height as the main ridge).
+* Returns the level, or null when the result would not fit (the caller keeps the last valid one).
+*/
+export function dragDormer(level, ceilingId, dormerId, handle, to, start, startDormer, snap = null) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const facet = ceiling && facetSlope(ceiling, level, startDormer.eave);
+    if (!facet) return null;
+    const { edge, k, base, depth } = facet;
+    const along = (p) => (p[0] - edge.p[0]) * edge.dir[0] + (p[1] - edge.p[1]) * edge.dir[1];
+    const inward = (p) => lineDistance(edge, p);
+    const radius = snap?.radius ?? 0;
+    // the wall faces parallel to the dormer's axis (square to the eave), as positions along the eave
+    const wallAlongs = (snap?.lines ?? []).filter(([p, q]) => {
+        const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        return length > 1e-6 && Math.abs(((q[0] - p[0]) * edge.dir[0] + (q[1] - p[1]) * edge.dir[1]) / length) < 0.02;
+    }).map(([p]) => along(p));
+    // the nearest wall position within the radius, or null
+    const nearestWall = (a) => wallAlongs.reduce((best, w) => (Math.abs(w - a) <= radius && (best === null || Math.abs(w - a) < Math.abs(best - a)) ? w : best), null);
+    const [left, right] = [startDormer.t - startDormer.width / 2, startDormer.t + startDormer.width / 2];
+    let patch;
+    if (handle === 'ridgeBack') {
+        const d = Math.abs(inward(to) - depth) <= radius ? depth : inward(to); // onto the main ridge
+        patch = { ridgeHeight: base + k * d };
+    } else if (handle === 'front') patch = { setback: inward(to) };
+    else if (handle === 'cheek0' || handle === 'cheek1') {
+        const a = nearestWall(along(to)) ?? along(to);
+        const [l, r] = handle === 'cheek0' ? [a, right] : [left, a];
+        patch = { t: (l + r) / 2, width: Math.abs(r - l) };
+    } else {
+        const delta = [to[0] - start[0], to[1] - start[1]];
+        let dAlong = delta[0] * edge.dir[0] + delta[1] * edge.dir[1];
+        const dIn = delta[0] * edge.n[0] + delta[1] * edge.n[1];
+        // snap the cheek that lands closer to a wall face
+        const snaps = [left + dAlong, right + dAlong].map((a) => { const w = nearestWall(a); return w === null ? null : w - a; }).filter((s) => s !== null);
+        if (snaps.length > 0) dAlong += snaps.reduce((best, s) => (Math.abs(s) < Math.abs(best) ? s : best));
+        // the front moves with the dormer and so does the roof under it: the heights follow by k x the move
+        patch = { t: startDormer.t + dAlong, setback: startDormer.setback + dIn, eaveHeight: startDormer.eaveHeight + k * dIn, ridgeHeight: startDormer.ridgeHeight + k * dIn };
+    }
+    return updateDormer(level, ceilingId, dormerId, patch);
 }
 
 /*

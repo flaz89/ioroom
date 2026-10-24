@@ -9,7 +9,7 @@ import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 import { polygonGeometry, roomFaces } from './roomLayout';
 import { useStore } from '../../../../store/appStore';
 import { PLAIN_ID } from '../../../../materials/library';
-import { activeLevel, beamsFaceId } from '../../../../plan/planModel';
+import { activeLevel, beamsFaceId, dormerWallsFaceId } from '../../../../plan/planModel';
 
 /*
 * Face ids (surfaceId): the key a face's material is saved under (store `surfaces`) and what the
@@ -101,9 +101,11 @@ export default function Room() {
     const faces = useMemo(() => {
         const hidden = new Set([
             ...(showUnderlay && level.underlay.kind !== 'dxf' ? level.floors.map((floor) => floor.id) : []),
-            ...(showCeilings ? [] : (level.ceilings ?? []).flatMap((ceiling) => [ceiling.id, beamsFaceId(ceiling.id)]))
+            ...(showCeilings ? [] : (level.ceilings ?? []).flatMap((ceiling) => [ceiling.id, beamsFaceId(ceiling.id), dormerWallsFaceId(ceiling.id)]))
         ]);
-        return hidden.size === 0 ? allFaces : allFaces.filter((face) => !hidden.has(face.surfaceId));
+        // wall tops under a roof (roomLayout onlyWithoutRoof): only with the ceilings hidden, else they would lie
+        // on the roof's plane
+        return allFaces.filter((face) => !hidden.has(face.surfaceId) && !(face.onlyWithoutRoof && showCeilings));
     }, [allFaces, showUnderlay, showCeilings, level]);
     // Invisible ceiling for placing objects (lamps) while no ceiling is drawn: the floor polygons at wall
     // height, facing down. Drawn ceilings (level.ceilings) are real faces (roomFaces) and replace it.
