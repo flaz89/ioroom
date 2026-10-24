@@ -62,11 +62,23 @@ export default function PostEffects() {
 
     const effects = useMemo(() => {
         const renderPipeline = new RenderPipeline(gl);
+        // Every node that owns GPU resources (render targets, history buffers), disposed with the chain:
+        // RenderPipeline.dispose() frees only its own quad material (three r186), so without this every
+        // rebuild (a render setting changed) leaked the previous chain's full-screen targets.
+        // The effects also turn an input that is not a texture yet (e.g. `vec4(lit, 1)` for TRAA) into one with
+        // an internal render-to-texture node (convertToTexture -> RTTNode, a full-screen target of its own),
+        // which their dispose() does not free: owned too.
+        const owned = [];
+        const own = (node) => {
+            owned.push(node);
+            for (const input of [node.beautyNode, node.textureNode]) if (input?.isRTTNode) owned.push(input);
+            return node;
+        };
 
         // OPAQUE objects only (transmissive glass included): they feed the effects. Transparent ones (labels,
         // gizmos, notes, measures, grid...) would overwrite the effect buffers over their whole quad, even where
         // they are invisible -> AO / GI halos around them; they get their own pass below, on top of the result.
-        const scenePass = pass(scene, camera, { samples: 0 });
+        const scenePass = own(pass(scene, camera, { samples: 0 }));
         scenePass.transparent = false;
         // FOUR attachments, packed: WebGPU's default limit is 32 bytes per pixel over all color attachments and
         // each of these costs 8 (rgba16float, and rgba8unorm too) -> a fifth one fails every pipeline ("Bytes
@@ -91,15 +103,15 @@ export default function PostEffects() {
         let giPass = null;
         let ssrPass = null;
         if (isSsgi) {
-            giPass = ssgi(color, depth, normal, camera);
+            giPass = own(ssgi(color, depth, normal, camera));
             giPass.radius.value = SSGI_RADIUS; // quality and intensity: uniforms, set below from the settings
             let ao = giPass.getAONode();
             let gi = giPass.getGINode();
             if (isDenoise) {
                 // edge-aware spatial denoise (depth + normals keep edges sharp): the raw SSGI is noisiest where
                 // it is the only light (shadowed areas). Two extra full-screen passes.
-                ao = denoise(ao, depth, normal, camera).r;
-                gi = denoise(gi, depth, normal, camera);
+                ao = own(denoise(ao, depth, normal, camera)).r;
+                gi = own(denoise(gi, depth, normal, camera));
             }
             // AO darkens the BOUNCED light too, not only the direct + environment light: a shadowed room is lit
             // almost only by the bounce, so with `lit * AO + albedo * GI` the AO had nothing to darken and the
@@ -108,13 +120,13 @@ export default function PostEffects() {
             lit = lit.add(albedo.rgb.mul(gi.rgb)).mul(ao);
         }
         if (isSsr) {
-            ssrPass = ssr(color, depth, normal, {
+            ssrPass = own(ssr(color, depth, normal, {
                 metalnessNode: albedo.a,
                 roughnessNode: packedNormal.a,
                 diffuseNode: albedo.rgb,
                 reflectNonMetals: true,
                 camera
-            });
+            }));
             ssrPass.quality.value = SSR_QUALITY;
             ssrPass.resolutionScale = SSR_RESOLUTION;
             lit = lit.add(ssrPass.rgb);
@@ -126,12 +138,12 @@ export default function PostEffects() {
         // value 1 where nothing was drawn). Out of TRAA the color is premultiplied by the resolved coverage (the
         // sky is black), which is what the premultiplied canvas expects.
         const coverage = depth.r.lessThan(1).select(1, 0);
-        const resolvedColor = traa(vec4(lit, 1), depth, motion, camera).rgb;
+        const resolvedColor = own(traa(vec4(lit, 1), depth, motion, camera)).rgb;
         // TRAA drops the alpha channel (its output alpha is 1 everywhere), so the coverage gets its own TRAA,
         // through the color channels: jitter-averaged like the color. Taken raw per frame it flickered on thin
         // lines and noised the edges. ponytail: a second full-screen TRAA resolve for one channel; pack it with
         // the color if the cost shows.
-        const resolvedCoverage = traa(vec4(coverage, coverage, coverage, 1), depth, motion, camera).r;
+        const resolvedCoverage = own(traa(vec4(coverage, coverage, coverage, 1), depth, motion, camera)).r;
         const resolved = vec4(resolvedColor, resolvedCoverage);
 
         // TRANSPARENT objects, drawn after the effects: depth-tested against the opaque pass (shared depth
@@ -143,17 +155,21 @@ export default function PostEffects() {
         // or the overlay composed before TRAA) the whole opaque scene turns black (three r186, reproduced in
         // Chromium too). Narrowed down: it happens only with `overlayPass.opaque = false`, the pass order is
         // right (opaque pass first) and the renderer flags are restored; the root cause is still open.
-        const overlayPass = pass(scene, overlayCamera, { samples: 0, depthTexture: scenePass.getTexture('depth'), autoClearDepth: false });
+        const overlayPass = own(pass(scene, overlayCamera, { samples: 0, depthTexture: scenePass.getTexture('depth'), autoClearDepth: false }));
         overlayPass.opaque = false;
         const overlay = overlayPass.getTextureNode('output');
         renderPipeline.outputNode = vec4(
             resolved.rgb.mul(overlay.a.oneMinus()).add(overlay.rgb),
             resolved.a.mul(overlay.a.oneMinus()).add(overlay.a)
         );
-        return { pipeline: renderPipeline, giPass, ssrPass };
+        return { pipeline: renderPipeline, giPass, ssrPass, owned };
     }, [gl, scene, camera, overlayCamera, isSsgi, isSsr, isDenoise]);
-    const { pipeline, giPass, ssrPass } = effects;
-    useEffect(() => () => pipeline.dispose(), [pipeline]);
+    const { pipeline, giPass, ssrPass, owned } = effects;
+    // the replaced (or unmounted) chain: the pipeline and every GPU resource its nodes created
+    useEffect(() => () => {
+        pipeline.dispose();
+        owned.forEach((node) => node.dispose());
+    }, [pipeline, owned]);
 
     // live knobs: uniforms only, no rebuild
     const ssgiQuality = useStore((state) => state.settings.ssgiQuality);

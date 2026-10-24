@@ -17,6 +17,10 @@ export const ROTATION_SNAP_STEPS = [1, 5, 15, 45, 90]; // degrees
 * - ssrIntensity: strength of the reflections (1 = physical)
 */
 const RENDER_KEY = 'ioroom.render';
+// Where AUTO got to on this device ({ level, dpr }): the next visit starts there instead of from the top, so
+// Auto does not land somewhere different every time (a few seconds of measuring vary with heat, other apps,
+// shader compiles)
+const AUTO_KEY = 'ioroom.render.auto';
 
 // SSGI presets (with temporal filtering): samples per pixel = slices * steps * 2. More slices = less
 // flicker in the shadowed areas (three.js advice), so they grow first. Medium = what looked best on the
@@ -34,7 +38,7 @@ export const RENDER_RANGES = {
 };
 // QUALITY PRESETS: each sets the effect switches and the GI quality together (intensities are artistic
 // choices and stay untouched). Ordered from the cheapest. 'auto' starts at the best one and steps down by
-// itself (stepDownAuto, called by scene/perf/AdaptiveQuality.jsx); 'custom' = switches or GI
+// itself (stepAuto, called by scene/perf/AdaptiveQuality.jsx); 'custom' = switches or GI
 // quality changed by hand.
 export const QUALITY_PRESETS = {
     low: { label: 'Low', values: { ssgi: false, ssr: false, ssgiQuality: 'low', denoise: false, lightProbes: false } },
@@ -45,7 +49,7 @@ const PRESET_ORDER = Object.keys(QUALITY_PRESETS); // cheapest first
 const AUTO_START = 'high';
 export const RENDER_PRESET_CHOICES = ['auto', ...PRESET_ORDER, 'custom'];
 
-// RESOLUTION (canvas pixel ratio): 'auto' follows the frame rate (stepDownAuto), or forced by the user.
+// RESOLUTION (canvas pixel ratio): 'auto' follows the frame rate (stepAuto), or forced by the user.
 // Never above the screen's own ratio, and at most 2 (screen-space effects cost per pixel).
 export const MAX_DPR = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
 export const RESOLUTION_CHOICES = ['auto', '1', '1.5', '2'];
@@ -87,9 +91,52 @@ function loadRenderSettings() {
     } catch {
         values = { ...RENDER_DEFAULTS };
     }
-    // a named preset is re-applied (its definition may have changed); Auto starts every visit from the top
-    const preset = values.renderPreset === 'auto' ? AUTO_START : values.renderPreset;
+    // a named preset is re-applied (its definition may have changed); Auto starts where it got to last time
+    const preset = values.renderPreset === 'auto' ? loadAuto().level : values.renderPreset;
     return QUALITY_PRESETS[preset] ? { ...values, ...QUALITY_PRESETS[preset].values } : values;
+}
+
+// Auto's last level and pixel ratio on this device (validated; the top when none)
+function loadAuto() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(AUTO_KEY));
+        return {
+            level: Object.hasOwn(QUALITY_PRESETS, saved?.level) ? saved.level : AUTO_START,
+            dpr: AUTO_DPR_STEPS.includes(saved?.dpr) ? saved.dpr : MAX_DPR
+        };
+    } catch {
+        return { level: AUTO_START, dpr: MAX_DPR };
+    }
+}
+function saveAuto(level, dpr) {
+    try { localStorage.setItem(AUTO_KEY, JSON.stringify({ level, dpr })); } catch { /* this visit only */ }
+}
+
+/*
+* AUTO LADDER: the steps Auto moves along, best first, as [quality level | null, pixel ratio | null] (null =
+* that part is forced by the user and never moves). Effects go before sharpness (a blurry, noisier image
+* shows more than missing reflections, especially on a phone):
+*   both Auto:       High @ max -> Medium @ max -> Medium @ 1.5 -> Low @ 1.5 -> Low @ 1
+*   quality only:    High -> Medium -> Low
+*   resolution only: max -> 1.5 -> 1
+*/
+export function autoLadder(settings) {
+    const isQualityAuto = settings.renderPreset === 'auto';
+    const isResolutionAuto = settings.renderResolution === 'auto';
+    const dprs = AUTO_DPR_STEPS;
+    if (isQualityAuto && isResolutionAuto) {
+        const [top, last] = [dprs[0], dprs[dprs.length - 1]];
+        const mid = dprs.length > 2 ? dprs[1] : top;
+        return [['high', top], ['medium', top], ...(mid !== top ? [['medium', mid]] : []), ['low', mid], ...(last !== mid ? [['low', last]] : [])];
+    }
+    if (isQualityAuto) return [...PRESET_ORDER].reverse().map((level) => [level, null]);
+    if (isResolutionAuto) return dprs.map((dpr) => [null, dpr]);
+    return [];
+}
+// Index of the current step in the ladder (-1 when the settings match none of its steps)
+export function autoStepIndex(settings, autoDpr) {
+    const level = currentQualityLevel(settings);
+    return autoLadder(settings).findIndex(([q, d]) => (q === null || q === level) && (d === null || d === autoDpr));
 }
 
 function saveRenderSettings(settings) {
@@ -165,38 +212,28 @@ export const createSettingsSlice = (set) => ({
             return { settings };
         }),
 
-    // Pixel ratio chosen by the auto resolution, this visit only (never saved): starts at the screen's best
-    autoDpr: MAX_DPR,
+    // Pixel ratio chosen by the auto resolution: starts where Auto got to last time on this device
+    autoDpr: loadAuto().dpr,
 
-    /*
-    * AUTO LADDER: one step down when the frame rate stays below the minimum (AdaptiveQuality.jsx). Effects go
-    * before sharpness, since a blurry, noisier image shows more than missing reflections, especially on a
-    * phone screen:
-    *   High @ max -> Medium @ max -> Medium @ 1.5 -> Low @ 1.5 -> Low @ 1
-    * Only the parts set to Auto move: a forced quality keeps its effects (only the resolution steps), a forced
-    * resolution keeps its ratio (only the effects step). Never back up during the visit (no oscillation): the
-    * next visit starts again from the top. Returns whether something changed.
-    */
-    stepDownAuto: () => {
+    // One step along the AUTO LADDER (autoLadder): direction +1 = down (cheaper), -1 = up (better). Only the
+    // parts set to Auto move. The step reached is remembered on this device (next visit starts there).
+    // Returns whether something changed. Settings off the ladder (e.g. Custom effects with Auto resolution at
+    // a ratio not in it) count as its top.
+    stepAuto: (direction) => {
         let changed = false;
         set((state) => {
             const { settings, autoDpr } = state;
-            const isQualityAuto = settings.renderPreset === 'auto';
-            const isResolutionAuto = settings.renderResolution === 'auto';
-            const level = currentQualityLevel(settings) ?? AUTO_START;
-            const lowerDpr = AUTO_DPR_STEPS[AUTO_DPR_STEPS.indexOf(autoDpr) + 1];
-            const qualityTo = (name) => {
-                const next = { ...settings, ...QUALITY_PRESETS[name].values };
-                saveRenderSettings(next);
-                return { settings: next };
-            };
+            const ladder = autoLadder(settings);
+            const index = Math.max(0, autoStepIndex(settings, autoDpr));
+            const target = ladder[index + direction];
+            if (!target) return {};
             changed = true;
-            if (isQualityAuto && level === 'high') return qualityTo('medium');
-            if (isResolutionAuto && lowerDpr !== undefined && autoDpr > 1.5) return { autoDpr: lowerDpr };
-            if (isQualityAuto && level === 'medium') return qualityTo('low');
-            if (isResolutionAuto && lowerDpr !== undefined) return { autoDpr: lowerDpr };
-            changed = false;
-            return {};
+            const [level, dpr] = target;
+            const next = level === null ? settings : { ...settings, ...QUALITY_PRESETS[level].values };
+            if (level !== null) saveRenderSettings(next);
+            const nextDpr = dpr ?? autoDpr;
+            saveAuto(level ?? currentQualityLevel(settings) ?? AUTO_START, nextDpr);
+            return { settings: next, autoDpr: nextDpr };
         });
         return changed;
     },
