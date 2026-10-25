@@ -1253,7 +1253,8 @@ export function setRoofBeams(level, ceilingId, count) {
 * - t: the dormer's axis along the eave (meters from the eave's start point), width: between its cheeks;
 * - setback: from the eave line to the dormer's front (0 = flush with the eave);
 * - eaveHeight / ridgeHeight: its own eave and ridge, m above the level's 0 like the roof's (the pitch of its
-*   two small facets follows).
+*   two small facets follows);
+* - hipOffset (optional): hip mode, the two heights derived instead (resolveDormer).
 * In plan (dormerLines) it is three lines square to the eave: the two cheeks (the width) and the ridge. The
 * facet under it rises by k per meter from its eave (facetSlope), so every plan distance d from the eave is a
 * roof height base + k d: the cheeks run from the front back to where the roof reaches the dormer's eave
@@ -1361,7 +1362,7 @@ export function dormerFootprint(ceiling, level, dormer) {
 * dormer covers p. Used by the walls (roomLayout wallTops): under a dormer their top follows its roof.
 */
 export function dormerAt(ceiling, level, p) {
-    for (const dormer of roofDormers(ceiling)) {
+    for (const dormer of roofDormers(ceiling, level)) {
         const footprint = dormerFootprint(ceiling, level, dormer);
         if (!footprint || !pointInPolygon(p, footprint)) continue;
         const { edge } = dormerLines(ceiling, level, dormer);
@@ -1372,16 +1373,223 @@ export function dormerAt(ceiling, level, p) {
     return null;
 }
 
+/*
+* DORMER BEAMS (with the roof's exposed beams on: roof.beams), DORMER_BEAM_SIZE square section:
+* - two VALLEY beams (kind 'valley') along the lines where the dormer's roof meets the main one: from the
+*   dormer ridge's back end down to its cheeks' back ends, and ON along the same line (it lies in the main
+*   roof's plane, so it stays under the roof) to the first WALL face it meets in plan, cut flush on that face
+*   (it rests on the wall); with no wall ahead (within the ceiling) it stops at the cheek's back end;
+* - a HEADER (kind 'header', trave di testa): horizontal, parallel to the main eave, where the dormer's ridge
+*   meets the roof, its top on the main roof; it spans the bay the dormer stands in: on each side of the
+*   dormer's axis it runs to the first roof beam its line crosses (`rafters`: roofBeams of the ceiling,
+*   rafters AND hip beams: a dormer on a hip's end facet sits between two hip beams) and is CUT on that beam's
+*   side face (any angle); with no beam on a side it stops at the dormer's cheek.
+* - the valleys are cut on the header's front face and, between themselves, on the dormer's axis plane.
+* Same shape as roofBeams entries ({ kind, top, across, down, depth, width }) plus `clips`: [{ point, normal }]
+* vertical planes the solid is cut by, keeping the side where (p - point) . normal <= 0 (roomLayout).
+*/
+// meters: valleys 15 x 15 at most; the HEADER is deeper (20) so the valleys, whose top is already lower at the
+// joint, still get about their full depth above its bottom (as in carpentry: the header is the deeper member)
+export const DORMER_BEAM_SIZE = { width: 0.15, depth: 0.15, headerDepth: 0.2 };
+const VALLEY_LIFT = 0.005; // m: the valleys' bottom this much above the header's at the joint (never below it)
+
+// Where a valley running from `from` through `through` (3D, its top line) meets the first wall face beyond
+// `through` in plan (inside the ceiling): { point (3D, on the line), clip (the face's vertical plane, keeping
+// the valley's side) }, or null. The line goes on past `through` (beyond: at most the ceiling's outline).
+function valleyWallStop(level, ceiling, from, through) {
+    const p0 = [from[0], from[2]], p1 = [through[0], through[2]];
+    const d = [p1[0] - p0[0], p1[1] - p0[1]];
+    const run = Math.hypot(d[0], d[1]);
+    if (run < 1e-9) return null;
+    let best = null;
+    for (const wall of level.walls) {
+        const f = wallFootprint(wall, level.walls);
+        for (const [q0, q1] of [[f.a, f.b], [f.aOut, f.bOut]]) {
+            const e = [q1[0] - q0[0], q1[1] - q0[1]];
+            const den = d[0] * e[1] - d[1] * e[0];
+            if (Math.abs(den) < 1e-12) continue;
+            const w = [q0[0] - p0[0], q0[1] - p0[1]];
+            const s = (w[0] * e[1] - w[1] * e[0]) / den;  // along the valley (1 = `through`)
+            const u = (w[0] * d[1] - w[1] * d[0]) / den;  // along the face
+            if (s <= 1 - 1e-9 || u < -1e-9 || u > 1 + 1e-9) continue;
+            const hit = [p0[0] + d[0] * s, p0[1] + d[1] * s];
+            if (!pointInPolygon(hit, ceiling.points)) continue;
+            if (best === null || s < best.s) best = { s, e, hit };
+        }
+    }
+    if (!best) return null;
+    // the beam's box runs ON past the face (by its own width, plenty for any angle under ~80 degrees) and the
+    // face's plane cuts it: the whole end lies on the wall, its outer edge included (an oblique valley's square
+    // end left that corner short of the wall)
+    const past = best.s + DORMER_BEAM_SIZE.width / run;
+    const point = [0, 1, 2].map((j) => from[j] + (through[j] - from[j]) * past);
+    // the face's vertical plane; normal pointing away from the valley's start (keep the valley's side)
+    const length = Math.hypot(best.e[0], best.e[1]);
+    let n = [-best.e[1] / length, best.e[0] / length];
+    if (n[0] * d[0] + n[1] * d[1] < 0) n = [-n[0], -n[1]];
+    return { point, clip: { point: [best.hit[0], 0, best.hit[1]], normal: [n[0], 0, n[1]] } };
+}
+
+export function dormerBeams(ceiling, level, rafters = []) {
+    if (!ceiling.roof?.beams) return [];
+    return roofDormers(ceiling, level).flatMap((dormer) => {
+        if (!dormerFits(ceiling, level, dormer)) return [];
+        const { edge, k, sideDistance, ridgeDistance } = dormerLines(ceiling, level, dormer);
+        const P = (a, d, y) => [edge.p[0] + edge.dir[0] * a + edge.n[0] * d, y, edge.p[1] + edge.dir[1] * a + edge.n[1] * d];
+        const along = (p) => (p[0] - edge.p[0]) * edge.dir[0] + (p[2] - edge.p[1]) * edge.dir[1];
+        const { t, eaveHeight: e, ridgeHeight: h } = dormer;
+        const w = dormer.width / 2;
+        const { width, depth } = DORMER_BEAM_SIZE;
+        const top = P(t, ridgeDistance, h);
+        const in3 = [edge.n[0], 0, edge.n[1]], dir3 = [edge.dir[0], 0, edge.dir[1]];
+        // the header hangs square to the main roof (its sides lean with the roof): down vector and front face plane
+        // (through its front top edge, containing the eave direction and `down`), normal pointing into the header
+        const l = Math.hypot(k, 1);
+        const headerDown = [edge.n[0] * k / l, -1 / l, edge.n[1] * k / l];
+        const frontNormal = (() => {
+            const [a, b] = [dir3, headerDown];
+            let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+            if (n[0] * in3[0] + n[2] * in3[2] < 0) n = n.map((c) => -c);
+            const length = Math.hypot(...n);
+            return n.map((c) => c / length);
+        })();
+        const headerFront = { point: P(t, ridgeDistance - width / 2, h), normal: frontNormal };
+        // valleys: down square to the beam in its vertical plane (sides vertical); a valley is a fold DOWN in the
+        // roof's underside, so a flat top centred on it stays under both roofs (no drop needed). From the ridge's
+        // back end, cut on the header's front face and on the axis plane (each keeps its own side)
+        const valleys = [-1, 1].map((s) => {
+            const cheekBack = P(t + s * w, sideDistance, e);
+            const wallStop = valleyWallStop(level, ceiling, top, cheekBack);
+            const bottom = wallStop ? wallStop.point : cheekBack;
+            const run = Math.hypot(bottom[0] - top[0], bottom[2] - top[2]);
+            const across = [-(bottom[2] - top[2]) / run, 0, (bottom[0] - top[0]) / run];
+            const d = [bottom[0] - top[0], bottom[1] - top[1], bottom[2] - top[2]];
+            let down = [across[1] * d[2] - across[2] * d[1], across[2] * d[0] - across[0] * d[2], across[0] * d[1] - across[1] * d[0]];
+            const length = Math.hypot(...down) * (down[1] > 0 ? -1 : 1);
+            down = down.map((c) => c / length);
+            const axisPlane = { point: P(t, 0, 0), normal: dir3.map((c) => -s * c) };
+            // depth: at the JOINT (the header's front face) the valley's bottom stays VALLEY_LIFT above the header's
+            // bottom. There the valley's top is already lower than the header's (it falls from the ridge's back end
+            // along the valley), so its depth is what is left between that top and the header's bottom
+            // (the slope and the inward run are taken along the whole valley: it may go on past the cheek to a wall)
+            const bottomIn = lineDistance(edge, [bottom[0], bottom[2]]);
+            const toJoint = (width / 2) * run / Math.max(1e-9, ridgeDistance - bottomIn); // plan run to the face
+            const jointTop = h - (h - bottom[1]) / run * toJoint;
+            const headerBottom = h - DORMER_BEAM_SIZE.headerDepth / l; // header: top at h, drops depth x cos(pitch)
+            const room = (jointTop - headerBottom - VALLEY_LIFT) / Math.abs(down[1]);
+            const valleyDepth = Math.max(0.02, Math.min(depth, room));
+            return { kind: 'valley', top: [top, bottom], across, down, depth: valleyDepth, width, clips: [headerFront, axisPlane, ...(wallStop ? [wallStop.clip] : [])] };
+        });
+        // header: on each side of the axis, the nearest roof beam (rafter or hip) its line crosses; cut on that
+        // beam's side face towards the dormer
+        const headerAt = (a) => [edge.p[0] + edge.dir[0] * a + edge.n[0] * ridgeDistance, edge.p[1] + edge.dir[1] * a + edge.n[1] * ridgeDistance];
+        const h0 = headerAt(0), h1 = headerAt(1);
+        const stops = { [-1]: null, [1]: null };
+        for (const beam of rafters) {
+            const [p, q] = beam.top.map((c) => [c[0], c[2]]);
+            const d = [q[0] - p[0], q[1] - p[1]], hd = [h1[0] - h0[0], h1[1] - h0[1]];
+            const den = hd[0] * d[1] - hd[1] * d[0];
+            if (Math.abs(den) < 1e-9) continue; // parallel to the header
+            const wv = [p[0] - h0[0], p[1] - h0[1]];
+            const a = (wv[0] * d[1] - wv[1] * d[0]) / den;            // along the eave, where the header line crosses it
+            const u = (wv[0] * hd[1] - wv[1] * hd[0]) / den;          // along the beam (0..1: on it)
+            if (u < -1e-6 || u > 1 + 1e-6) continue;
+            const side = Math.sign(a - t);
+            if (side === 0) continue;
+            if (stops[side] === null || Math.abs(a - t) < Math.abs(stops[side].a - t)) stops[side] = { a, beam, d };
+        }
+        const ends = [-1, 1].map((side) => (stops[side] ? stops[side].a : t + side * w));
+        const clips = [-1, 1].flatMap((side) => {
+            const stop = stops[side];
+            if (!stop) return [];
+            // the stopping beam's side face towards the dormer: its centre line moved by half its width
+            const length = Math.hypot(stop.d[0], stop.d[1]);
+            let n = [-stop.d[1] / length, stop.d[0] / length];             // horizontal, square to the beam
+            const toAxis = [edge.dir[0] * -side, edge.dir[1] * -side];
+            if (n[0] * toAxis[0] + n[1] * toAxis[1] < 0) n = [-n[0], -n[1]];  // pointing towards the dormer
+            const half = (stop.beam.width ?? BEAM_SIZE.width) / 2;
+            const c = stop.beam.top[0];
+            // keep the dormer's side: (p - face) . (-n) <= 0
+            return [{ point: [c[0] + n[0] * half, 0, c[2] + n[1] * half], normal: [-n[0], 0, -n[1]] }];
+        });
+        const header = {
+            kind: 'header', depth: DORMER_BEAM_SIZE.headerDepth, width, clips,
+            top: [P(ends[0], ridgeDistance, h), P(ends[1], ridgeDistance, h)],
+            across: in3,
+            down: headerDown // square to the main roof, downwards
+        };
+        return [...valleys, header];
+    });
+}
+
 // Surface id of a ceiling's dormer walls (fronts and cheeks: a material of their own, bill of quantities)
 export const dormerWallsFaceId = (ceilingId) => `${ceilingId}~dormerwalls`;
 
-// The ceiling's dormers (none: [])
-export const roofDormers = (ceiling) => ceiling.roof?.dormers ?? [];
+/*
+* The ceiling's dormers (none: []), as BUILT: with `level`, a dormer in hip mode (hipOffset set) gets its
+* derived heights (resolveDormer). The stored data stays the user's intent; only withDormers / updateDormer read
+* it raw. Without `level`: the stored dormers as they are.
+*/
+export const roofDormers = (ceiling, level = null) => (ceiling.roof?.dormers ?? []).map((dormer) => (level ? resolveDormer(ceiling, level, dormer) : dormer));
+
+/*
+* HIP MODE (Flavio, 25/10): a dormer between two hip beams with its VALLEYS PARALLEL to them, at a clear gap
+* `hipOffset` (m, beam side to beam side in plan) set by the user. Its width stays free (the cheeks on the walls:
+* the whole opening), so the two heights are derived, and follow any change of width, position or main roof:
+* - a valley is parallel to its hip when its plan ratio (inward per meter along) is the hip's r; the valley
+*   runs over half the width, so ridgeDistance = sideDistance + r * width / 2;
+* - the valley's axis is the hip's axis moved by gap + both half widths towards the dormer: through the cheek
+*   point (run from the corner, sideDistance) that gives sideDistance = r * run - axes * sqrt(1 + r^2).
+* With a hip on both sides the tighter one rules (the gap is exact there, larger on the other side: equal on a
+* rectangle, where both hips are at the same angle). A facet with no oblique side (a gable): unchanged.
+*/
+export function resolveDormer(ceiling, level, dormer) {
+    if (dormer.hipOffset == null) return dormer;
+    const facet = facetSlope(ceiling, level, dormer.eave);
+    const hips = facetHipRatios(ceiling, level, dormer.eave);
+    if (!facet || !hips || facet.k <= 1e-6) return dormer;
+    const axes = dormer.hipOffset + (BEAM_SIZE.width + DORMER_BEAM_SIZE.width) / 2;
+    const half = dormer.width / 2;
+    const sides = [[hips.left, dormer.t - half], [hips.right, facet.edge.length - dormer.t - half]]
+        .filter(([r]) => r !== null)
+        .map(([r, run]) => ({ r, side: r * run - axes * Math.hypot(1, r) }));
+    if (sides.length === 0) return dormer;
+    const { r, side } = sides.reduce((a, b) => (b.side < a.side ? b : a));
+    return { ...dormer, eaveHeight: facet.base + facet.k * side, ridgeHeight: facet.base + facet.k * (side + r * half) };
+}
+
+// True when the dormer's facet has an oblique side (a hip): hip mode applies
+export function dormerOnHips(ceiling, level, dormer) {
+    const hips = facetHipRatios(ceiling, level, dormer.eave);
+    return !!hips && (hips.left !== null || hips.right !== null);
+}
+
+/*
+* The two SIDES of the facet of eave `eave`, from each eave corner: { left, right }, each the plan ratio r
+* (inward / along, along measured from that corner towards the other) of an oblique side, or null for a side
+* square to the eave or leaning outward. A side = the steepest ray from its corner to the facet's points.
+* ponytail: exact for convex facets (all the generated ones on convex outlines); a concave outline may pick a
+* far vertex, then walk the facet's polygon from the corner instead.
+*/
+function facetHipRatios(ceiling, level, eave) {
+    const facet = (roofFacets(ceiling, level) ?? []).find((item) => item.edge === eave);
+    if (!facet) return null;
+    const edge = inwardEdges(ceiling.points)[eave];
+    const local = facet.points.map((p) => {
+        const q = [p[0] - edge.p[0], p[2] - edge.p[1]];
+        return [q[0] * edge.dir[0] + q[1] * edge.dir[1], q[0] * edge.n[0] + q[1] * edge.n[1]];
+    });
+    const side = (fromEnd) => {
+        const angle = Math.max(...local.filter(([, d]) => d > 1e-6).map(([a, d]) => Math.atan2(d, fromEnd ? edge.length - a : a)));
+        return angle < Math.PI / 2 - 1e-3 ? Math.tan(angle) : null;
+    };
+    return { left: side(false), right: side(true) };
+}
 
 // The level with ceiling `ceilingId`'s dormers replaced by fn(dormers)
 const withDormers = (level, ceilingId, fn) => ({
     ...level,
-    ceilings: (level.ceilings ?? []).map((item) => (item.id === ceilingId ? { ...item, roof: { ...item.roof, dormers: fn(roofDormers(item)) } } : item))
+    ceilings: (level.ceilings ?? []).map((item) => (item.id === ceilingId ? { ...item, roof: { ...item.roof, dormers: fn(item.roof?.dormers ?? []) } } : item))
 });
 
 /*
@@ -1412,10 +1620,10 @@ export function addDormer(level, ceilingId, point, id = newDormerId()) {
 // The level with dormer `dormerId` of ceiling `ceilingId` merged with `patch`, or null when it would not fit
 export function updateDormer(level, ceilingId, dormerId, patch) {
     const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
-    const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === dormerId);
+    const dormer = ceiling && (ceiling.roof?.dormers ?? []).find((item) => item.id === dormerId); // stored (raw)
     if (!dormer) return null;
     const next = { ...dormer, ...patch };
-    return dormerFits(ceiling, level, next) ? withDormers(level, ceilingId, (dormers) => dormers.map((item) => (item.id === dormerId ? next : item))) : null;
+    return dormerFits(ceiling, level, resolveDormer(ceiling, level, next)) ? withDormers(level, ceilingId, (dormers) => dormers.map((item) => (item.id === dormerId ? next : item))) : null;
 }
 
 // The level without dormer `dormerId` of ceiling `ceilingId`

@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, dormerLines, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, dormerLines, dormerOnHips, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import './plan-view.css';
 
@@ -44,11 +44,21 @@ function DormerPanel() {
     const setActiveLevel = useStore((state) => state.setActiveLevel);
     const setSelectedDormer = useStore((state) => state.setSelectedDormer);
     const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
-    const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === dormerId);
+    const dormer = ceiling && roofDormers(ceiling, level).find((item) => item.id === dormerId);
     if (!dormer) return null; // removed (undo, another device)
     const lines = dormerLines(ceiling, level, dormer);
     const apply = (key) => (text) => {
         const next = updateDormer(level, ceilingId, dormerId, { [key]: Number(String(text).replace(',', '.')) });
+        if (next) setActiveLevel(next);
+    };
+    // HIP MODE (planModel.resolveDormer): on with a 20 cm gap (0 when that does not fit); off keeps the heights
+    // it had, now as plain values
+    const onHips = dormerOnHips(ceiling, level, dormer);
+    const hipMode = dormer.hipOffset != null;
+    const toggleHipMode = () => {
+        const next = hipMode
+            ? updateDormer(level, ceilingId, dormerId, { hipOffset: null, eaveHeight: dormer.eaveHeight, ridgeHeight: dormer.ridgeHeight })
+            : updateDormer(level, ceilingId, dormerId, { hipOffset: 0.2 }) ?? updateDormer(level, ceilingId, dormerId, { hipOffset: 0 });
         if (next) setActiveLevel(next);
     };
     const remove = () => {
@@ -64,8 +74,20 @@ function DormerPanel() {
             </div>
             <Field label="Width" value={dormer.width} onApply={apply('width')} />
             <Field label="From eave" value={dormer.setback} onApply={apply('setback')} />
-            <Field label="Eave height" value={dormer.eaveHeight} onApply={apply('eaveHeight')} />
-            <Field label="Ridge height" value={dormer.ridgeHeight} onApply={apply('ridgeHeight')} />
+            {hipMode ? (
+                <>
+                    <Field label="Gap to hips" value={dormer.hipOffset} onApply={apply('hipOffset')} />
+                    <div className="wall-panel-field" title="Derived: the valleys parallel to the hip beams at the gap">
+                        <span>Eave · ridge</span>
+                        <span className="wall-panel-readout">{`${dormer.eaveHeight.toFixed(2)} · ${dormer.ridgeHeight.toFixed(2)} m`}</span>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <Field label="Eave height" value={dormer.eaveHeight} onApply={apply('eaveHeight')} />
+                    <Field label="Ridge height" value={dormer.ridgeHeight} onApply={apply('ridgeHeight')} />
+                </>
+            )}
             {lines && (
                 <div className="wall-panel-field" title="Front wall above the roof (eave height - roof height at the front) and pitch of the dormer's roof">
                     <span>Front · pitch</span>
@@ -73,6 +95,9 @@ function DormerPanel() {
                 </div>
             )}
             <div className="wall-panel-actions">
+                {onHips && (
+                    <button className={hipMode ? 'is-active' : ''} onClick={toggleHipMode} title="Valleys parallel to the hip beams, at a gap you set (the heights follow)">Parallel to hips</button>
+                )}
                 <button className="is-danger" onClick={remove} title="Delete this dormer">Delete</button>
             </div>
         </div>

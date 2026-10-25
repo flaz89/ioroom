@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, dormerBeams, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, dormerOnHips, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -186,6 +186,97 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
     for (let i = 0; i < bp.count; i++) if (Math.abs(bp.getZ(i) - 2) < 1e-6 && bp.getY(i) < 4.5 - 0.3) atRidge++;
     assert.ok(atRidge > 0, 'bottom corners reach the ridge plane (beams joined under the ridge)');
     assert.equal(setRoofBeams(beamed, 'r', 0).ceilings.at(-1).roof.beams, undefined, '0 removes them');
+    // DORMER BEAMS on the beamed hip (rafters at x = 2.07, 4, 5.93 on the long facets): a dormer at x = 3 on the
+    // z = 0 facet -> 2 valley beams and a header between the rafters at 2.07 and 4 (their faces)
+    const beamedDormer = addDormer(beamed, 'r', [3, 0.8], 'db');
+    const bc = beamedDormer.ceilings.at(-1);
+    const extra = dormerBeams(bc, beamedDormer, roofBeams(bc, beamedDormer));
+    assert.deepEqual(extra.map((b) => b.kind), ['valley', 'valley', 'header']);
+    const [, , head] = extra;
+    const xs2 = head.top.map((p) => p[0]).sort((a, b) => a - b);
+    const db = roofDormers(bc)[0];
+    assert.ok(head.top.every((p) => Math.abs(p[1] - db.ridgeHeight) < 1e-9 && Math.abs(roofHeightAt(bc, beamedDormer, [p[0], p[2]]) - p[1]) < 1e-6), 'header top on the main roof at the dormer ridge');
+    assert.ok(extra.every((b) => b.width === 0.15) && head.depth === 0.2, '15 wide, header 20 deep');
+    // valleys: their bottom drops as much as the header's (no lip below it at the joint), never deeper than 15
+    // at the joint (the header's front face) the valley's bottom is above the header's bottom (by 5 mm)
+    const headerBottomY = head.top[0][1] - head.depth * Math.abs(head.down[1]);
+    for (const v of extra.slice(0, 2)) {
+        const [vt, vb] = v.top;
+        const run = Math.hypot(vb[0] - vt[0], vb[2] - vt[2]);
+        const dIn = Math.abs(vb[2] - vt[2]);                 // plan distance in from the eave (the facet's n is +z)
+        const jointTop = vt[1] - (vt[1] - vb[1]) * (0.075 * run / dIn) / run;
+        const jointBottom = jointTop - v.depth * Math.abs(v.down[1]);
+        assert.ok(v.depth <= 0.15 + 1e-12 && Math.abs(jointBottom - (headerBottomY + 0.005)) < 1e-9, 'valley bottom 5 mm above the header bottom at the joint');
+    }
+    // valleys: cut on the header's front face (z = ridge back - 0.075) and on the axis plane (x = 3): every vertex
+    // of the built beams on the valleys' side stays in front of the header face and on its own side of the axis
+    const ridgeBackZ = head.top[0][2];
+    for (const v of extra.slice(0, 2)) assert.equal(v.clips.length, 2, 'valley: header face + axis cuts');
+    // header: ends at the rafters' centres, cut on their faces (2.07 + 0.07 and 4 - 0.07)
+    assert.ok(Math.abs(xs2[0] - 2.07) < 1e-9 && Math.abs(xs2[1] - 4) < 1e-9 && head.clips.length === 2, 'header to the rafters, cut on their faces');
+    const beamsFace = roomFaces(beamedDormer).find((f) => f.surfaceId === 'r~beams').geometry.attributes.position;
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+    let headerVerts = 0;
+    for (let i = 0; i < beamsFace.count; i++) {
+        const [x, z] = [beamsFace.getX(i), beamsFace.getZ(i)];
+        // header vertices: between the rafter faces, never inside a rafter
+        if (Math.abs(z - ridgeBackZ) < 0.2 && x > 2.07 && x < 4) assert.ok(x >= 2.14 - 1e-6 && x <= 3.93 + 1e-6 || z < ridgeBackZ - 0.075 - 1e-6, 'header between the rafter faces');
+        if (near(x, 2.14) || near(x, 3.93)) headerVerts++;
+    }
+    assert.ok(headerVerts >= 4, 'header end faces on the rafter faces');
+    // VALLEYS ON TO THE WALLS: a wall square to the eave beyond a cheek's back end (x = 4.6, from z = 0 to 4):
+    // the right valley goes on along its line and stops on that wall's face, cut flush there
+    const walled = { ...beamedDormer, walls: [...beamedDormer.walls, { id: 'wv', a: [4.6, 0], b: [4.6, 4], thickness: 0.15 }] };
+    const wc = walled.ceilings.at(-1);
+    const wallValleys = dormerBeams(wc, walled, roofBeams(wc, walled)).filter((b) => b.kind === 'valley');
+    const valleyOnWall = wallValleys.find((v) => v.clips.length === 3);
+    assert.ok(valleyOnWall, 'one valley reaches the wall');
+    // its box runs past the face and the face's plane cuts it: no vertex of the built beams beyond the face
+    assert.ok(valleyOnWall.top[1][0] > 4.45, 'box past the face');
+    const cutBeams = roomFaces(walled).find((f) => f.surfaceId === 'r~beams').geometry.attributes.position;
+    const wallFaceX = Math.min(...[4.6, 4.75, 4.45].filter((x) => Math.abs(valleyOnWall.clips[2].point[0] - x) < 1e-6));
+    let touching = 0;
+    for (let i = 0; i < cutBeams.count; i++) {
+        const [x, z] = [cutBeams.getX(i), cutBeams.getZ(i)];
+        if (z > 0.3 && z < 1.9 && x > 4.2 && x < 5) {
+            assert.ok(x <= wallFaceX + 1e-6, 'nothing past the wall face');
+            if (Math.abs(x - wallFaceX) < 1e-6) touching++;
+        }
+    }
+    assert.ok(touching >= 3, 'the valley end lies on the wall face');
+    assert.ok(Math.abs(roofHeightAt(wc, walled, [valleyOnWall.top[1][0], valleyOnWall.top[1][2]]) - valleyOnWall.top[1][1]) < 1e-6, 'still on the main roof plane');
+    // a dormer on a hip's END facet (between two hip beams): the header stops at the hips
+    const endDormer = addDormer(beamed, 'r', [0.8, 2], 'de');
+    const ec = endDormer.ceilings.at(-1);
+    const endHeader = dormerBeams(ec, endDormer, roofBeams(ec, endDormer)).find((b) => b.kind === 'header');
+    assert.ok(endHeader && endHeader.clips.length === 2, 'end facet: the header is cut on the two hip beams');
+    // HIP MODE: valleys parallel to the hips at a clear 20 cm gap; the heights are derived and follow the width
+    const parallel = (hip, [p, q]) => {
+        const [u, v] = [[hip[1][0] - hip[0][0], hip[1][2] - hip[0][2]], [q[0] - p[0], q[1] - p[1]]];
+        return Math.abs(u[0] * v[1] - u[1] * v[0]) / Math.hypot(...u) / Math.hypot(...v) < 1e-9;
+    };
+    const lineGap = (hip, x) => { // plan distance of point x from the hip's axis line
+        const [a, b] = [[hip[0][0], hip[0][2]], [hip[1][0], hip[1][2]]];
+        return Math.abs((b[0] - a[0]) * (x[1] - a[1]) - (b[1] - a[1]) * (x[0] - a[0])) / Math.hypot(b[0] - a[0], b[1] - a[1]);
+    };
+    for (const width of [1.4, 1]) {
+        const hipMode = updateDormer(endDormer, 'r', 'de', { hipOffset: 0.2, width });
+        assert.ok(hipMode, `hip mode fits (width ${width})`);
+        const hc = hipMode.ceilings.at(-1);
+        assert.equal(hc.roof.dormers.at(-1).eaveHeight, ec.roof.dormers.at(-1).eaveHeight, 'stored heights untouched');
+        const hd = roofDormers(hc, hipMode).at(-1);
+        const lines = dormerLines(hc, hipMode, hd);
+        const hipLines = roofBeams(hc, hipMode).filter((b) => b.kind === 'hip').map((b) => b.top);
+        for (const cheek of lines.cheeks) {
+            const valley = [cheek[1], lines.ridge[1]];
+            const gaps = hipLines.filter((h) => parallel(h, valley)).map((h) => lineGap(h, valley[0])); // the far end's hips are parallel too
+            assert.ok(gaps.length > 0, 'valley parallel to a hip');
+            assert.ok(Math.abs(Math.min(...gaps) - (0.2 + 0.07 + 0.075)) < 1e-9, `clear gap 20 cm between the beams (${Math.min(...gaps)})`);
+        }
+    }
+    assert.equal(dormerOnHips(ec, endDormer, roofDormers(ec)[0]), true, 'end facet: between hips');
+    const noBeams = addDormer(hip, 'r', [3, 0.8], 'dn');
+    assert.equal(dormerBeams(noBeams.ceilings.at(-1), noBeams).length, 0, 'none without the roof beams');
     // DORMERS on the gable (eaves z = 0 and z = 4 at 2.5, ridge z = 2 at 4.5: 1 m rise per meter)
     assert.equal(addDormer(gable, 'r', [4, 9]), null, 'not on the roof');
     const withDormer = addDormer(gable, 'r', [3, 0.8], 'd1');

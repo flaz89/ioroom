@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { RenderPipeline, UnsignedByteType } from 'three/webgpu';
 import { pass, mrt, output, normalView, diffuseColor, metalness, roughness, velocity, vec4, packNormalToRGB, unpackRGBToNormal, sample } from 'three/tsl';
@@ -69,7 +69,8 @@ export default function PostEffects() {
     // TRAA, so with the jittered camera their thin lines shimmered.
     const overlayCamera = useMemo(() => camera.clone(), [camera]);
 
-    const effects = useMemo(() => {
+    // the effects chain, built by buildEffects (below)
+    const buildEffects = () => {
         const renderPipeline = new RenderPipeline(gl);
         // Every node that owns GPU resources (render targets, history buffers), disposed with the chain:
         // RenderPipeline.dispose() frees only its own quad material (three r186), so without this every
@@ -179,13 +180,27 @@ export default function PostEffects() {
             resolved.a.mul(overlay.a.oneMinus()).add(overlay.a)
         );
         return { pipeline: renderPipeline, giPass, ssrPass, owned };
-    }, [gl, scene, camera, overlayCamera, isSsgi, isSsr, isDenoise]);
-    const { pipeline, giPass, ssrPass, owned } = effects;
-    // the replaced (or unmounted) chain: the pipeline and every GPU resource its nodes created
-    useEffect(() => () => {
-        pipeline.dispose();
-        owned.forEach((node) => node.dispose());
-    }, [pipeline, owned]);
+    };
+    // BUILT AND DISPOSED IN THE SAME EFFECT: each mount / settings change gets a chain of its own, and a disposed
+    // chain is never used again. (Built in a useMemo and disposed in an effect, React's StrictMode check in
+    // development — mount, clean up, mount again — disposed the live chain and then kept rendering it: the
+    // overlay pass lost the shared scene depth and the transparent selections drew over everything, 25/10.)
+    // The frame reads the chain from a ref (set at once: no frame ever renders a disposed chain between the
+    // cleanup and the re-render); the state only re-runs the knob effects below.
+    const chainRef = useRef(null);
+    const [effects, setEffects] = useState(null);
+    useEffect(() => {
+        const built = buildEffects();
+        chainRef.current = built;
+        setEffects(built);
+        return () => {
+            if (chainRef.current === built) chainRef.current = null;
+            built.pipeline.dispose();
+            built.owned.forEach((node) => node.dispose()); // the pipeline and every GPU resource its nodes created
+        };
+    }, [gl, scene, camera, overlayCamera, isSsgi, isSsr, isDenoise]); // eslint-disable-line react-hooks/exhaustive-deps
+    const giPass = effects?.giPass ?? null;
+    const ssrPass = effects?.ssrPass ?? null;
 
     // live knobs: uniforms only, no rebuild
     const ssgiQuality = useStore((state) => state.settings.ssgiQuality);
@@ -215,9 +230,11 @@ export default function PostEffects() {
             state.invalidate();
             return;
         }
+        const chain = chainRef.current;
+        if (chain === null) return; // not built yet (first frame)
         lastRenderRef.current = now;
         overlayCamera.copy(camera); // before the pipeline jitters `camera` (TRAA)
-        pipeline.render();
+        chain.pipeline.render();
     }, 1);
     return null;
 }

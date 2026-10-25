@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, ShapeUtils, Vector2, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { beamsFaceId, BEAM_SIZE, dormerAt, dormerFootprint, dormerLines, roofEaves, dormerSolids, dormerWallsFaceId, roofDormers, ceilingHeight, facetArea, facetNormal, roofBeams, roofFacets, roofHeightAt, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { beamsFaceId, BEAM_SIZE, dormerAt, dormerBeams, dormerFootprint, dormerLines, roofEaves, dormerSolids, dormerWallsFaceId, roofDormers, ceilingHeight, facetArea, facetNormal, roofBeams, roofFacets, roofHeightAt, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
@@ -80,9 +80,70 @@ function planarPolygon(points, normal, uv) {
 // and the roof (a vertical drop keeps the plumb cuts exactly on the ridge / eave planes)
 const BEAM_DROP = 0.005;
 
+/*
+* Convex solid `faces` (polygons of [x, y, z]) cut by a plane, keeping the side where (p - point) . normal <= 0;
+* the cut is closed by a cap polygon. Used for beams joined at any angle (dormer headers / valleys: clips).
+*/
+function clipSolid(faces, { point, normal }) {
+    const dist = (p) => (p[0] - point[0]) * normal[0] + (p[1] - point[1]) * normal[1] + (p[2] - point[2]) * normal[2];
+    const kept = [];
+    const cut = [];
+    for (const face of faces) {
+        const polygon = [];
+        face.forEach((a, i) => {
+            const b = face[(i + 1) % face.length];
+            const [da, db] = [dist(a), dist(b)];
+            if (da <= 1e-9) polygon.push(a);
+            if (Math.abs(da) <= 1e-9) cut.push(a);
+            if ((da < -1e-9 && db > 1e-9) || (da > 1e-9 && db < -1e-9)) {
+                const x = a.map((c, j) => c + (b[j] - c) * (da / (da - db)));
+                polygon.push(x);
+                cut.push(x);
+            }
+        });
+        if (polygon.length >= 3) kept.push(polygon);
+    }
+    // cap: the points on the plane, in order around their centre
+    const unique = cut.filter((p, i) => cut.findIndex((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-7) === i);
+    if (unique.length >= 3) {
+        const c = [0, 1, 2].map((j) => unique.reduce((sum, p) => sum + p[j], 0) / unique.length);
+        const ref = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+        const u = [normal[1] * ref[2] - normal[2] * ref[1], normal[2] * ref[0] - normal[0] * ref[2], normal[0] * ref[1] - normal[1] * ref[0]];
+        const v = [normal[1] * u[2] - normal[2] * u[1], normal[2] * u[0] - normal[0] * u[2], normal[0] * u[1] - normal[1] * u[0]];
+        const angle = (p) => Math.atan2((p[0] - c[0]) * v[0] + (p[1] - c[1]) * v[1] + (p[2] - c[2]) * v[2], (p[0] - c[0]) * u[0] + (p[1] - c[1]) * u[1] + (p[2] - c[2]) * u[2]);
+        kept.push(unique.sort((p, q) => angle(p) - angle(q)));
+    }
+    return kept;
+}
+
+// A convex solid's faces as geometry: outward normals (away from the solid's centre), UVs in meters in each
+// face's plane
+function solidGeometry(faces) {
+    const all = faces.flat();
+    const centre = [0, 1, 2].map((j) => all.reduce((sum, p) => sum + p[j], 0) / all.length);
+    return faces.map((face) => {
+        let nx = 0, ny = 0, nz = 0;
+        face.forEach((p, i) => {
+            const q = face[(i + 1) % face.length];
+            nx += (p[1] - q[1]) * (p[2] + q[2]);
+            ny += (p[2] - q[2]) * (p[0] + q[0]);
+            nz += (p[0] - q[0]) * (p[1] + q[1]);
+        });
+        const length = Math.hypot(nx, ny, nz) || 1;
+        let normal = [nx / length, ny / length, nz / length];
+        const fc = [0, 1, 2].map((j) => face.reduce((sum, p) => sum + p[j], 0) / face.length);
+        if ((fc[0] - centre[0]) * normal[0] + (fc[1] - centre[1]) * normal[1] + (fc[2] - centre[2]) * normal[2] < 0) normal = normal.map((c) => -c);
+        const ref = Math.abs(normal[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+        const u = [ref[1] * normal[2] - ref[2] * normal[1], ref[2] * normal[0] - ref[0] * normal[2], ref[0] * normal[1] - ref[1] * normal[0]];
+        const ul = Math.hypot(...u) || 1;
+        const uu = u.map((c) => c / ul);
+        const vv = [normal[1] * uu[2] - normal[2] * uu[1], normal[2] * uu[0] - normal[0] * uu[2], normal[0] * uu[1] - normal[1] * uu[0]];
+        return planarPolygon(face, normal, (p) => [p[0] * uu[0] + p[1] * uu[1] + p[2] * uu[2], p[0] * vv[0] + p[1] * vv[1] + p[2] * vv[2]]);
+    });
+}
+
 function beamsGeometry(beams) {
-    const { width } = BEAM_SIZE;
-    return mergeGeometries(beams.flatMap(({ top: [ridgeTop, eaveTop], across, down, depth }) => {
+    return mergeGeometries(beams.flatMap(({ top: [ridgeTop, eaveTop], across, down, depth, width = BEAM_SIZE.width, clips = [] }) => {
         const [r, e] = [ridgeTop, eaveTop].map(([x, y, z]) => [x, y - BEAM_DROP, z]);
         const along = [0, 1, 2].map((c) => e[c] - r[c]);
         const run = Math.hypot(along[0], along[2]);             // plan length ridge -> eave
@@ -103,6 +164,12 @@ function beamsGeometry(beams) {
             [[side(r, -1), side(r, 1), side(b0, 1), side(b0, -1)], plan.map((c) => -c), [[0, depth], [width, depth], [width, 0], [0, 0]]],
             [[side(e, -1), side(e, 1), side(b1, 1), side(b1, -1)], plan, [[0, depth], [width, depth], [width, 0], [0, 0]]]
         ];
+        // beams joined at an angle (clips): the box cut by those planes, as a convex solid
+        if (clips.length > 0) {
+            let solid = faces.map(([points]) => points);
+            for (const clip of clips) solid = clipSolid(solid, clip);
+            return solid.length >= 4 ? solidGeometry(solid) : [];
+        }
         return faces.map(([points, normal, uvs]) => quad(points, normal, uvs));
     }));
 }
@@ -110,7 +177,7 @@ function beamsGeometry(beams) {
 // The holes the dormers cut in their facets: { eave index: [plan outline] } (planModel.dormerFootprint)
 function dormerHoles(ceiling, level) {
     const holes = {};
-    for (const dormer of roofDormers(ceiling)) {
+    for (const dormer of roofDormers(ceiling, level)) {
         const outline = dormerFootprint(ceiling, level, dormer);
         if (outline) (holes[dormer.eave] ??= []).push(outline);
     }
@@ -202,7 +269,7 @@ function pitchedRoofs(level) {
             ...edgesOf(ceiling.points),
             ...(roofFacets(ceiling, level) ?? []).flatMap((facet) => edgesOf(facet.points.map((p) => [p[0], p[2]]))),
             // dormers: their footprint's outline and their ridge
-            ...roofDormers(ceiling).flatMap((dormer) => {
+            ...roofDormers(ceiling, level).flatMap((dormer) => {
                 const footprint = dormerFootprint(ceiling, level, dormer);
                 return footprint ? [...edgesOf(footprint), dormerLines(ceiling, level, dormer).ridge] : [];
             })
@@ -450,7 +517,7 @@ export function roomFaces(level) {
             const height = ceilingHeight(ceiling, level);
             const facets = roofFacets(ceiling, level);
             // dormers: their small roofs are part of the ceiling's surface (same material)
-            const dormerRoofs = roofDormers(ceiling).flatMap((dormer) => dormerSolids(ceiling, level, dormer)?.roofs ?? []);
+            const dormerRoofs = roofDormers(ceiling, level).flatMap((dormer) => dormerSolids(ceiling, level, dormer)?.roofs ?? []);
             return {
                 key: ceiling.id,
                 // underside (the room's side) + top (seen from above), coplanar, back faces culled
@@ -464,7 +531,7 @@ export function roomFaces(level) {
         }),
         // dormer walls (fronts, cheeks): a surface of their own, like walls
         ...(level.ceilings ?? []).flatMap((ceiling) => {
-            const walls = roofDormers(ceiling).flatMap((dormer) => dormerSolids(ceiling, level, dormer)?.walls ?? []);
+            const walls = roofDormers(ceiling, level).flatMap((dormer) => dormerSolids(ceiling, level, dormer)?.walls ?? []);
             return walls.length === 0 ? [] : [{
                 key: dormerWallsFaceId(ceiling.id),
                 geometry: verticalWallsGeometry(walls),
@@ -473,9 +540,11 @@ export function roomFaces(level) {
                 color: WALL_COLOR
             }];
         }),
-        // exposed beams: their own face id (a material of their own, e.g. wood), cast shadows
+        // exposed beams: their own face id (a material of their own, e.g. wood), cast shadows; the dormers'
+        // beams with them
         ...(level.ceilings ?? []).flatMap((ceiling) => {
-            const beams = roofBeams(ceiling, level);
+            const rafters = roofBeams(ceiling, level);
+            const beams = [...rafters, ...dormerBeams(ceiling, level, rafters)];
             return beams.length === 0 ? [] : [{
                 key: beamsFaceId(ceiling.id),
                 geometry: beamsGeometry(beams),
@@ -513,7 +582,7 @@ export function surfaceAreas(level) {
         const facets = roofFacets(ceiling, level);
         put(ceiling.id, facets ? facets.reduce((sum, facet) => sum + facetArea(facet.points), 0) : polygonArea(ceiling.points));
         // dormers: their small roofs count with the ceiling, their walls on their own (outside face)
-        for (const dormer of roofDormers(ceiling)) {
+        for (const dormer of roofDormers(ceiling, level)) {
             const solids = dormerSolids(ceiling, level, dormer);
             if (!solids) continue;
             put(ceiling.id, solids.roofs.reduce((sum, roof) => sum + facetArea(roof.points), 0));
@@ -522,9 +591,9 @@ export function surfaceAreas(level) {
             put(dormerWallsFaceId(ceiling.id), solids.walls.reduce((sum, wall) => sum + facetArea(wall.points), 0));
         }
         // beams: their visible surface (bottom + two sides + ends; the top is against the roof)
-        const { width } = BEAM_SIZE;
-        const beams = roofBeams(ceiling, level);
-        if (beams.length > 0) put(beamsFaceId(ceiling.id), beams.reduce((sum, { top: [r, e], depth }) => sum + Math.hypot(e[0] - r[0], e[1] - r[1], e[2] - r[2]) * (width + 2 * depth) + 2 * width * depth, 0));
+        const rafters = roofBeams(ceiling, level);
+        const beams = [...rafters, ...dormerBeams(ceiling, level, rafters)];
+        if (beams.length > 0) put(beamsFaceId(ceiling.id), beams.reduce((sum, { top: [r, e], depth, width = BEAM_SIZE.width }) => sum + Math.hypot(e[0] - r[0], e[1] - r[1], e[2] - r[2]) * (width + 2 * depth) + 2 * width * depth, 0));
     }
     const patches = openingFloors(level);
     for (const patch of patches) put(patch.floorId, polygonArea(patch.points));

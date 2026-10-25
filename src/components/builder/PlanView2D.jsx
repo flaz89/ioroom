@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addDormer, newDormerId, dormerLines, dragDormer, roofDormers, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addDormer, dormerBeams, newDormerId, dormerLines, dragDormer, roofDormers, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -529,7 +529,7 @@ export default function PlanView2D() {
         // a dormer's handle or line (data-dormer-id + data-dormer-handle): drag it, or select it on a plain click
         if (isFloorTool && dataset.dormerId != null) {
             const ceiling = (level.ceilings ?? []).find((c) => c.id === selectedFloorId);
-            const dormer = ceiling && roofDormers(ceiling).find((d) => d.id === dataset.dormerId);
+            const dormer = ceiling && roofDormers(ceiling, level).find((d) => d.id === dataset.dormerId);
             if (dormer) {
                 gestureRef.current = { kind: 'dormer', ceilingId: selectedFloorId, dormer, handle: dataset.dormerHandle, start: toWorld(view, size.w, size.h, point.x, point.y), moved: false };
                 return;
@@ -822,7 +822,7 @@ export default function PlanView2D() {
                         const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
                         if (!ceiling) return null;
                         const selectedId = selectedDormer?.ceilingId === ceiling.id ? selectedDormer.dormerId : null;
-                        return roofDormers(ceiling).map((dormer) => {
+                        return roofDormers(ceiling, shown).map((dormer) => {
                             const lines = dormerLines(ceiling, shown, dormer);
                             if (!lines) return null;
                             const segments = [lines.front, ...lines.cheeks, lines.ridge];
@@ -841,7 +841,8 @@ export default function PlanView2D() {
                                         <line key={`l${i}`} className={i === segments.length - 1 ? 'plan-dormer-ridge' : 'plan-dormer-line'} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} vectorEffect="non-scaling-stroke" />
                                     ))}
                                     {dormer.id === selectedId && [
-                                        handle('rb', lines.ridge[1], 'ridgeBack'),
+                                        // hip mode: the ridge follows the gap to the hips (planModel.resolveDormer), no handle
+                                        dormer.hipOffset == null && handle('rb', lines.ridge[1], 'ridgeBack'),
                                         handle('fr', lines.ridge[0], 'front'),
                                         handle('c0', lines.cheeks[0][0], 'cheek0'),
                                         handle('c1', lines.cheeks[1][0], 'cheek1')
@@ -856,8 +857,10 @@ export default function PlanView2D() {
                         const ridge = ceiling && roofRidge(ceiling, shown);
                         if (!ridge) return null;
                         // exposed beams (planModel.roofBeams): their plan outline, dashed (plumb ends: ridge -> eave)
-                        const beams = roofBeams(ceiling, shown).map(({ top: [r, e], across }) => {
-                            const w = BEAM_SIZE.width / 2;
+                        // (the dormers' valley beams and headers too: dormerBeams)
+                        const rafters = roofBeams(ceiling, shown);
+                        const beams = [...rafters, ...dormerBeams(ceiling, shown, rafters)].map(({ top: [r, e], across, width = BEAM_SIZE.width }) => {
+                            const w = width / 2;
                             return [[r[0] - across[0] * w, r[2] - across[2] * w], [e[0] - across[0] * w, e[2] - across[2] * w],
                                 [e[0] + across[0] * w, e[2] + across[2] * w], [r[0] + across[0] * w, r[2] + across[2] * w]];
                         });
@@ -931,7 +934,7 @@ export default function PlanView2D() {
             {isReady && gestureRef.current?.kind === 'dormer' && draft && (() => {
                 const { ceilingId, dormer: { id } } = gestureRef.current;
                 const ceiling = (shown.ceilings ?? []).find((item) => item.id === ceilingId);
-                const dormer = ceiling && roofDormers(ceiling).find((item) => item.id === id);
+                const dormer = ceiling && roofDormers(ceiling, shown).find((item) => item.id === id);
                 const lines = dormer && dormerLines(ceiling, shown, dormer);
                 if (!lines) return null;
                 const [front, back] = lines.ridge;
