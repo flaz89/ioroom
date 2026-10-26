@@ -1,7 +1,8 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, dormerLines, dormerOnHips, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, polygonArea, removeRoofHole, roofHoleFacets, roofHoles, dormerLines, dormerOnHips, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, setWallParapet, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
+import { wallUnderRoof } from '../scene/level/room/roomLayout';
 import './plan-view.css';
 
 /*
@@ -30,7 +31,50 @@ export default function WallPanel() {
     const isOpening = useStore((state) => state.selectedOpening != null);
     const isFloor = useStore((state) => state.selectedFloorId != null);
     const isDormer = useStore((state) => state.selectedDormer != null);
-    return isOpening ? <OpeningPanel /> : isDormer ? <DormerPanel /> : isFloor ? <FloorPanel /> : <WallsPanel />;
+    const isRoofHole = useStore((state) => state.selectedRoofHole != null);
+    return isOpening ? <OpeningPanel /> : isDormer ? <DormerPanel /> : isRoofHole ? <RoofHolePanel /> : isFloor ? <FloorPanel /> : <WallsPanel />;
+}
+
+/*
+* Panel of the selected ROOF HOLE (store selectedRoofHole; planModel roofHoles): its plan area, whether it cuts
+* the roof (planModel.roofHoleFacets: inside one facet, clear of dormers and other holes), Delete. Its shape is
+* edited with its vertex handles in the plan. ← back to the roof.
+*/
+function RoofHolePanel() {
+    const { ceilingId, holeId } = useStore((state) => state.selectedRoofHole);
+    const level = useStore((state) => activeLevel(state.plan));
+    const setActiveLevel = useStore((state) => state.setActiveLevel);
+    const setSelectedRoofHole = useStore((state) => state.setSelectedRoofHole);
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const hole = ceiling && roofHoles(ceiling).find((item) => item.id === holeId);
+    if (!hole) return null; // removed (undo, another device)
+    const isBuilt = roofHoleFacets(ceiling, level).some((item) => item.hole.id === holeId);
+    const remove = () => {
+        setActiveLevel(removeRoofHole(level, ceilingId, holeId));
+        setSelectedRoofHole(null);
+    };
+    return (
+        <div className="wall-panel" onPointerDown={(event) => event.stopPropagation()}>
+            <div className="wall-panel-header">
+                <button className="wall-panel-close" onClick={() => setSelectedRoofHole(null)} title="Back to the roof">←</button>
+                <span>Roof hole</span>
+                <button className="wall-panel-close" onClick={() => setSelectedRoofHole(null)} title="Deselect (Esc)">×</button>
+            </div>
+            <div className="wall-panel-field" title="Area in the plan (the roof loses its sloped area)">
+                <span>Plan area</span>
+                <span className="wall-panel-readout">{`${polygonArea(hole.points).toFixed(2)} m²`}</span>
+            </div>
+            {!isBuilt && (
+                <div className="wall-panel-field" title="A hole cuts the roof only inside one facet, clear of dormers and other holes">
+                    <span>Cuts nothing</span>
+                    <span className="wall-panel-readout">not in one facet</span>
+                </div>
+            )}
+            <div className="wall-panel-actions">
+                <button className="is-danger" onClick={remove} title="Delete this hole (Del)">Delete</button>
+            </div>
+        </div>
+    );
 }
 
 /*
@@ -119,6 +163,8 @@ function FloorPanel() {
     const deleteFloor = useStore((state) => state.deleteFloor);
     const dormerPlacing = useStore((state) => state.dormerPlacing);
     const setDormerPlacing = useStore((state) => state.setDormerPlacing);
+    const roofHoleDrawing = useStore((state) => state.roofHoleDrawing);
+    const setRoofHoleDrawing = useStore((state) => state.setRoofHoleDrawing);
     const key = isCeiling ? 'ceilings' : 'floors';
     const areas = level[key] ?? [];
     const index = areas.findIndex((area) => area.id === floorId);
@@ -171,6 +217,12 @@ function FloorPanel() {
                         onClick={() => setDormerPlacing(dormerPlacing === floorId ? null : floorId)}
                         title="Click on a facet of this roof to place a dormer (Esc cancels)">
                         {dormerPlacing === floorId ? 'Click on a facet…' : 'Add dormer'}
+                    </button>
+                    {/* a hole: drawn like a floor, inside one facet (PlanView2D.jsx, planModel.addRoofHole) */}
+                    <button className={roofHoleDrawing === floorId ? 'is-active' : undefined}
+                        onClick={() => setRoofHoleDrawing(roofHoleDrawing === floorId ? null : floorId)}
+                        title="Draw the hole's outline inside one facet of this roof, like a floor (Esc cancels)">
+                        {roofHoleDrawing === floorId ? 'Draw the hole…' : 'Add hole'}
                     </button>
                 </div>
             )}
@@ -248,6 +300,7 @@ function WallsPanel() {
 
     const { length } = wallFrame(wall);
     const height = wall.height ?? level.wallHeight;
+    const underRoof = wallUnderRoof(wall, level);
 
     const applyLength = (value) => {
         const next = setWallLength(level, wallId, value);
@@ -267,6 +320,14 @@ function WallsPanel() {
             <Field label="Length" value={length} onApply={(text) => applyLength(parse(text))} />
             <Field label="Thickness" value={wall.thickness} onApply={(text) => applyRange('thickness')(parse(text))} />
             <Field label="Height" value={height} onApply={(text) => applyRange('height')(parse(text))} />
+            {/* under a pitched roof: its top follows the roof, or is a PARAPET (planModel.setWallParapet): the face
+                on the lower roof side stays on the roof, the other drops to Parapet above the floor in front */}
+            {underRoof && <Toggle label="Top" value={wall.parapet != null ? 'parapet' : 'roof'} options={[['roof', 'Roof'], ['parapet', 'Parapet']]}
+                onChange={(next) => setActiveLevel(setWallParapet(level, wallId, next === 'parapet' ? 1 : null))} />}
+            {underRoof && wall.parapet != null && <Field label="Parapet" value={wall.parapet} onApply={(text) => {
+                const next = setWallParapet(level, wallId, parse(text));
+                if (next) setActiveLevel(next);
+            }} />}
             {/* where the drawn line (the corners' anchor) is: a face or the axis, L / C / R like the wall tool
                 (seen along the drawing direction); the WALL stays put, only its line moves (setWallJustify) */}
             <div className="wall-panel-field">

@@ -1,7 +1,7 @@
 import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry, ShapeUtils, Vector2, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { planarUVs } from './roomGeometry.js';
-import { beamsFaceId, BEAM_SIZE, dormerAt, dormerBeams, dormerFootprint, dormerLines, roofEaves, dormerSolids, dormerWallsFaceId, roofDormers, ceilingHeight, facetArea, facetNormal, roofBeams, roofFacets, roofHeightAt, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
+import { beamsFaceId, BEAM_SIZE, dormerAt, dormerBeams, dormerFootprint, dormerLines, roofEaves, dormerSolids, dormerWallsFaceId, roofDormers, roofHoleFacets, ceilingHeight, facetArea, facetNormal, floorAt, roofBeams, roofFacets, roofHeightAt, faceOffsets, floorElevation, openingFloors, openingRects, pointInPolygon, polygonArea, wallFootprint, wallFrame } from '../../../../plan/planModel.js';
 
 /*
 * The faces of a plan level (plan/planModel.js) as geometry: what Room.jsx draws and what the bill of
@@ -31,11 +31,21 @@ const WALL_COLOR = '#ffffff';
 const CEILING_COLOR = '#f4f4f4';
 
 const wallHeight = (wall, level) => wall.height ?? level.wallHeight;
+const PARAPET_REACH = 2; // m: how far beyond a parapet's roof side face its break (a roof hole's edge) is looked for
+const END_PROBE = 0.005; // m: past a parapet's end, is it still the hole (open) or the roof again (closed up to it)?
 
 // One quad (two triangles) with the given corners (3D, any order around the quad), normal and UVs
 function quad(points, normal, uvs) {
-    const [p0, p1, p2] = points.map((p) => new Vector3(...p));
-    const facing = p1.clone().sub(p0).cross(p2.clone().sub(p0)).dot(new Vector3(...normal));
+    // winding from the whole outline (Newell), not the first triangle: that one is flat when two corners meet
+    // (a parapet's riser with a zero-height side: 26/10 it came out back to front)
+    let [nx, ny, nz] = [0, 0, 0];
+    points.forEach((p, i) => {
+        const q = points[(i + 1) % points.length];
+        nx += (p[1] - q[1]) * (p[2] + q[2]);
+        ny += (p[2] - q[2]) * (p[0] + q[0]);
+        nz += (p[0] - q[0]) * (p[1] + q[1]);
+    });
+    const facing = nx * normal[0] + ny * normal[1] + nz * normal[2];
     const order = facing >= 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new Float32BufferAttribute(points.flat(), 3));
@@ -174,13 +184,15 @@ function beamsGeometry(beams) {
     }));
 }
 
-// The holes the dormers cut in their facets: { eave index: [plan outline] } (planModel.dormerFootprint)
-function dormerHoles(ceiling, level) {
+// The holes cut in the facets: { eave index: [plan outline] }: the dormers' (planModel.dormerFootprint) and the
+// drawn roof holes that fit (planModel.roofHoleFacets)
+function facetHoles(ceiling, level) {
     const holes = {};
     for (const dormer of roofDormers(ceiling, level)) {
         const outline = dormerFootprint(ceiling, level, dormer);
         if (outline) (holes[dormer.eave] ??= []).push(outline);
     }
+    for (const { hole, edge } of roofHoleFacets(ceiling, level)) (holes[edge] ??= []).push(hole.points);
     return holes;
 }
 
@@ -194,7 +206,7 @@ function verticalWallsGeometry(walls) {
 }
 
 // A pitched ceiling's facets (planModel.roofFacets), each with its underside (the room's side) and top
-// HOLES (dormers: holesByEdge[eave] = plan outlines [[x, z]]) are cut out of the facet of that eave: the
+// HOLES (dormers, drawn roof holes: holesByEdge[eave] = plan outlines [[x, z]]) are cut out of the facet of that eave: the
 // facet is triangulated in plan with its holes (earcut, ShapeUtils) and every point lifted onto its plane.
 function roofGeometry(facets, holesByEdge = {}) {
     return mergeGeometries(facets.flatMap(({ dir, points, edge }) => {
@@ -272,7 +284,9 @@ function pitchedRoofs(level) {
             ...roofDormers(ceiling, level).flatMap((dormer) => {
                 const footprint = dormerFootprint(ceiling, level, dormer);
                 return footprint ? [...edgesOf(footprint), dormerLines(ceiling, level, dormer).ridge] : [];
-            })
+            }),
+            // roof holes: a parapet's top changes there (wallTops parapet)
+            ...roofHoleFacets(ceiling, level).flatMap(({ hole }) => edgesOf(hole.points))
         ]
     }));
 }
@@ -304,7 +318,71 @@ function wallTops(wall, level, roofs) {
     };
     const { inner: innerOffset, outer: outerOffset } = faceOffsets(wall);
     const axisOffset = (innerOffset + outerOffset) / 2;
+    const towards = (offset) => Math.sign(axisOffset - offset) * 1e-4; // a hair inside the wall (see below)
+    // the roof's height at (t, offset) across the wall (read a hair inside the wall, like the profiles), or h
+    const roofY = (t, offset) => {
+        const p = plan(t, offset);
+        const surface = roofOver(plan(t, offset + towards(offset))) ?? roofOver(p);
+        return surface ? surface(p) : h;
+    };
+    /*
+    * PARAPET (wall.parapet, m; Flavio 26/10, recessed terraces): under a roof, the face where the roof is LOWER
+    * (roofFace) is on the roof's side, the other face (parapetFace) drops to `parapet` above the floor in front
+    * of it (planModel.floorAt + its elevation). The roof runs on up to the BREAK = where a roof hole begins on
+    * the way from the roof's side to the parapet face (planModel.roofHoleFacets: the edge Flavio draws), and from
+    * there a COUNTER-SLOPE goes straight down to the parapet face's top. The break can lie inside the wall (its
+    * top follows the roof up to it) or out beyond the roof side face (that face's top is then on the counter-slope,
+    * and the cap reaches out to the hole's edge). Where no hole is met (along the wall beside the hole) the wall
+    * goes on under the roof as usual: the parapet is only where the roof is open.
+    */
+    let parapet = null;
+    if (wall.parapet != null && roofs.length > 0) {
+        const mid = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) / 2;
+        const covered = (offset) => roofOver(plan(mid, offset + towards(offset))) !== null;
+        if (covered(innerOffset) && covered(outerOffset)) {
+            const face = roofY(mid, outerOffset) > roofY(mid, innerOffset) + 1e-3 ? outerOffset : innerOffset; // even: inner
+            const roofFace = face === innerOffset ? outerOffset : innerOffset;
+            const floor = floorAt(level, plan(mid, face + Math.sign(face - axisOffset || -1) * 0.05));
+            const y = (floor ? floorElevation(floor) : 0) + wall.parapet;
+            const holeEdges = roofs.flatMap(({ ceiling }) => roofHoleFacets(ceiling, level).flatMap(({ hole }) => hole.points.map((p, i) => [p, hole.points[(i + 1) % hole.points.length]])));
+            const far = roofFace - (Math.sign(face - roofFace) || 1) * PARAPET_REACH;
+            // the break's offset at t: the first hole edge met going from `far` to the parapet face
+            const breakAt = (t) => {
+                const [p0, p1] = [plan(t, far), plan(t, face)];
+                const s = holeEdges.reduce((best, [q0, q1]) => { const c = crossing(p0, p1, q0, q1); return c !== null && (best === null || c < best) ? c : best; }, null);
+                return s === null ? null : far + (face - far) * s;
+            };
+            // the top at (t, offset) across: on the roof before the break, then the counter-slope to `y`; never
+            // above the roof. No hole there (b null): the roof all across (the wall goes on under it)
+            const topAt = (t, offset, b = breakAt(t)) => {
+                if (b === null) return roofY(t, offset);
+                const past = (offset - b) * (face - b); // > 0: between the break and the parapet face (or beyond)
+                if (past <= 0 || Math.abs(face - b) < 1e-9) return Math.min(roofY(t, offset), past <= 0 ? Infinity : y);
+                const yb = roofY(t, b);
+                return Math.min(roofY(t, offset), yb + (y - yb) * (offset - b) / (face - b));
+            };
+            // where the break changes along the wall: the holes' corners, projected on the line
+            const cuts = holeEdges.map(([p]) => (p[0] - wall.a[0]) * dir[0] + (p[1] - wall.a[1]) * dir[1]);
+            parapet = { face, roofFace, breakAt, topAt, cuts };
+        }
+    }
+    // parapet: each face's segments (cut at the holes' edges too: pitchedRoofs) with the break of their middle
+    // (a step where a hole starts along the wall); ponytail: exact while the break line is straight in a segment
     const profile = (t0, t1, offset) => {
+        const segments = roofProfile(t0, t1, offset);
+        if (!parapet) return segments;
+        const cuts = parapet.cuts.filter((t) => t > t0 + 1e-7 && t < t1 - 1e-7);
+        return segments.flatMap((s) => {
+            const ts = [s.t0, ...cuts.filter((t) => t > s.t0 && t < s.t1), s.t1];
+            return ts.slice(1).map((tb, i) => {
+                const ta = ts[i];
+                // the break just inside each end (a hole's edge oblique to the wall: it moves along the segment)
+                const [ba, bb] = [parapet.breakAt(ta + (tb - ta) * 1e-6), parapet.breakAt(tb - (tb - ta) * 1e-6)];
+                return { t0: ta, t1: tb, y0: parapet.topAt(ta, offset, ba), y1: parapet.topAt(tb, offset, bb) };
+            });
+        });
+    };
+    const roofProfile = (t0, t1, offset) => {
         if (roofs.length === 0 || t1 - t0 < 1e-9) return [{ t0, t1, y0: h, y1: h }];
         const p0 = plan(t0, offset), p1 = plan(t1, offset);
         const ts = [t0, t1];
@@ -331,8 +409,11 @@ function wallTops(wall, level, roofs) {
     const isCovered = () => roofOver(plan(Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) / 2, 0)) !== null;
     // the top's height function over a plan point's region (the roof there, or the flat wall height)
     const surfaceAt = (p) => roofOver(p) ?? (() => h);
-    return { profile, isCovered, surfaceAt };
+    return { profile, isCovered, surfaceAt, parapet };
 }
+
+// True when the wall's middle is under a pitched roof (its top follows the roof: WallPanel shows "Top")
+export const wallUnderRoof = (wall, level) => wallTops(wall, level, pitchedRoofs(level)).isCovered();
 
 // Convex polygon `points` split by the infinite line through q0 -> q1: [left part, right part] (either may be
 // empty, < 3 points)
@@ -395,6 +476,115 @@ function roofCapGeometries(footprint, tops, roofs, along, across) {
     }
     return geometries;
 }
+/*
+* A PARAPET's top (wallTops parapet): across the wall, from the roof side face (or from the BREAK, the hole's
+* edge, when it lies out beyond that face: the cap reaches out to it) over the break (roof, then counter-slope)
+* to the parapet face; heights from parapet.topAt. Along the wall: columns at the same line t across (every
+* break of both faces' profiles, the holes' corners, both faces' ends), each offset's t clamped to its face's
+* extent (mitered ends: the outline's corners stay). Each quad faces up (normal from its own corners).
+* `faces` = { inner, outer } offsets, `ranges` = { inner, outer } [t0, t1], `joined` = { start, end } (the
+* wall's ends joined to other walls: wallFootprint). null when nothing to build.
+*/
+function parapetCap(parapet, faces, ranges, innerTops, outerTops, onLine, along, across, joined) {
+    const { face, roofFace, breakAt, topAt: heightAt, cuts } = parapet;
+    const lo = Math.min(ranges.inner[0], ranges.outer[0]), hi = Math.max(ranges.inner[1], ranges.outer[1]);
+    const us = [...new Set([...ranges.inner, ...ranges.outer, ...cuts, ...[...innerTops, ...outerTops].flatMap((s) => [s.t0, s.t1])]
+        .filter((t) => t >= lo - 1e-9 && t <= hi + 1e-9).map((t) => Math.round(t * 1e7) / 1e7))].sort((p, q) => p - q);
+    // t along the line for an offset across: clamped to that offset's extent (between the faces' extents;
+    // beyond them: the nearer face's)
+    const tAt = (t, offset) => {
+        const k = Math.min(1, Math.max(0, (offset - faces.inner) / (faces.outer - faces.inner)));
+        const [t0, t1] = [0, 1].map((i) => ranges.inner[i] + (ranges.outer[i] - ranges.inner[i]) * k);
+        return Math.min(t1, Math.max(t0, t));
+    };
+    // the offsets across for break b: roof side face (or the break beyond it), the break inside, parapet face
+    const offsetsFor = (b) => {
+        const side = (b - roofFace) * (face - roofFace); // < 0: beyond the roof side face; > 0: inside the wall
+        const inside = side > 1e-9 && (face - b) * (face - roofFace) > 1e-9;
+        return side < -1e-9 ? [b, roofFace, face] : inside ? [roofFace, b, face] : [roofFace, roofFace, face];
+    };
+    const point = (t, offset, b) => { const at = tAt(t, offset); return onLine(at, offset, heightAt(at, offset, b)); };
+    // the break just inside a column at its end t (columns are cut at the holes' corners: a step there); it
+    // varies along the column when the hole's edge is not parallel to the wall (26/10: a triangle stayed open)
+    const breakNear = (t, inside) => breakAt(t + (inside - t) * 1e-6);
+    const kind = (b) => Math.sign(Math.round((b - roofFace) * (face - roofFace) * 1e9)); // -1 beyond, 0 on, 1 inside the roof side face
+    // columns where the cap is built, split where the break crosses the roof side face (the strips change there)
+    const columns = [];
+    for (let i = 1; i < us.length; i++) {
+        const [ta, tb] = [us[i - 1], us[i]];
+        if (tb - ta < 1e-7 || breakAt((ta + tb) / 2) === null) continue; // no hole: the roof covers the top (ponytail: none with the roof hidden)
+        const [ba, bb] = [breakNear(ta, tb), breakNear(tb, ta)];
+        if (ba === null || bb === null || kind(ba) * kind(bb) >= 0) { columns.push([ta, tb, ba ?? bb, bb ?? ba]); continue; }
+        const tm = ta + (tb - ta) * (roofFace - ba) / (bb - ba);
+        columns.push([ta, tm, ba, roofFace], [tm, tb, roofFace, bb]);
+    }
+    const [o0, o1] = [onLine(0, 0, 0), onLine(1, 0, 0)];
+    const dir = [o1[0] - o0[0], o1[2] - o0[2]]; // along the wall (unit: onLine is in meters)
+    const quads = [];
+    for (const [ta, tb, ba, bb] of columns) {
+        const [oa, ob] = [offsetsFor(ba), offsetsFor(bb)];
+        for (let j = 1; j < 3; j++) {
+            if (Math.abs(oa[j] - oa[j - 1]) < 1e-9 && Math.abs(ob[j] - ob[j - 1]) < 1e-9) continue; // no strip there
+            const corners = [point(ta, oa[j - 1], ba), point(tb, ob[j - 1], bb), point(tb, ob[j], bb), point(ta, oa[j], ba)];
+            const [p0, p1, p2, p3] = corners.map((p) => new Vector3(...p));
+            const n = p2.clone().sub(p0).cross(p3.clone().sub(p1)); // diagonals: fine when two corners meet (mitered end)
+            if (n.lengthSq() < 1e-14) continue;
+            n.normalize();
+            if (n.y < 0) n.negate();
+            quads.push(quad(corners, [n.x, n.y, n.z], corners.map((p) => [along([p[0], p[2]]), across([p[0], p[2]])])));
+        }
+    }
+    // RISERS where a hole starts along the wall (its corners: the break changes there): a vertical strip across
+    // the wall between the column before and the one after, so the step is closed
+    for (let i = 1; i < us.length - 1; i++) {
+        const t = us[i];
+        if (!cuts.some((c) => Math.abs(c - t) < 1e-6)) continue;
+        const [bl, br] = [breakNear(t, us[i - 1]), breakNear(t, us[i + 1])];
+        if (bl === br || (bl !== null && br !== null && Math.abs(bl - br) < 1e-9)) continue;
+        const across = [...new Set([bl, br].flatMap((b) => (b === null ? [roofFace, face] : offsetsFor(b))))].sort((p, q) => p - q);
+        for (let j = 1; j < across.length; j++) {
+            const [oa, ob] = [across[j - 1], across[j]];
+            const [la, lb, ra, rb] = [point(t, oa, bl), point(t, ob, bl), point(t, oa, br), point(t, ob, br)];
+            if (Math.abs(la[1] - ra[1]) < 1e-6 && Math.abs(lb[1] - rb[1]) < 1e-6) continue;
+            const length = Math.hypot(lb[0] - la[0], lb[2] - la[2]);
+            // facing the LOWER column (the hole's side, where it is seen from), along the wall (26/10: it faced across)
+            const side = la[1] + lb[1] < ra[1] + rb[1] ? -1 : 1;
+            quads.push(quad([la, lb, rb, ra], [dir[0] * side, 0, dir[1] * side], [[0, la[1]], [length, lb[1]], [length, rb[1]], [0, ra[1]]]));
+        }
+    }
+    // ENDS of the wall (its end lines across, mitered like the columns), where the cap is built: the cap's
+    // profile across is not a straight line (roof up to the break, then down), so a vertical strip closes it.
+    // JOINED to another wall: from the cap UP to the roof (that wall goes on under the roof there); FREE: from the
+    // end face's top (straight from one face's top to the other's) up to the cap.
+    for (const [t, tIn, outward, joinedHere] of [[us[0], us[1], -1, joined.start], [us[us.length - 1], us[us.length - 2], 1, joined.end]]) {
+        const b = us.length > 1 ? breakNear(t, tIn) : null;
+        if (b === null) continue;
+        // up to the roof also when the roof goes on just past this end (the hole stops here, give or take a hair:
+        // 26/10, a hole drawn 0.1 mm past the wall's end left the end open)
+        const isJoined = joinedHere || breakAt(t + outward * END_PROBE) === null;
+        const o = offsetsFor(b);
+        const k = (offset) => Math.min(1, Math.max(0, (offset - faces.inner) / (faces.outer - faces.inner)));
+        const yIn = heightAt(tAt(t, faces.inner), faces.inner, b), yOut = heightAt(tAt(t, faces.outer), faces.outer, b);
+        const lower = (offset) => (isJoined ? point(t, offset, b)[1] : yIn + (yOut - yIn) * k(offset));
+        const upper = (offset) => (isJoined ? heightAt(tAt(t, offset), offset, null) : point(t, offset, b)[1]);
+        for (let j = 1; j < 3; j++) {
+            const [oa, ob] = [o[j - 1], o[j]];
+            if (Math.abs(ob - oa) < 1e-9) continue;
+            const [pa, pb] = [point(t, oa, b), point(t, ob, b)];
+            const [la, lb, ua, ub] = [lower(oa), lower(ob), upper(oa), upper(ob)];
+            if (ua - la < 1e-6 && ub - lb < 1e-6) continue;
+            const length = Math.hypot(pb[0] - pa[0], pb[2] - pa[2]);
+            // facing whoever sees it: up to the roof = seen from the hole (inwards, along the wall); a free end's
+            // gable = seen from outside, past the end (26/10: it faced away, the hole still showed)
+            const facing = isJoined ? -outward : outward;
+            quads.push(quad([[pa[0], la, pa[2]], [pb[0], lb, pb[2]], [pb[0], Math.max(lb, ub), pb[2]], [pa[0], Math.max(la, ua), pa[2]]],
+                [dir[0] * facing, 0, dir[1] * facing], [[0, la], [length, lb], [length, ub], [0, ua]]));
+        }
+    }
+    if (quads.length === 0) return null;
+    return quads.length === 1 ? quads[0] : mergeGeometries(quads);
+}
+
 // The top height at t from a profile. `within` (optional): a point INSIDE the stretch the height is wanted
 // for: at a break between two segments (e.g. a dormer's cheek: main roof on one side, dormer eave on the other)
 // both are valid and the top has a vertical step, so the segment must be picked by the stretch, not by t.
@@ -467,7 +657,13 @@ function wallGeometries(wall, level, filled, roofs = pitchedRoofs(level)) {
     // the roof shown it would lie on the roof's plane (z-fighting) and nothing of it is seen anyway.
     if (!tops.isCovered()) faces.push({ part: 'edge', vertical: false, geometry: quad([at(a, h), at(b, h), at(bOut, h), at(aOut, h)], [0, 1, 0],
         [a, b, bOut, aOut].map((p) => [along(p), across(p)])) });
-    else {
+    else if (tops.parapet) {
+        // a parapet's top: roof up to the hole's edge, then the counter-slope down to the parapet face (parapetCap);
+        // below the roof, so always drawn
+        const cap = parapetCap(tops.parapet, offsets, { inner: [lineT(a), lineT(b)], outer: [lineT(aOut), lineT(bOut)] },
+            innerTops, outerTops, onLine, along, across, { start: aJoined, end: bJoined });
+        if (cap) faces.push({ part: 'edge', vertical: false, geometry: cap });
+    } else {
         const caps = roofCapGeometries([a, b, bOut, aOut], tops, roofs, along, across);
         if (caps.length > 0) faces.push({ part: 'edge', vertical: false, onlyWithoutRoof: true, geometry: caps.length === 1 ? caps[0] : mergeGeometries(caps) });
     }
@@ -521,7 +717,7 @@ export function roomFaces(level) {
             return {
                 key: ceiling.id,
                 // underside (the room's side) + top (seen from above), coplanar, back faces culled
-                geometry: facets ? roofGeometry([...facets, ...dormerRoofs], dormerHoles(ceiling, level))
+                geometry: facets ? roofGeometry([...facets, ...dormerRoofs], facetHoles(ceiling, level))
                     : mergeGeometries([polygonGeometry(ceiling.points, height, true), polygonGeometry(ceiling.points, height)]),
                 surfaceId: ceiling.id,
                 vertical: false,
@@ -590,6 +786,8 @@ export function surfaceAreas(level) {
             put(ceiling.id, -facetArea(dormerFootprint(ceiling, level, dormer).map(([x, z]) => [x, roofHeightAt(ceiling, level, [x, z]), z])));
             put(dormerWallsFaceId(ceiling.id), solids.walls.reduce((sum, wall) => sum + facetArea(wall.points), 0));
         }
+        // drawn roof holes: their outline lifted onto the roof
+        for (const { hole } of roofHoleFacets(ceiling, level)) put(ceiling.id, -facetArea(hole.points.map(([x, z]) => [x, roofHeightAt(ceiling, level, [x, z]), z])));
         // beams: their visible surface (bottom + two sides + ends; the top is against the roof)
         const rafters = roofBeams(ceiling, level);
         const beams = [...rafters, ...dormerBeams(ceiling, level, rafters)];
@@ -619,7 +817,22 @@ export function surfaceAreas(level) {
         put(`${wall.id}:outer`, profileArea(outerTops) - holes(lineT(f.aOut), lineT(f.bOut)));
         // free ends: trapezoids up to each face's top; no top cap under a roof
         const end = (p, pOut, hp, hpOut) => length(p, pOut) * (hp + hpOut) / 2;
-        put(`${wall.id}:edge`, (tops.isCovered() ? 0 : polygonArea([f.a, f.b, f.bOut, f.aOut]))
+        // a parapet's top (parapetCap): along the line, between the holes' corners, the stretches where a hole is
+        // met: its profile across (roof side face or the hole's edge, the break, the parapet face) x the stretch
+        // (ponytail: the wall's ends taken square, mitered corners not cut)
+        const capArea = tops.parapet ? (() => {
+            const { face, roofFace, breakAt, topAt: heightAt, cuts } = tops.parapet;
+            const total = wallFrame(wall).length;
+            const ts = [...new Set([0, total, ...cuts.filter((t) => t > 0 && t < total)])].sort((p, q) => p - q);
+            return ts.slice(1).reduce((sum, tb, i) => {
+                const t = (ts[i] + tb) / 2, b = breakAt(t);
+                if (b === null) return sum;
+                const across = [(b - roofFace) * (face - roofFace) < 0 ? b : roofFace, b, face]; // straight on past the break
+                const run = across.slice(1).reduce((s, o, j) => s + Math.hypot(o - across[j], heightAt(t, o, b) - heightAt(t, across[j], b)), 0);
+                return sum + run * (tb - ts[i]);
+            }, 0);
+        })() : tops.isCovered() ? 0 : polygonArea([f.a, f.b, f.bOut, f.aOut]);
+        put(`${wall.id}:edge`, capArea
             + (f.aJoined ? 0 : end(f.a, f.aOut, topAt(innerTops, lineT(f.a)), topAt(outerTops, lineT(f.aOut))))
             + (f.bJoined ? 0 : end(f.b, f.bOut, topAt(innerTops, lineT(f.b)), topAt(outerTops, lineT(f.bOut)))) + reveals);
     }

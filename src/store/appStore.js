@@ -33,3 +33,6 @@ export const useStore = create((set, get) => ({
     ...createWorkspaceSlice(set, get),
     ...createLookSlice(set, get)
 }))
+
+// dev only: the store from the browser console (debugging: e.g. copy(JSON.stringify(ioroom.getState().plan)))
+if (import.meta.env?.DEV) window.ioroom = useStore;

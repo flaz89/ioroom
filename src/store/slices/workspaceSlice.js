@@ -11,7 +11,7 @@
 * selectedOpening: { wallId, openingId } of the door / window selected in the builder (null = none); its panel
 *   is WallPanel.jsx too. Exclusive with selectedWallIds: selecting one clears the other.
 * selectedFloorId: floor selected with the floor tool (2D plan: vertex handles, Delete removes it), null = none.
-*   Cleared when changing tool.
+*   Cleared when changing tool. Changing it drops the roof hole selection / drawing (they belong to a ceiling).
 * planTool: active tool of the 2D plan view — 'select' (select walls, drag corners) | 'wall' (draw walls) | 'floor' (draw floors) | 'ceiling' (draw ceilings, same code) | 'trace' (walls traced on a vector underlay) | 'opening' (doors / windows: plan/placeOpening.js).
 * openingType: what the door / window tool places: 'door' | 'window' (picked on hover, LeftToolBar.jsx).
 * wallJustify: where the wall tool puts the thickness, along the drawing direction: 'left' | 'center' | 'right'.
@@ -60,20 +60,26 @@ export const createWorkspaceSlice = (set, get) => ({
     setSelectedOpening: (selectedOpening) => set({ selectedOpening, selectedWallIds: [] }),
 
     planTool: 'select',
-    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null, selectedDormer: null, dormerPlacing: null }),
+    setPlanTool: (planTool) => set({ planTool, selectedWallIds: [], selectedOpening: null, selectedFloorId: null, underlayTool: null, selectedDormer: null, dormerPlacing: null, selectedRoofHole: null, roofHoleDrawing: null }),
 
     // DORMERS (ceiling tool, PlanView2D.jsx / WallPanel.jsx): the selected one { ceilingId, dormerId } and the
     // ceiling a new one is being placed on ("Add dormer": the next click on that roof's facet places it)
     selectedDormer: null,
-    setSelectedDormer: (selectedDormer) => set({ selectedDormer, dormerPlacing: null }),
+    setSelectedDormer: (selectedDormer) => set({ selectedDormer, dormerPlacing: null, selectedRoofHole: null, roofHoleDrawing: null }),
     dormerPlacing: null,
-    setDormerPlacing: (dormerPlacing) => set({ dormerPlacing, selectedDormer: null }),
+    setDormerPlacing: (dormerPlacing) => set({ dormerPlacing, selectedDormer: null, selectedRoofHole: null, roofHoleDrawing: null }),
+    // ROOF HOLES (same place): the selected one { ceilingId, holeId } and the ceiling one is being drawn on
+    // ("Add hole": the floor tool's polygon, closed = planModel.addRoofHole)
+    selectedRoofHole: null,
+    setSelectedRoofHole: (selectedRoofHole) => set({ selectedRoofHole, roofHoleDrawing: null, selectedDormer: null, dormerPlacing: null }),
+    roofHoleDrawing: null,
+    setRoofHoleDrawing: (roofHoleDrawing) => set({ roofHoleDrawing, selectedRoofHole: null, selectedDormer: null, dormerPlacing: null }),
 
     partsMenu: null,
     setPartsMenu: (partsMenu) => set({ partsMenu }),
 
     selectedFloorId: null,
-    setSelectedFloorId: (selectedFloorId) => set({ selectedFloorId }),
+    setSelectedFloorId: (selectedFloorId) => set({ selectedFloorId, selectedRoofHole: null, roofHoleDrawing: null }),
 
     openingType: 'door',
     setOpeningType: (openingType) => set({ openingType }),

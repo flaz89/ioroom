@@ -300,6 +300,24 @@ export const WALL_LIMITS = {
 };
 
 // The level with wall `wallId` merged with `patch` (e.g. { thickness: 0.3 })
+/*
+* PARAPET (wall.parapet, m above the floor in front of it; roomLayout wallTops): a wall under a roof whose
+* face on the lower roof side stays on the roof while the other face drops to this height: a sloped top towards
+* that side (a recessed terrace's front wall). null = back to following the roof. Null when out of the limits.
+*/
+export const PARAPET_LIMITS = { min: 0.1, max: 5 };
+export function setWallParapet(level, wallId, height) {
+    if (height != null && !(height >= PARAPET_LIMITS.min && height <= PARAPET_LIMITS.max)) return null; // also NaN
+    return {
+        ...level,
+        walls: level.walls.map((wall) => {
+            if (wall.id !== wallId) return wall;
+            const { parapet: _old, ...rest } = wall;
+            return height == null ? rest : { ...rest, parapet: height };
+        })
+    };
+}
+
 export function updateWall(level, wallId, patch) {
     return { ...level, walls: level.walls.map((wall) => (wall.id === wallId ? { ...wall, ...patch } : wall)) };
 }
@@ -1678,6 +1696,112 @@ export function dragDormer(level, ceilingId, dormerId, handle, to, start, startD
 }
 
 /*
+* ROOF HOLES (Flavio, 26/10): ceiling.roof.holes = [{ id, points }], a polygon DRAWN in the plan (any shape)
+* = a vertical volume that cuts the roof: openings now, skylights and recessed terraces later. A hole is BUILT
+* (roofHoleFacets) when it lies inside ONE facet (all its points, its outline included: facets are convex) and
+* does not overlap that facet's dormers nor an earlier hole (sharing an edge is fine: the triangulation takes
+* touching holes, checked); else it stays in the data but cuts nothing (the plan shows it red), e.g.
+* after the roof changed under it. The facet is derived, never stored.
+*/
+export const newRoofHoleId = () => `h-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+export const roofHoles = (ceiling) => ceiling.roof?.holes ?? [];
+
+const HOLE_TOLERANCE = 0.001; // m: a hole's point this close to an outline is ON it (shared edges, the eave)
+const outlineEdges = (points) => points.map((p, i) => [p, points[(i + 1) % points.length]]);
+// distance from p to the outline of polygon `points`
+function outlineDistance(p, points) {
+    return Math.min(...outlineEdges(points).map(([a, b]) => {
+        const d = sub(b, a), l = dotp(d, d);
+        const t = l > 0 ? Math.min(1, Math.max(0, dotp(sub(p, a), d) / l)) : 0;
+        return Math.hypot(p[0] - a[0] - d[0] * t, p[1] - a[1] - d[1] * t);
+    }));
+}
+// p strictly inside `points`, farther than HOLE_TOLERANCE from its outline
+const deepInside = (p, points) => pointInPolygon(p, points) && outlineDistance(p, points) > HOLE_TOLERANCE;
+
+// True when two simple polygons overlap (edges crossing, or a point of one inside the other); sharing an edge
+// or a vertex (within HOLE_TOLERANCE) does not count: a hole drawn against a dormer's side
+function polygonsOverlap(a, b) {
+    if (outlineEdges(a).some(([p, q]) => outlineEdges(b).some(([r, s]) => segmentsCross(p, q, r, s)))) return true;
+    // the vertex average: catches a polygon drawn again on another's outline (nothing crosses, nothing inside)
+    const mean = (points) => [0, 1].map((c) => points.reduce((sum, p) => sum + p[c], 0) / points.length);
+    return [...a, mean(a)].some((p) => deepInside(p, b)) || [...b, mean(b)].some((p) => deepInside(p, a));
+}
+
+// The holes that cut the roof: [{ hole, edge }] (edge = the facet's eave index), in the data's order
+export function roofHoleFacets(ceiling, level) {
+    const facets = roofFacets(ceiling, level) ?? [];
+    const taken = {}; // eave index -> outlines already cut there (dormers first)
+    for (const dormer of roofDormers(ceiling, level)) {
+        const outline = dormerFootprint(ceiling, level, dormer);
+        if (outline) (taken[dormer.eave] ??= []).push(outline);
+    }
+    const built = [];
+    for (const hole of roofHoles(ceiling)) {
+        const facet = facets.find((item) => {
+            const plan = item.points.map((p) => [p[0], p[2]]);
+            // on its outline counts as inside (a hole up to the eave); the mean point decides between two facets
+            // a hole only touches (e.g. drawn against the ridge)
+            const mean = [0, 1].map((c) => hole.points.reduce((sum, p) => sum + p[c], 0) / hole.points.length);
+            return pointInPolygon(mean, plan) && hole.points.every((p) => pointInPolygon(p, plan) || outlineDistance(p, plan) <= HOLE_TOLERANCE);
+        });
+        if (!facet || (taken[facet.edge] ?? []).some((outline) => polygonsOverlap(outline, hole.points))) continue;
+        (taken[facet.edge] ??= []).push(hole.points);
+        built.push({ hole, edge: facet.edge });
+    }
+    return built;
+}
+
+// The level with ceiling `ceilingId`'s holes replaced by fn(holes)
+const withRoofHoles = (level, ceilingId, fn) => ({
+    ...level,
+    ceilings: (level.ceilings ?? []).map((item) => (item.id === ceilingId ? { ...item, roof: { ...item.roof, holes: fn(roofHoles(item)) } } : item))
+});
+// The level when hole `holeId` of `ceilingId` is valid (floorPolygon) and built there, else null
+function checkedHole(level, ceilingId, holeId) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    return ceiling && roofHoleFacets(ceiling, level).some(({ hole }) => hole.id === holeId) ? level : null;
+}
+
+// The level with a NEW hole drawn in the plan (`points`, drawing order), or null when not a valid polygon,
+// not inside one facet of that pitched ceiling, or overlapping a dormer / another hole
+export function addRoofHole(level, ceilingId, points, id = newRoofHoleId()) {
+    const clean = floorPolygon(points);
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    if (!clean || !ceiling?.roof) return null;
+    return checkedHole(withRoofHoles(level, ceilingId, (holes) => [...holes, { id, points: clean }]), ceilingId, id);
+}
+
+// The level with vertex `index` of hole `holeId` moved to `to`, or null when the hole would not be valid
+export function moveRoofHoleVertex(level, ceilingId, holeId, index, to) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const hole = ceiling && roofHoles(ceiling).find((item) => item.id === holeId);
+    const clean = hole && floorPolygon(hole.points.map((p, i) => (i === index ? to : p)));
+    if (!clean) return null;
+    return checkedHole(withRoofHoles(level, ceilingId, (holes) => holes.map((item) => (item.id === holeId ? { ...item, points: clean } : item))), ceilingId, holeId);
+}
+
+export const removeRoofHole = (level, ceilingId, holeId) => withRoofHoles(level, ceilingId, (holes) => holes.filter((item) => item.id !== holeId));
+
+// SNAP TARGETS for drawing / editing a hole of `ceiling` in the plan (PlanView2D.jsx): the facets' outlines
+// (eaves, ridge, hips), the dormers' footprints and the other holes: { vertices, segments } ([x, z]), so a hole
+// can share a dormer's side or an eave exactly
+export function roofHoleTargets(ceiling, level, skipHoleId = null) {
+    const outlines = [
+        ...(roofFacets(ceiling, level) ?? []).map((facet) => facet.points.map((p) => [p[0], p[2]])),
+        ...roofDormers(ceiling, level).map((dormer) => dormerFootprint(ceiling, level, dormer)).filter(Boolean),
+        ...roofHoles(ceiling).filter((hole) => hole.id !== skipHoleId).map((hole) => hole.points)
+    ];
+    return { vertices: outlines.flat(), segments: outlines.flatMap(outlineEdges) };
+}
+
+// The hole of a ceiling under plan point `point` (the smallest), or null
+export function roofHoleAt(ceiling, point) {
+    const hits = roofHoles(ceiling).filter((hole) => pointInPolygon(point, hole.points));
+    return hits.reduce((best, hole) => (best == null || polygonArea(hole.points) < polygonArea(best.points) ? hole : best), null);
+}
+
+/*
 * The level with the hip ridge of ceiling `ceilingId` set to [a, b] (moved / resized in the plan; kept
 * parallel to the longest side: b is projected onto the axis through a), or null when not editable or an end
 * falls outside the polygon. `ridge` null = back to the default (centered) ridge.
@@ -1731,7 +1855,8 @@ export function setCeilingRoof(level, ceilingId, type) {
             const eaves = eavesFor(type, ceiling.points.length, k);
             const ridgeHeight = (roof && roofRidgeHeight(ceiling, level))
                 ?? ceilingHeight(ceiling, level) + Math.tan((DEFAULT_ROOF_PITCH * Math.PI) / 180) * ridgeDistance(ceiling, eaves);
-            return { ...rest, roof: { ridgeHeight, eaves } };
+            // holes are plan polygons: kept (cutting nothing where they no longer fit one facet); dormers belong to an eave
+            return { ...rest, roof: { ridgeHeight, eaves, ...(roof?.holes ? { holes: roof.holes } : {}) } };
         })
     };
 }

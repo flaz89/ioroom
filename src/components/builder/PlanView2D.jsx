@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/appStore';
-import { activeLevel, addFloor, addDormer, dormerBeams, newDormerId, dormerLines, dragDormer, roofDormers, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
+import { activeLevel, addFloor, addDormer, addRoofHole, moveRoofHoleVertex, newRoofHoleId, removeRoofHole, roofHoleAt, roofHoleFacets, roofHoleTargets, roofHoles, dormerBeams, newDormerId, dormerLines, dragDormer, roofDormers, BEAM_SIZE, roofBeams, roofRidge, setRoofRidge, addWall, fillRoom, floorAt, moveFloorVertex, alignUnderlay, calibrateUnderlay, faceOffsets, moveUnderlay, levelBounds, openingLeaves, openingOperation, openingRects, levelVertices, moveVertex, nearestVertex, newOpeningId, newWallId, openingClearances, pocketConflicts, resizeOpening, updateOpening, wallFootprint, wallFrame } from '../../plan/planModel';
 import { alignPoint, angleBetween, angleSnap, fitView, gridPath, gridSteps, lockToPlanAxis, panBy, planMeasureList, NO_TARGETS, rulerTargets, snapWithUnderlay, toScreen, underlayTargets, toWorld, wallsInBox, zoomAt } from './planView';
 import { PlanMeasureActions, PlanMeasures } from './PlanMeasures';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
@@ -64,6 +64,12 @@ const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening,
 *   dormer is dragged its measures show live: width, front from the eave, ridge length. A press
 *   that does not move selects it (WallPanel.jsx DormerPanel). "Add dormer" (store dormerPlacing): the next
 *   click on that roof places one there (planModel.addDormer).
+*   ROOF HOLES of the selected pitched ceiling (planModel roofHoles): polygons over it (red when they cut
+*   nothing: not inside one facet, or overlapping a dormer / another hole). "Add hole" (store roofHoleDrawing):
+*   the floor tool's polygon, same snaps, closed = planModel.addRoofHole (refused: red preview), then selected.
+*   A click inside a hole selects it (store selectedRoofHole, WallPanel.jsx RoofHolePanel): its vertex handles
+*   replace the ceiling's (drag = planModel.moveRoofHoleVertex, one undo step); Delete removes it, Esc /
+*   a click elsewhere deselects it.
 * - FLOOR TOOL (store planTool 'floor', button in the left toolbar): floors are DRAWN, never built from the
 *   walls. Click = place a vertex of the floor polygon; a click on its first point (or on the last one again,
 *   double click) or Enter closes it: one floor, one undo step (planModel.addFloor refuses fewer than 3
@@ -175,6 +181,8 @@ export default function PlanView2D() {
     const selectedOpening = useStore((state) => state.selectedOpening);
     const selectedOpeningId = selectedOpening?.openingId;
     const selectedDormer = useStore((state) => state.selectedDormer);
+    const selectedRoofHole = useStore((state) => state.selectedRoofHole);
+    const roofHoleDrawing = useStore((state) => state.roofHoleDrawing);
     const [box, setBox] = useState(null);           // { start, end } screen points of the box being dragged
     const [isPanning, setIsPanning] = useState(false); // right / middle mouse pan: grabbing cursor
     const [draft, setDraft] = useState(null); // { level, point } while a corner is dragged: preview, not saved
@@ -255,19 +263,39 @@ export default function PlanView2D() {
         setOpeningHover(null);
     }
 
+    // Closes the floor being drawn: added if valid (one undo step), else kept on screen (red) to fix or Esc.
+    // "Add hole" (store roofHoleDrawing): the polygon is a hole of that roof instead (planModel.addRoofHole),
+    // then selected. Reads the store's level (also called by the Enter key's listener).
+    const closeFloor = (points) => {
+        const { plan, roofHoleDrawing: ceilingId, setSelectedRoofHole } = useStore.getState();
+        const current = activeLevel(plan);
+        const holeId = newRoofHoleId();
+        const next = ceilingId ? addRoofHole(current, ceilingId, points, holeId) : addFloor(current, points, undefined, areaKey);
+        if (next == null) return;
+        setActiveLevel(next);
+        setFloorPoints([]);
+        if (ceilingId) setSelectedRoofHole({ ceilingId, holeId });
+    };
+
     // Esc: ends the wall chain / drops the floor being drawn, else leaves the tool, else deselects the wall.
     // Enter: closes the floor being drawn.
     useEffect(() => {
         const onKey = (event) => {
             const isTyping = ['INPUT', 'TEXTAREA'].includes(event.target.tagName) || event.target.isContentEditable;
+            const hole = useStore.getState().selectedRoofHole;
+            if ((event.key === 'Delete' || event.key === 'Backspace') && isFloorTool && hole && !isTyping) {
+                event.preventDefault();
+                setActiveLevel(removeRoofHole(activeLevel(useStore.getState().plan), hole.ceilingId, hole.holeId));
+                useStore.getState().setSelectedRoofHole(null);
+                return;
+            }
             if ((event.key === 'Delete' || event.key === 'Backspace') && isFloorTool && selectedFloorId && !isTyping) {
                 event.preventDefault();
                 useStore.getState().deleteFloor(selectedFloorId, areaKey);
                 return;
             }
             if (event.key === 'Enter' && isFloorTool && floorPoints.length > 0) {
-                const next = addFloor(activeLevel(useStore.getState().plan), floorPoints, undefined, areaKey); // as closeFloor (below)
-                if (next) { setActiveLevel(next); setFloorPoints([]); }
+                closeFloor(floorPoints);
                 return;
             }
             if (event.key !== 'Escape') return;
@@ -280,13 +308,15 @@ export default function PlanView2D() {
             else if (selectedDormer) setSelectedDormer(null);
             else if (chain) setChain(null);
             else if (floorPoints.length > 0) setFloorPoints([]);
+            else if (useStore.getState().roofHoleDrawing) useStore.getState().setRoofHoleDrawing(null);
+            else if (useStore.getState().selectedRoofHole) useStore.getState().setSelectedRoofHole(null);
             else if (selectedFloorId) setSelectedFloorId(null);
             else if (isDrawing) setPlanTool('select');
             else setSelectedWallId(null);
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [chain, isDrawing, isFloorTool, areaKey, floorPoints, selectedFloorId, setSelectedFloorId, setActiveLevel, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]);
+    }, [chain, isDrawing, isFloorTool, areaKey, floorPoints, selectedFloorId, setSelectedFloorId, setActiveLevel, setPlanTool, setSelectedWallId, underlayTool, toolPoints, lengthAsk, setUnderlayTool]); // eslint-disable-line react-hooks/exhaustive-deps -- closeFloor reads the store
 
     // UNDERLAY TOOL point under the pointer (screen point): the second point of 'move' snaps to a wall
     // corner, else to the grid snap step; the other points pick a spot of the drawing: free, or on a DXF's
@@ -387,26 +417,24 @@ export default function PlanView2D() {
     // floors' vertices (orange ring), then a DXF end point, wall faces / floor edges, a DXF line (marks like
     // the wall tool's CAD snap), else alignment with those vertices and the grid snap step.
     // skipFloorId: a floor that is not a snap target (the one whose vertex is being dragged)
-    const floorSnap = (point, skipFloorId = null) => {
+    // skipHoleId: a roof hole that is not a snap target (the one whose vertex is being dragged)
+    const floorSnap = (point, skipFloorId = null, skipHoleId = null) => {
         const raw = toWorld(view, size.w, size.h, point.x, point.y);
         const walls = rulerTargets(level, []); // wall face corners and faces (net of the walls), opening jambs
         // floors AND ceilings are snap targets for both (a ceiling usually follows a floor's outline)
         const floors = [...level.floors, ...(level.ceilings ?? [])].filter((floor) => floor.id !== skipFloorId);
         const floorEdges = floors.flatMap((floor) => floor.points.map((p, i) => [p, floor.points[(i + 1) % floor.points.length]]));
-        const vertices = [...floorPoints, ...walls.vertices, ...floors.flatMap((floor) => floor.points)];
-        const snap = snapWithUnderlay(raw, { vertices, segments: [...walls.segments, ...floorEdges] }, cadTargets, VERTEX_SNAP_RADIUS / view.scale);
+        // a roof hole drawn / edited: also its roof's lines (eaves, ridge, hips), dormers and other holes, so it
+        // can share their edges exactly (planModel.roofHoleTargets)
+        const { roofHoleDrawing: drawingOn, selectedRoofHole: hole } = useStore.getState();
+        const holeCeiling = (level.ceilings ?? []).find((item) => item.id === (drawingOn ?? hole?.ceilingId));
+        const roof = holeCeiling ? roofHoleTargets(holeCeiling, level, skipHoleId) : { vertices: [], segments: [] };
+        const vertices = [...floorPoints, ...roof.vertices, ...walls.vertices, ...floors.flatMap((floor) => floor.points)];
+        const snap = snapWithUnderlay(raw, { vertices, segments: [...roof.segments, ...walls.segments, ...floorEdges] }, cadTargets, VERTEX_SNAP_RADIUS / view.scale);
         if (snap.kind === 'vertex' && !snap.cad) return { point: snap.point, kind: 'vertex', guides: [], raw };
         if (snap.kind) return { point: snap.point, kind: 'cad', cadKind: snap.kind, guides: [], raw };
         const aligned = alignPoint(snappedWorld(point), vertices, ALIGN_SNAP_RADIUS / view.scale);
         return { point: aligned.point, kind: useStore.getState().settings.gridSnap ? 'grid' : 'free', guides: aligned.guides, raw };
-    };
-
-    // Closes the floor being drawn: added if valid (one undo step), else kept on screen (red) to fix or Esc
-    const closeFloor = (points) => {
-        const next = addFloor(level, points, undefined, areaKey);
-        if (next == null) return;
-        setActiveLevel(next);
-        setFloorPoints([]);
     };
 
     // Floor tool click: a new vertex; on the first point (or the last one again) the polygon closes
@@ -424,10 +452,19 @@ export default function PlanView2D() {
         }
         // a dormer selected: a click elsewhere only deselects it (back to its roof)
         if (useStore.getState().selectedDormer) return useStore.getState().setSelectedDormer(null);
+        const { roofHoleDrawing: drawingHole, selectedRoofHole: hole, setSelectedRoofHole } = useStore.getState();
+        // the selected roof's holes: a click inside one selects it; with one selected, a click elsewhere only
+        // deselects it (back to its roof)
+        if (!drawingHole && floorPoints.length === 0 && areaKey === 'ceilings') {
+            const ceiling = (level.ceilings ?? []).find((item) => item.id === selectedFloorId);
+            const hit = ceiling && roofHoleAt(ceiling, raw);
+            if (hit) return setSelectedRoofHole({ ceilingId: ceiling.id, holeId: hit.id });
+            if (hole) return setSelectedRoofHole(null);
+        }
         // no polygon being drawn: a click inside a floor (not on a snap target) selects it; a click inside the
         // floor ALREADY selected starts a new polygon there (a floor drawn over another one: e.g. a raised zone);
-        // with a floor selected, a click on empty space only deselects
-        if (floorPoints.length === 0) {
+        // with a floor selected, a click on empty space only deselects. Drawing a roof hole: points only.
+        if (floorPoints.length === 0 && !drawingHole) {
             const hit = kind === 'vertex' || kind === 'cad' ? null : floorAt(level, raw, areaKey);
             if (hit && hit.id !== selectedFloorId) return setSelectedFloorId(hit.id);
             if (selectedFloorId) {
@@ -439,7 +476,7 @@ export default function PlanView2D() {
         if (floorPoints.length >= 3 && (samePoint(point, floorPoints[0]) || samePoint(point, last))) return closeFloor(floorPoints);
         if (last && samePoint(point, last)) {
             // double click on the first point: fill the room around it (raw pointer: never on a face); else nothing to close
-            if (floorPoints.length === 1) {
+            if (floorPoints.length === 1 && !drawingHole) {
                 const next = fillRoom(level, raw, undefined, areaKey);
                 if (next) setActiveLevel(next);
                 setFloorPoints([]);
@@ -525,6 +562,11 @@ export default function PlanView2D() {
             gestureRef.current = { kind: 'floorVertex', floorId: selectedFloorId, index: Number(dataset.floorVertex) };
             return;
         }
+        // the selected roof hole's vertex handle (data-hole-vertex)
+        if (isFloorTool && dataset.holeVertex != null && selectedRoofHole) {
+            gestureRef.current = { kind: 'holeVertex', ...selectedRoofHole, index: Number(dataset.holeVertex) };
+            return;
+        }
         // selected hip roof's ridge: a handle (data-ridge-end 0 / 1) or the line (data-ridge-line) starts a drag
         // a dormer's handle or line (data-dormer-id + data-dormer-handle): drag it, or select it on a plain click
         if (isFloorTool && dataset.dormerId != null) {
@@ -598,6 +640,10 @@ export default function PlanView2D() {
             const { point: to, guides } = floorSnap(point, gesture.floorId);
             const next = moveFloorVertex(level, gesture.floorId, gesture.index, to, areaKey);
             if (next) setDraft({ level: next, point: to, guides, isFloor: true }); // invalid (edges crossing): keep the last valid one
+        } else if (pointers.size === 1 && gesture?.kind === 'holeVertex') {
+            const { point: to, guides } = floorSnap(point, null, gesture.holeId);
+            const next = moveRoofHoleVertex(level, gesture.ceilingId, gesture.holeId, gesture.index, to);
+            if (next) setDraft({ level: next, point: to, guides, isFloor: true }); // invalid (off its facet, overlapping): keep the last valid one
         } else if (pointers.size === 1 && gesture?.kind === 'vertex') {
             // align with the other corners (never with the dragged one's own start position)
             const targets = levelVertices(level).filter((v) => v[0] !== gesture.from[0] || v[1] !== gesture.from[1]);
@@ -660,7 +706,7 @@ export default function PlanView2D() {
         pointersRef.current.delete(event.pointerId);
         const gesture = gestureRef.current;
         if (pointersRef.current.size > 0 || gesture == null) return;
-        if ((gesture.kind === 'vertex' || gesture.kind === 'floorVertex' || gesture.kind === 'ridge') && draft) setActiveLevel(draft.level);
+        if (['vertex', 'floorVertex', 'holeVertex', 'ridge'].includes(gesture.kind) && draft) setActiveLevel(draft.level);
         if (gesture.kind === 'dormer') {
             if (gesture.moved && draft) setActiveLevel(draft.level); // one undo step
             useStore.getState().setSelectedDormer({ ceilingId: gesture.ceilingId, dormerId: gesture.dormer.id });
@@ -769,6 +815,16 @@ export default function PlanView2D() {
                     {areaKey === 'ceilings' && isFloorTool && (shown.ceilings ?? []).map((ceiling) => (
                         <polygon key={ceiling.id} className={ceiling.id === selectedFloorId ? 'plan-ceiling is-selected' : 'plan-ceiling'} points={ceiling.points.join(' ')} vectorEffect="non-scaling-stroke" />
                     ))}
+                    {/* the selected ceiling's roof holes (red: cutting nothing, planModel.roofHoleFacets) */}
+                    {areaKey === 'ceilings' && isFloorTool && (() => {
+                        const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
+                        if (!ceiling) return null;
+                        const built = new Set(roofHoleFacets(ceiling, shown).map(({ hole }) => hole.id));
+                        return roofHoles(ceiling).map((hole) => (
+                            <polygon key={hole.id} points={hole.points.join(' ')} vectorEffect="non-scaling-stroke"
+                                className={`plan-roof-hole${hole.id === selectedRoofHole?.holeId ? ' is-selected' : ''}${built.has(hole.id) ? '' : ' is-invalid'}`} />
+                        ));
+                    })()}
 
                     {shown.walls.map((wall) => {
                         // inner line a -> b, then back along the mitered outer line
@@ -811,12 +867,23 @@ export default function PlanView2D() {
                         <line className="plan-trace-face" {...lineAt(...traceHover.trace.face)} vectorEffect="non-scaling-stroke" />
                     )}
                     {/* floor tool: vertex handles of the selected floor (not while a polygon is being drawn) */}
-                    {isFloorTool && floorPoints.length === 0 && (shown[areaKey] ?? []).find((floor) => floor.id === selectedFloorId)?.points.map((p, index) => (
+                    {/* (a roof hole selected or being drawn: its handles instead of the ceiling's) */}
+                    {isFloorTool && floorPoints.length === 0 && !selectedRoofHole && !roofHoleDrawing && (shown[areaKey] ?? []).find((floor) => floor.id === selectedFloorId)?.points.map((p, index) => (
                         <g key={`fv${index}`}>
                             <circle className="plan-floor-handle-hit" data-floor-vertex={index} cx={p[0]} cy={p[1]} r={VERTEX_HIT_RADIUS / view.scale} />
                             <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
                         </g>
                     ))}
+                    {isFloorTool && floorPoints.length === 0 && selectedRoofHole && (() => {
+                        const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedRoofHole.ceilingId);
+                        const hole = ceiling && roofHoles(ceiling).find((item) => item.id === selectedRoofHole.holeId);
+                        return hole?.points.map((p, index) => (
+                            <g key={`hv${index}`}>
+                                <circle className="plan-floor-handle-hit" data-hole-vertex={index} cx={p[0]} cy={p[1]} r={VERTEX_HIT_RADIUS / view.scale} />
+                                <circle className="plan-vertex" cx={p[0]} cy={p[1]} r={VERTEX_RADIUS / view.scale} vectorEffect="non-scaling-stroke" />
+                            </g>
+                        ));
+                    })()}
                     {/* ceiling tool: the dormers of the selected pitched ceiling (lines + handles) */}
                     {isFloorTool && areaKey === 'ceilings' && floorPoints.length === 0 && (() => {
                         const ceiling = (shown.ceilings ?? []).find((item) => item.id === selectedFloorId);
@@ -883,7 +950,9 @@ export default function PlanView2D() {
                     {/* floor tool: the polygon being drawn, closed through the pointer (red when addFloor refuses it) */}
                     {isFloorTool && floorPoints.length > 0 && (() => {
                         const points = hover ? [...floorPoints, hover.point] : floorPoints;
-                        const isInvalid = points.length >= 3 && addFloor(shown, points, 'preview', areaKey) == null;
+                        const isInvalid = points.length >= 3 && (roofHoleDrawing
+                            ? addRoofHole(shown, roofHoleDrawing, points, 'preview')
+                            : addFloor(shown, points, 'preview', areaKey)) == null;
                         return (
                             <>
                                 <polygon className={isInvalid ? 'plan-floor-preview is-invalid' : 'plan-floor-preview'} points={points.join(' ')} vectorEffect="non-scaling-stroke" />

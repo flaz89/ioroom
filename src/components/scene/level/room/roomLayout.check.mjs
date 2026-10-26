@@ -1,8 +1,8 @@
 // Check for roomLayout.js: node src/components/scene/level/room/roomLayout.check.mjs
 import assert from 'node:assert/strict';
-import { Vector3 } from 'three';
+import { Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, dormerBeams, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, dormerOnHips, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, addRoofHole, setWallParapet, dormerFootprint, polygonArea, moveRoofHoleVertex, removeRoofHole, roofHoleAt, roofHoleFacets, roofHoleTargets, roofHoles, dormerBeams, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, dormerOnHips, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -280,6 +280,61 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
     // DORMERS on the gable (eaves z = 0 and z = 4 at 2.5, ridge z = 2 at 4.5: 1 m rise per meter)
     assert.equal(addDormer(gable, 'r', [4, 9]), null, 'not on the roof');
     const withDormer = addDormer(gable, 'r', [3, 0.8], 'd1');
+    // ROOF HOLES: a 1 x 1 m hole on the z = 0 facet, beside the dormer (x 2.3..3.7)
+    {
+        const square = (x, z, s = 1) => [[x, z], [x + s, z], [x + s, z + s], [x, z + s]];
+        const holed = addRoofHole(withDormer, 'r', square(5, 0.5), 'h1');
+        const hc = holed.ceilings.at(-1);
+        assert.deepEqual(roofHoleFacets(hc, holed).map(({ hole, edge }) => [hole.id, edge]), [['h1', 0]], 'built on the facet of eave 0');
+        assert.ok(Math.abs(surfaceAreas(withDormer).r - surfaceAreas(holed).r - Math.SQRT2) < 0.011, 'its sloped area (1 m² x sqrt 2) off the bill');
+        // the roof geometry has no triangle over the hole
+        const rg = roomFaces(holed).find((f) => f.surfaceId === 'r').geometry;
+        const rp = rg.attributes.position, ri = rg.index.array;
+        for (let i = 0; i < ri.length; i += 3) {
+            const c = [0, 2].map((k) => [0, 1, 2].reduce((sum, j) => sum + rp.getComponent(ri[i + j], k), 0) / 3);
+            assert.ok(!pointInPolygon(c, square(5, 0.5)), 'no roof over the hole');
+        }
+        assert.equal(addRoofHole(withDormer, 'r', square(2.5, 0.6, 0.5)), null, 'not over a dormer');
+        // SHARED EDGES: a hole from the eave to the dormer's front (x 2.3..3.7, z 0..0.5): the roof between them
+        // is gone, nothing left over (the sliver Flavio saw when it was drawn by eye)
+        const front = addRoofHole(withDormer, 'r', [[2.3, 0], [3.7, 0], [3.7, 0.5], [2.3, 0.5]], 'hf');
+        assert.ok(front && roofHoleFacets(front.ceilings.at(-1), front).length === 1, 'against the dormer and the eave: built');
+        assert.ok(Math.abs(surfaceAreas(withDormer).r - surfaceAreas(front).r - 0.7 * Math.SQRT2) < 0.011, 'its area off');
+        const fg = roomFaces(front).find((f) => f.surfaceId === 'r').geometry;
+        const fp = fg.attributes.position, fi = fg.index.array;
+        // plan area of the triangles on the z = 0 facet's plane (y = 2.5 + z; the dormer's roofs are above it),
+        // both sides (underside + top): 2 x (16 - dormer footprint - hole 0.7)
+        const footprintArea = polygonArea(dormerFootprint(withDormer.ceilings.at(-1), withDormer, roofDormers(withDormer.ceilings.at(-1))[0]));
+        let planArea = 0;
+        for (let i = 0; i < fi.length; i += 3) {
+            const tri = [0, 1, 2].map((j) => [fp.getX(fi[i + j]), fp.getY(fi[i + j]), fp.getZ(fi[i + j])]);
+            if (!tri.every(([, y, z]) => z <= 2 + 1e-9 && Math.abs(y - 2.5 - z) < 1e-6)) continue;
+            const [a, b, c] = tri;
+            planArea += Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2])) / 2;
+        }
+        assert.ok(Math.abs(planArea - 2 * (16 - footprintArea - 0.7)) < 1e-6, `roof left exactly around both (${planArea})`);
+        assert.equal(addRoofHole(front, 'r', [[2.3, 0], [3.7, 0], [3.7, 0.5], [2.3, 0.5]]), null, 'the same hole twice: overlap');
+        const targets = roofHoleTargets(withDormer.ceilings.at(-1), withDormer);
+        assert.ok(targets.vertices.some((p) => Math.abs(p[0] - 2.3) < 1e-9 && Math.abs(p[1] - 0.5) < 1e-9), 'snap: the dormer\'s front corner');
+        assert.ok(targets.segments.some(([p, q]) => Math.abs(p[1] - 2) < 1e-9 && Math.abs(q[1] - 2) < 1e-9), 'snap: the ridge');
+        assert.equal(addRoofHole(holed, 'r', square(5.2, 0.7, 0.5)), null, 'not over another hole');
+        assert.equal(addRoofHole(withDormer, 'r', square(5, 1.5)), null, 'not across the ridge (two facets)');
+        assert.equal(addRoofHole(withDormer, 'r', square(7.5, 0.5)), null, 'not past the roof');
+        assert.equal(addRoofHole(gable, 'r', [[5, 0.5], [6, 0.5]]), null, 'a polygon');
+        assert.equal(moveRoofHoleVertex(holed, 'r', 'h1', 2, [6, 2.5]), null, 'a vertex moved across the ridge: refused');
+        const moved = moveRoofHoleVertex(holed, 'r', 'h1', 2, [6.5, 1.8]);
+        assert.deepEqual(roofHoles(moved.ceilings.at(-1))[0].points[2], [6.5, 1.8], 'vertex moved');
+        assert.equal(roofHoleAt(hc, [5.5, 1]).id, 'h1');
+        assert.equal(roofHoleAt(hc, [3, 1]), null);
+        assert.equal(roofHoles(removeRoofHole(holed, 'r', 'h1').ceilings.at(-1)).length, 0, 'removed');
+        // another roof type keeps the hole (a plan polygon); one across two facets stays in the data, cutting nothing
+        const single = setCeilingRoof(holed, 'r', 'single');
+        assert.equal(roofHoles(single.ceilings.at(-1)).length, 1, 'kept');
+        const across = setCeilingRoof(addRoofHole(single, 'r', square(1, 1.5), 'h2'), 'r', 'gable'); // one facet, then the ridge at z = 2
+        assert.equal(roofHoles(across.ceilings.at(-1)).length, 2);
+        assert.deepEqual(roofHoleFacets(across.ceilings.at(-1), across).map(({ hole }) => hole.id), ['h1'], 'the one across the ridge cuts nothing');
+        assert.equal(setCeilingRoof(holed, 'r', 'flat').ceilings.at(-1).roof, undefined, 'flat: no roof, no holes');
+    }
     const dormer = roofDormers(withDormer.ceilings.at(-1))[0];
     assert.ok(dormer.eave === 0 && Math.abs(dormer.t - 3) < 1e-9 && dormer.width === 1.4 && dormer.setback === 0.5, 'placed on the facet clicked');
     assert.ok(Math.abs(dormer.eaveHeight - (2.5 + 0.5 + 1.2)) < 1e-9 && dormer.ridgeHeight > dormer.eaveHeight && dormer.ridgeHeight < 4.5, 'default heights');
@@ -411,5 +466,135 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
     // a flat ceiling changes nothing
     const flat = addFloor(level, [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]], 'f', 'ceilings');
     assert.ok(Math.abs(surfaceAreas(flat)['wall-back:inner'] - areas['wall-back:inner']) < 1e-9, 'flat ceiling: walls unchanged');
+    // PARAPET on the eave wall (wall-back: inner face z = -3 under the roof at 2.29, outer z = -3.15 at 2.2):
+    // the outer face (lower roof) stays on the roof, the inner one drops to 1 m above the floor (elevation 0)
+    {
+        assert.equal(setWallParapet(covered, 'wall-back', 0.01), null, 'out of range');
+        // no hole: the roof covers it, the wall goes on under the roof as before
+        const plain = setWallParapet(covered, 'wall-back', 1);
+        const innerOf = (lvl) => roomFaces(lvl).find((f) => f.surfaceId === 'wall-back:inner').geometry.attributes.position;
+        assert.ok(Math.abs(Math.max(...Array.from({ length: innerOf(plain).count }, (_, i) => innerOf(plain).getY(i))) - roofY(-3)) < 1e-6, 'no hole: inner face on the roof');
+        assert.ok(!roomFaces(plain).some((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof), 'no hole: no visible top');
+        // a hole over the terrace, its edge on the outer face (z -3.15) and all along the wall: the counter-slope
+        // from the outer face's top (on the roof) down to the inner face at 1 m
+        const terrace = (lvl) => addRoofHole(lvl, 'g', [[-3.5, -3.15], [3.5, -3.15], [3.5, -1], [-3.5, -1]], 'all');
+        const parapet = terrace(plain);
+        const maxY = (id) => { const p = roomFaces(parapet).find((f) => f.surfaceId === id).geometry.attributes.position; return Math.max(...Array.from({ length: p.count }, (_, i) => p.getY(i))); };
+        assert.ok(Math.abs(maxY('wall-back:inner') - 1) < 1e-9, 'inner face down to the parapet height');
+        assert.ok(Math.abs(maxY('wall-back:outer') - roofY(-3.15)) < 1e-6, 'outer face still on the roof');
+        const cap = roomFaces(parapet).find((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof);
+        assert.ok(cap, 'a sloped top, shown with the roof');
+        const cp = cap.geometry.attributes.position, cn = cap.geometry.attributes.normal;
+        for (let i = 0; i < cp.count; i++) {
+            if (cn.getY(i) < 1e-3) continue; // the end risers (below)
+            const z = cp.getZ(i), y = cp.getY(i);
+            assert.ok(Math.abs(z + 3) < 1e-6 ? Math.abs(y - 1) < 1e-6 : Math.abs(y - roofY(z)) < 1e-6, 'from the roof (outside) down to 1 m (inside)');
+        }
+        assert.ok(cn.getY(0) > 0, 'facing up');
+        // both ends are JOINED (wall-left, wall-right go on under the roof): a riser at each end closes the gap from
+        // the sloped top up to the roof (Flavio 26/10: triangles open at the corner)
+        const risers = Array.from({ length: cp.count }, (_, i) => i).filter((i) => Math.abs(cn.getY(i)) < 1e-9);
+        for (const x of [-3, 3]) {
+            assert.ok(risers.some((i) => Math.abs(cp.getX(i) - x) < 1e-6 && Math.abs(cp.getZ(i) + 3) < 1e-6 && Math.abs(cp.getY(i) - roofY(-3)) < 1e-6), `end x = ${x}: closed up to the roof`);
+        }
+        // a raised floor in front: measured from it
+        const raised = terrace(setWallParapet(setFloorElevation(covered, 'floor', 0.3), 'wall-back', 1));
+        const rp = roomFaces(raised).find((f) => f.surfaceId === 'wall-back:inner').geometry.attributes.position;
+        assert.ok(Math.abs(Math.max(...Array.from({ length: rp.count }, (_, i) => rp.getY(i))) - 1.3) < 1e-6, `from the raised floor (${Math.max(...Array.from({ length: rp.count }, (_, i) => rp.getY(i)))})`);
+        assert.ok(surfaceAreas(parapet)['wall-back:inner'] < surfaceAreas(covered)['wall-back:inner'], 'inner face area smaller');
+        assert.equal(setWallParapet(parapet, 'wall-back', null).walls.find((w) => w.id === 'wall-back').parapet, undefined, 'off: back to the roof');
+        // THE BREAK = the roof hole's edge (Flavio 26/10): the roof runs on up to it, then the counter-slope down
+        // to the parapet face. Hole over the terrace from z = zb to -1 (x -2..2)
+        const capWith = (zb) => {
+            const lvl = addRoofHole(plain, 'g', [[-2, zb], [2, zb], [2, -1], [-2, -1]], 'th');
+            assert.ok(lvl, `hole from z = ${zb}`);
+            const faces = roomFaces(lvl);
+            const cap = faces.find((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof).geometry.attributes.position;
+            const outer = faces.find((f) => f.surfaceId === 'wall-back:outer').geometry.attributes.position;
+            // heights of the cap's TOP vertices at z (risers, vertical at the hole's sides, left out)
+            const capNormal = faces.find((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof).geometry.attributes.normal;
+            const ys = (p, z) => Array.from({ length: p.count }, (_, i) => i).filter((i) => Math.abs(p.getZ(i) - z) < 1e-6 && p.getY(i) > 0.01 && capNormal.getY(i) > 1e-3).map((i) => p.getY(i));
+            // the outer face's top at the hole's edge x = 2 (the LOWEST there: the step down from the roof beside it)
+            const outerTop = Math.min(...Array.from({ length: outer.count }, (_, i) => i).filter((i) => Math.abs(outer.getX(i) - 2) < 1e-6 && outer.getY(i) > 0.01).map((i) => outer.getY(i)));
+            return { cap, outerTop, ys, area: surfaceAreas(lvl)['wall-back:edge'] };
+        };
+        // inside the wall (z -3.07, between the faces -3.15 and -3): roof up to it, then down to 1 m
+        {
+            const { cap, outerTop, ys } = capWith(-3.07);
+            assert.ok(Math.abs(outerTop - roofY(-3.15)) < 1e-6, 'outer face on the roof');
+            assert.ok(ys(cap, -3.07).length > 0 && ys(cap, -3.07).every((y) => Math.abs(y - roofY(-3.07)) < 1e-6), 'cap at the break: on the roof');
+            assert.ok(ys(cap, -3).every((y) => Math.abs(y - 1) < 1e-6), 'down to the parapet');
+        }
+        // an OBLIQUE hole edge (Flavio 26/10: a triangle stayed open): from z -3.3 at x = -2 (beyond the outer face)
+        // to -3.05 at x = 2 (inside the wall), crossing the outer face (-3.15) at x = 0.4. The cap covers exactly:
+        // x -2..0.4 from the edge to the inner face z = -3 (0.30 -> 0.15 wide: 0.54 m²), x 0.4..2 the whole wall
+        // (roof up to the break, then down: 0.15 x 1.6 = 0.24 m²) = 0.78 m²
+        {
+            const lvl = addRoofHole(plain, 'g', [[-2, -3.3], [2, -3.05], [2, -1], [-2, -1]], 'ob');
+            const g = roomFaces(lvl).find((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof).geometry;
+            const p = g.attributes.position, n = g.attributes.normal, idx = g.index.array;
+            let covered = 0;
+            for (let i = 0; i < idx.length; i += 3) {
+                if (n.getY(idx[i]) < 1e-3) continue; // risers
+                const [a, b, c] = [0, 1, 2].map((j) => [p.getX(idx[i + j]), p.getZ(idx[i + j])]);
+                covered += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+            }
+            assert.ok(Math.abs(covered - 0.78) < 1e-6, `oblique edge: no gap, no overlap (${covered})`);
+        }
+        // out beyond the outer face (z -3.3): the counter-slope starts there; the outer face's top is on it and
+        // the cap reaches out to the hole's edge
+        {
+            const { cap, outerTop, ys, area } = capWith(-3.3);
+            const yb = roofY(-3.3);
+            assert.ok(Math.abs(outerTop - (yb + (1 - yb) * 0.15 / 0.3)) < 1e-6, 'outer face on the counter-slope');
+            assert.ok(ys(cap, -3.3).length > 0 && ys(cap, -3.3).every((y) => Math.abs(y - yb) < 1e-6), 'cap out to the hole edge, on the roof there');
+            const wallLength = 4; // the hole is 4 m wide (x -2..2): the counter-slope only there
+            assert.ok(area > Math.hypot(0.3, yb - 1) * wallLength - 1e-6, 'bill: the whole counter-slope');
+            // the steps at the hole's sides (x = ±2) face the hole (front faces only, as drawn): rays from x = 0
+            // outwards, between the sloped top and the roof, hit them
+            const lvl = addRoofHole(plain, 'g', [[-2, -3.3], [2, -3.3], [2, -1], [-2, -1]], 'th');
+            const front = roomFaces(lvl).filter((f) => !f.onlyWithoutRoof).map((f) => new Mesh(f.geometry, new MeshBasicMaterial()));
+            const caster = new Raycaster();
+            let open = 0;
+            for (const sx of [-1, 1]) for (let z = -3.28; z <= -3.02; z += 0.02) {
+                caster.set(new Vector3(sx * 1.9, 20, z), new Vector3(0, -1, 0)); caster.far = Infinity;
+                const capY = caster.intersectObjects(front, false)[0].point.y;
+                for (let y = capY + 0.005; y < roofY(z) - 0.005; y += 0.005) {
+                    caster.set(new Vector3(0, y, z), new Vector3(sx, 0, 0)); caster.far = 2.1;
+                    if (!caster.intersectObjects(front, false)[0]) open++;
+                }
+            }
+            assert.equal(open, 0, 'steps at the hole\'s sides: closed, facing the hole');
+        }
+    }
+}
+// PARAPET ENDS on Flavio's terrace (26/10, his plan): free ends, the hole drawn 0.1 mm past one of them and its edge
+// 50 cm out beyond the roof side face. Between the sloped top and the roof, at both ends, horizontal rays from the
+// terrace outwards must hit the closure (a triangle was open: the end was taken as "inside the hole")
+{
+    const terrace = {
+        ...level,
+        floors: [{ id: 'tf', points: [[-8.5, -1.6], [-6.54, -1.6], [-6.54, 1.6], [-8.5, 1.6]], elevation: 0.3 }],
+        walls: [{ id: 'pw', a: [-8.650035114084865, -1.5998720925046352], b: [-8.650035114084865, 1.6000086178808925], thickness: 0.15, parapet: 0.95 }],
+        ceilings: [{ id: 'tc', height: 1, points: [[-9.709239199867552, -5.4092465326258585], [-9.709635017625075, 5.40963176702088], [9.709176758028798, 5.409214782538357], [9.709697459463827, -5.4097238422746345]],
+            roof: { ridgeHeight: 3.95, eaves: [0, 1, 2, 3], ridge: [[-4.299989554858967, 0.00006805753855321228], [4.376686253752401, -0.00014521166126991685]],
+                holes: [{ id: 'th', points: [[-9.150035492062097, -1.599976867793391], [-7.406256351753738, -1.5999561745051654], [-7.406373406220409, 1.5994910591754519], [-9.149876741624588, 1.6000086178808925]] }] } }]
+    };
+    // FRONT faces only, as the materials draw them (26/10: the closure was there but facing away, still a hole)
+    const meshes = roomFaces(terrace).filter((f) => !f.onlyWithoutRoof).map((f) => new Mesh(f.geometry, new MeshBasicMaterial()));
+    const ray = new Raycaster();
+    for (const s of [-1, 1]) {
+        let open = 0;
+        for (let x = -9.13; x <= -8.51; x += 0.04) {
+            ray.set(new Vector3(x, 20, s * 1.55), new Vector3(0, -1, 0)); ray.far = Infinity;
+            const capY = ray.intersectObjects(meshes, false)[0].point.y;
+            const roof = roofHeightAt(terrace.ceilings[0], terrace, [x, s * 1.6]);
+            for (let y = capY + 0.01; y < roof - 0.01; y += 0.01) {
+                ray.set(new Vector3(x, y, s * 1.5), new Vector3(0, 0, s)); ray.far = 0.2;
+                if (!ray.intersectObjects(meshes, false)[0]) open++;
+            }
+        }
+        assert.equal(open, 0, `parapet end z ${s > 0 ? '+' : '-'}: closed up to the roof`);
+    }
 }
 console.log('roomLayout: ok');
