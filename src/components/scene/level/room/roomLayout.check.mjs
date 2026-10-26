@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Mesh, MeshBasicMaterial, Raycaster, Vector3 } from 'three';
 import { roomFaces, surfaceAreas, surfaceLabel } from './roomLayout.js';
-import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, addRoofHole, setWallParapet, dormerFootprint, polygonArea, moveRoofHoleVertex, removeRoofHole, roofHoleAt, roofHoleFacets, roofHoleTargets, roofHoles, dormerBeams, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, dormerOnHips, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight } from '../../../../plan/planModel.js';
+import { DEFAULT_PLAN, activeLevel, pointInPolygon, addFloor, addOpening, fillRoom, roofFacets, roofHeightAt, addDormer, addRoofHole, setWallParapet, dormerFootprint, polygonArea, moveRoofHoleVertex, removeRoofHole, roofHoleAt, roofHoleFacets, roofHoleTargets, roofHoles, dormerBeams, dormerLines, dormerSolids, dragDormer, removeDormer, roofDormers, updateDormer, dormerOnHips, roofBeams, roofRidge, roofType, setRoofBeams, setRoofRidge, rotateRoof, setCeilingHeight, setCeilingRoof, setFloorElevation, roofPitch, setRoofRidgeHeight, wallFrame, faceOffsets, setCeilingThickness, ceilingThickness } from '../../../../plan/planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const areas = surfaceAreas(level);
@@ -273,6 +273,18 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
             assert.ok(gaps.length > 0, 'valley parallel to a hip');
             assert.ok(Math.abs(Math.min(...gaps) - (0.2 + 0.07 + 0.075)) < 1e-9, `clear gap 20 cm between the beams (${Math.min(...gaps)})`);
         }
+        // the ridge's back end dragged in hip mode sets the GAP (Flavio 26/10): back end where the pointer is,
+        // valleys still parallel, heights follow; dragged past the hips: the gap stops at 0
+        const back = lines.ridge[1];
+        const towardEave = [back[0] - 0.1, back[1]]; // this end facet's eave is x = 0: 10 cm nearer to it
+        const dragged = dragDormer(hipMode, 'r', 'de', 'ridgeBack', towardEave, null, hd);
+        assert.ok(dragged, 'hip gap dragged');
+        const dd = roofDormers(dragged.ceilings.at(-1), dragged).at(-1);
+        assert.ok(dd.hipOffset > 0.2 + 1e-6, `back end nearer the eave: wider gap (${dd.hipOffset})`);
+        assert.ok(Math.abs(dormerLines(dragged.ceilings.at(-1), dragged, dd).ridge[1][0] - towardEave[0]) < 1e-9, 'the back end follows the pointer');
+        assert.equal(dd.width, hd.width, 'width kept');
+        const tight = dragDormer(hipMode, 'r', 'de', 'ridgeBack', [back[0] + 2, back[1]], null, hd); // far in, towards the hips
+        assert.ok(tight === null || roofDormers(tight.ceilings.at(-1), tight).at(-1).hipOffset === 0, 'never past the hips: gap 0 at the least (or refused)');
     }
     assert.equal(dormerOnHips(ec, endDormer, roofDormers(ec)[0]), true, 'end facet: between hips');
     const noBeams = addDormer(hip, 'r', [3, 0.8], 'dn');
@@ -526,20 +538,30 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
             assert.ok(ys(cap, -3).every((y) => Math.abs(y - 1) < 1e-6), 'down to the parapet');
         }
         // an OBLIQUE hole edge (Flavio 26/10: a triangle stayed open): from z -3.3 at x = -2 (beyond the outer face)
-        // to -3.05 at x = 2 (inside the wall), crossing the outer face (-3.15) at x = 0.4. The cap covers exactly:
-        // x -2..0.4 from the edge to the inner face z = -3 (0.30 -> 0.15 wide: 0.54 m²), x 0.4..2 the whole wall
-        // (roof up to the break, then down: 0.15 x 1.6 = 0.24 m²) = 0.78 m²
+        // to -3.05 at x = 2 (inside the wall), crossing the outer face (-3.15) at x = 0.4. The VISIBLE top covers
+        // exactly: x -2..0.4 from the edge to the inner face z = -3 (0.30 -> 0.15 wide: 0.54 m²), x 0.4..2 from the
+        // break down to the inner face (0.10 -> 0.05 wide: 0.12 m²) = 0.66 m²... (0.70 measured); the strip from the
+        // outer face up to the break lies ON the roof: in its own face, shown only with the ceilings hidden (it
+        // z-fought with the roof, 26/10). Together they cover the plan exactly once: 0.78 m²
         {
             const lvl = addRoofHole(plain, 'g', [[-2, -3.3], [2, -3.05], [2, -1], [-2, -1]], 'ob');
-            const g = roomFaces(lvl).find((f) => f.surfaceId === 'wall-back:edge' && !f.vertical && !f.onlyWithoutRoof).geometry;
-            const p = g.attributes.position, n = g.attributes.normal, idx = g.index.array;
-            let covered = 0;
-            for (let i = 0; i < idx.length; i += 3) {
-                if (n.getY(idx[i]) < 1e-3) continue; // risers
-                const [a, b, c] = [0, 1, 2].map((j) => [p.getX(idx[i + j]), p.getZ(idx[i + j])]);
-                covered += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
-            }
-            assert.ok(Math.abs(covered - 0.78) < 1e-6, `oblique edge: no gap, no overlap (${covered})`);
+            const planArea = (g) => {
+                const p = g.attributes.position, n = g.attributes.normal, idx = g.index.array;
+                let sum = 0;
+                for (let i = 0; i < idx.length; i += 3) {
+                    if (n.getY(idx[i]) < 1e-3) continue; // risers
+                    const [a, b, c] = [0, 1, 2].map((j) => [p.getX(idx[i + j]), p.getZ(idx[i + j])]);
+                    sum += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+                }
+                return sum;
+            };
+            const edges = roomFaces(lvl).filter((f) => f.surfaceId === 'wall-back:edge' && !f.vertical);
+            const visible = planArea(edges.find((f) => !f.onlyWithoutRoof).geometry);
+            const onRoof = planArea(edges.find((f) => f.onlyWithoutRoof).geometry);
+            // on the roof: x 0.4..2, from the outer face z = -3.15 to the break (0 -> 0.10 deep): 0.08 m²
+            assert.ok(Math.abs(onRoof - 0.08) < 1e-6, `the strip on the roof, apart (${onRoof})`);
+            assert.ok(Math.abs(visible + onRoof - 0.78) < 1e-6, `oblique edge: no gap, no overlap (${visible} + ${onRoof})`);
+            assert.equal(onRoofPlane(lvl, ['wall-back:edge'], (x, z) => roofY(z)), 0, 'nothing visible on the roof plane');
         }
         // out beyond the outer face (z -3.3): the counter-slope starts there; the outer face's top is on it and
         // the cap reaches out to the hole's edge
@@ -596,5 +618,186 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
         }
         assert.equal(open, 0, `parapet end z ${s > 0 ? '+' : '-'}: closed up to the roof`);
     }
+    assert.deepEqual(parapetLeaks(terrace, 'pw', 1), { top: 0, sides: 0, covers: 0 }, "Flavio's terrace: no leak (generic probe, below)");
+}
+/*
+* PARAPET ROBUSTNESS (26/10, Flavio: "the algorithm must hold beyond my example"). A generic LEAK PROBE on front
+* faces only (as the app draws them), for a parapet wall `wallId` whose terrace lies on the `terrace` side (+1:
+* towards the wall's normal, -1: the other way):
+* - TOP: every point over the wall and over a 60 cm strip on the roof side, seen from straight above, shows
+*   something (the sloped top, the roof, a wall), never a floor or nothing. On the terrace side, inside a hole,
+*   the floor is fine (that is the terrace).
+* - SIDES: wherever the top steps along the wall (its ends, the holes' corners) with the roof just past it,
+*   horizontal rays from the hole's side between the top and the roof hit a closure.
+* - COVERS: over the terrace (inside the hole, past the terrace face), the wall's top never shows.
+* Returns the number of leaking rays of each kind.
+*/
+function parapetLeaks(lvl, wallId, terrace) {
+    const meshes = roomFaces(lvl).filter((f) => !f.onlyWithoutRoof).map((f) => Object.assign(new Mesh(f.geometry, new MeshBasicMaterial()), { name: f.surfaceId }));
+    const ray = new Raycaster();
+    const wall = lvl.walls.find((w) => w.id === wallId);
+    const { dir, normal, length } = wallFrame(wall);
+    const { inner, outer } = faceOffsets(wall);
+    const ceiling = lvl.ceilings[0];
+    const holes = roofHoleFacets(ceiling, lvl).map(({ hole }) => hole.points);
+    const inHole = (p) => holes.some((h) => pointInPolygon(p, h));
+    const at = (t, o) => [wall.a[0] + dir[0] * t + normal[0] * o, wall.a[1] + dir[1] * t + normal[1] * o];
+    const terraceFace = terrace > 0 ? Math.max(inner, outer) : Math.min(inner, outer);
+    const roofFace = terrace > 0 ? Math.min(inner, outer) : Math.max(inner, outer);
+    const down = (p) => { ray.set(new Vector3(p[0], 50, p[1]), new Vector3(0, -1, 0)); ray.far = Infinity; return ray.intersectObjects(meshes, false)[0]; };
+    let top = 0, sides = 0, covers = 0;
+    for (let t = 0.01; t < length - 0.01; t += 0.03) {
+        for (let o = roofFace - terrace * 0.6; (o - terraceFace) * terrace < -0.005; o += terrace * 0.02) {
+            const p = at(t, o);
+            if (!pointInPolygon(p, ceiling.points)) continue; // off the roof: nothing to see there
+            const hit = down(p);
+            if (!hit || hit.object.name.startsWith('f') || hit.object.name === 'tf') top++;
+        }
+    }
+    // the TERRACE stays open: over the hole past the terrace face, from above, never this wall's top
+    for (let t = 0.01; t < length - 0.01; t += 0.03) {
+        for (let o = terraceFace + terrace * 0.02; (o - terraceFace) * terrace < 0.4; o += terrace * 0.02) {
+            const p = at(t, o);
+            if (inHole(p) && down(p)?.object.name === `${wallId}:edge`) covers++;
+        }
+    }
+    // the step planes: the wall's ends and the holes' corners projected on the line
+    const cuts = [0, length, ...holes.flat().map((q) => (q[0] - wall.a[0]) * dir[0] + (q[1] - wall.a[1]) * dir[1]).filter((t) => t > 0 && t < length)];
+    for (const t of cuts) for (const s of [-1, 1]) {
+        for (let o = roofFace - terrace * 0.6; (o - terraceFace) * terrace < -0.005; o += terrace * 0.02) {
+            const inside = at(t - s * 0.03, o), beyond = at(t + s * 0.03, o);
+            if (!inHole(inside) || inHole(beyond)) continue; // a step only from the hole to the roof
+            const capHit = down(inside);
+            if (!capHit) { sides++; continue; }
+            const roofY = roofHeightAt(ceiling, lvl, beyond);
+            for (let y = capHit.point.y + 0.01; y < roofY - 0.01; y += 0.01) {
+                const start = at(t - s * 0.03, o);
+                ray.set(new Vector3(start[0], y, start[1]), new Vector3(dir[0] * s, 0, dir[1] * s)); ray.far = 0.06;
+                if (!ray.intersectObjects(meshes, false)[0]) sides++;
+            }
+        }
+    }
+    return { top, sides, covers };
+}
+{
+    // gable 8 x 4 (eaves z = 0 / 4 at 2.5, ridge z = 2 at 4.5) and the same rectangle as a hip (end facets x < 2, x > 6)
+    const rect = addFloor({ ...level, walls: [], floors: [] }, [[0, 0], [8, 0], [8, 4], [0, 4]], 'c', 'ceilings');
+    const roofOf = (type) => setRoofRidgeHeight(setCeilingHeight(setCeilingRoof(rect, 'c', type), 'c', 2.5), 'c', 4.5);
+    const scene = (type, walls, holes, floors = []) => {
+        let lvl = { ...roofOf(type), walls: walls.map((w) => ({ thickness: 0.15, parapet: 0.95, ...w })), floors };
+        holes.forEach((points, i) => { lvl = addRoofHole(lvl, 'c', points, `h${i}`); assert.ok(lvl, `hole ${i} fits`); });
+        return lvl;
+    };
+    const ok = (name, lvl, wallId, terrace) => {
+        const leaks = parapetLeaks(lvl, wallId, terrace);
+        assert.deepEqual(leaks, { top: 0, sides: 0, covers: 0 }, `${name}: no leak (${JSON.stringify(leaks)})`);
+    };
+    // 1. on a HIP END facet (eave x = 0): parapet along z at x 0.5 (thickness towards +x), hole from x 0.2 out to 0.9
+    ok('hip end facet', scene('hip', [{ id: 'p', a: [0.5, 1.2], b: [0.5, 2.8] }], [[[0.2, 1.2], [0.9, 1.2], [0.9, 2.8], [0.2, 2.8]]]), 'p', 1);
+    // 2. OBLIQUE to the eave on that facet, the hole squared on the wall (drawn with the wall face snaps): in the
+    // wall's frame t 0.05..1.55 along, from 25 cm out beyond its roof side face to 30 cm past its terrace face
+    {
+        const wall = { id: 'p', a: [0.45, 1.2], b: [0.6, 2.8] };
+        const { dir, normal } = wallFrame(wall);
+        const at = (t, o) => [wall.a[0] + dir[0] * t + normal[0] * o, wall.a[1] + dir[1] * t + normal[1] * o];
+        ok('oblique wall', scene('hip', [wall], [[at(0.05, -0.25), at(1.55, -0.25), at(1.55, 0.45), at(0.05, 0.45)]]), 'p', 1);
+    }
+    // 2b. the hole NOT squared on that oblique wall (its sides follow the plan's axes): the step along each side
+    // is oblique to the wall (26/10: a 50 cm step stayed open there)
+    ok('hole oblique to the wall', scene('hip', [{ id: 'p', a: [0.45, 1.2], b: [0.6, 2.8] }], [[[0.2, 1.25], [0.95, 1.25], [0.95, 2.75], [0.2, 2.75]]]), 'p', 1);
+    // 3. TWO HOLES along one wall (gable eave z = 0; wall z 0.35..0.5, terrace towards +z: the normal is -z)
+    ok('two holes', scene('gable', [{ id: 'p', a: [1, 0.5], b: [7, 0.5] }], [[[1.5, 0.2], [3, 0.2], [3, 1.5], [1.5, 1.5]], [[4, 0.2], [6, 0.2], [6, 1.5], [4, 1.5]]]), 'p', -1);
+    // 4. hole edge with a CORNER over the wall (out beyond it at the ends, inside it at x = 4)
+    ok('cornered edge', scene('gable', [{ id: 'p', a: [1, 0.5], b: [7, 0.5] }], [[[2, 0.2], [4, 0.42], [6, 0.2], [6, 1.5], [2, 1.5]]]), 'p', -1);
+    // 5. EVEN ROOF on both faces: a wall running up the slope (a = (3, 0.3) -> b = (3, 1.6): faces x = 3 and, along
+    // its normal +x, x = 3.15), the hole's edge inside it (x = 3.075); the terrace on either side
+    const upSlope = { id: 'p', a: [3, 0.3], b: [3, 1.6] };
+    ok('even roof, terrace on the -x side', scene('gable', [upSlope], [[[1.5, 0.3], [3.075, 0.3], [3.075, 1.6], [1.5, 1.6]]]), 'p', -1);
+    ok('even roof, terrace on the +x side', scene('gable', [upSlope], [[[3.075, 0.3], [4.5, 0.3], [4.5, 1.6], [3.075, 1.6]]]), 'p', 1);
+}
+// FALSE CEILING (controsoffitto, Flavio 26/10): a flat ceiling extruded UPWARDS by its thickness, sides of their own,
+// cut by the pitched roofs over it. Probed with rays on FRONT faces only (as drawn): from straight above, the
+// ceiling's own top is at H where the roof is above it and absent under the roof (the roof closes the volume: no
+// faces on the roof's plane, they z-fought with it); from outside, horizontally, the sides close everything between
+// the underside and min(H, roof).
+// Triangles of the faces `ids` lying ON the roof (every vertex at roofAt(x, z)): coplanar with it = z-fighting
+function onRoofPlane(lvl, ids, roofAt) {
+    let count = 0;
+    for (const face of roomFaces(lvl).filter((f) => ids.includes(f.surfaceId) && !f.onlyWithoutRoof)) {
+        const p = face.geometry.attributes.position, index = face.geometry.index?.array ?? Array.from({ length: p.count }, (_, i) => i);
+        for (let i = 0; i < index.length; i += 3) {
+            const [a, b, c] = [0, 1, 2].map((j) => [p.getX(index[i + j]), p.getY(index[i + j]), p.getZ(index[i + j])]);
+            const planArea = Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2])) / 2;
+            if (planArea > 1e-8 && [a, b, c].every(([x, y, z]) => Math.abs(y - roofAt(x, z)) < 1e-4)) count++; // vertical / flat slivers: not a surface
+        }
+    }
+    return count;
+}
+function falseCeilingProbe(lvl, id, h, H, roofAt) {
+    const faces = roomFaces(lvl);
+    const top = new Mesh(faces.find((f) => f.surfaceId === id).geometry, new MeshBasicMaterial());
+    const sides = faces.find((f) => f.surfaceId === `${id}~sides`);
+    const sideMesh = sides && new Mesh(sides.geometry, new MeshBasicMaterial());
+    const ceiling = lvl.ceilings.find((c) => c.id === id);
+    const ray = new Raycaster();
+    const expected = (x, z) => Math.min(H, Math.max(h, roofAt ? roofAt(x, z) : Infinity));
+    let wrongTop = 0, openSide = 0;
+    const xs = ceiling.points.map((p) => p[0]), zs = ceiling.points.map((p) => p[1]);
+    for (let x = Math.min(...xs) + 0.013; x < Math.max(...xs); x += 0.1) for (let z = Math.min(...zs) + 0.017; z < Math.max(...zs); z += 0.1) {
+        if (!pointInPolygon([x, z], ceiling.points)) continue;
+        ray.set(new Vector3(x, 50, z), new Vector3(0, -1, 0)); ray.far = Infinity;
+        const hit = ray.intersectObject(top, false)[0];
+        // where the roof is lower than H the roof closes the volume: no top of its own there (it z-fought with the
+        // roof, Flavio 26/10); below the underside the extrusion is gone anyway
+        if (roofAt && roofAt(x, z) < H - 1e-6) { if (hit) wrongTop++; continue; }
+        if (!hit || Math.abs(hit.point.y - expected(x, z)) > 1e-4) wrongTop++;
+    }
+    // along each edge, from 5 cm outside, rays inwards between the underside and the top
+    ceiling.points.forEach((p, i) => {
+        const q = ceiling.points[(i + 1) % ceiling.points.length];
+        const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        let n = [(q[1] - p[1]) / len, -(q[0] - p[0]) / len];
+        if (pointInPolygon([(p[0] + q[0]) / 2 + n[0] * 1e-3, (p[1] + q[1]) / 2 + n[1] * 1e-3], ceiling.points)) n = [-n[0], -n[1]];
+        for (let u = 0.02; u < 0.98; u += 0.04) {
+            const e = [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u];
+            for (let y = h + 0.005; y < expected(e[0], e[1]) - 0.005; y += 0.02) {
+                ray.set(new Vector3(e[0] + n[0] * 0.05, y, e[1] + n[1] * 0.05), new Vector3(-n[0], 0, -n[1])); ray.far = 0.1;
+                if (!sideMesh || !ray.intersectObject(sideMesh, false)[0]) openSide++;
+            }
+        }
+    });
+    return { wrongTop, openSide };
+}
+{
+    const square = [[-2, -2], [2, -2], [2, 2], [-2, 2]];
+    // no roof: the 6 x 6 room, a 4 x 4 ceiling at 2.5, 30 cm thick
+    const base = setCeilingHeight(addFloor(level, square, 'fc', 'ceilings'), 'fc', 2.5);
+    assert.equal(setCeilingThickness(base, 'fc', -0.1), null, 'out of range');
+    const thick = setCeilingThickness(base, 'fc', 0.3);
+    assert.equal(thick.ceilings.at(-1).thickness, 0.3);
+    assert.equal(setCeilingThickness(thick, 'fc', 0).ceilings.at(-1).thickness, undefined, '0: just the plane again');
+    assert.deepEqual(falseCeilingProbe(thick, 'fc', 2.5, 2.8, null), { wrongTop: 0, openSide: 0 }, 'no roof: top at 2.80, sides closed');
+    const under = roomFaces(thick).find((f) => f.surfaceId === 'fc').geometry.attributes.position;
+    assert.ok(Array.from({ length: under.count }, (_, i) => under.getY(i)).some((y) => Math.abs(y - 2.5) < 1e-6), 'the underside stays at its height');
+    assert.ok(near(surfaceAreas(thick)['fc~sides'], 16 * 0.3) && near(surfaceAreas(thick).fc, 16), 'bill: sides 16 m x 0.30, the ceiling its underside');
+    assert.equal(surfaceLabel('fc~sides', thick), 'Ceiling 1 · sides'.replace('Ceiling 1', thick.ceilings.length > 1 ? 'Ceiling 1' : 'Ceiling'));
+    assert.equal(roomFaces(base).some((f) => f.surfaceId === 'fc~sides'), false, 'no thickness: no sides');
+    // UNDER A GABLE (7 x 7, eaves z = ±3.5 at 2, ridge z = 0 at 4): 2.5 + 1 m reaches above the roof near the
+    // eaves (roof < 3.5 where |z| > 0.875): top and sides cut by the roof
+    const gableOver = setRoofRidgeHeight(setCeilingHeight(setCeilingRoof(addFloor(thick, [[-3.5, -3.5], [3.5, -3.5], [3.5, 3.5], [-3.5, 3.5]], 'g', 'ceilings'), 'g', 'gable'), 'g', 2), 'g', 4);
+    const gRoof = (x, z) => 2 + (3.5 - Math.abs(z)) * (2 / 3.5);
+    const cut = setCeilingThickness(gableOver, 'fc', 1);
+    assert.deepEqual(falseCeilingProbe(cut, 'fc', 2.5, 3.5, gRoof), { wrongTop: 0, openSide: 0 }, 'under a gable: top and sides cut by the roof');
+    assert.equal(onRoofPlane(cut, ['fc', 'fc~sides'], gRoof), 0, 'no false ceiling triangle on the roof plane (z-fighting)');
+    // exact sides area: the two edges along x at z = ±2 (roof 2.857: 0.357 high), the two along z (a trapezoid
+    // profile up to 1 m where the roof is above 3.5)
+    const along = 4 * (gRoof(0, 2) - 2.5);
+    const across = 2 * (0.875 * 1) + 2 * ((2 - 0.875) * ((1 + (gRoof(0, 2) - 2.5)) / 2));
+    assert.ok(Math.abs(surfaceAreas(cut)['fc~sides'] - 2 * (along + across)) < 0.011, `bill: the sides as cut (${surfaceAreas(cut)['fc~sides']})`);
+    // an L-SHAPED (concave) false ceiling under the same roof
+    const ell = setCeilingThickness(setCeilingHeight(addFloor(gableOver, [[-3, -3], [1, -3], [1, -1], [-1, -1], [-1, 2], [-3, 2]], 'fl', 'ceilings'), 'fl', 2.4), 'fl', 0.8);
+    assert.deepEqual(falseCeilingProbe(ell, 'fl', 2.4, 3.2, gRoof), { wrongTop: 0, openSide: 0 }, 'L-shaped under a gable');
+    // a pitched ceiling ignores the field (its roof is its top)
+    assert.equal(ceilingThickness({ ...cut.ceilings.find((c) => c.id === 'g'), thickness: 1 }), 0);
 }
 console.log('roomLayout: ok');

@@ -975,6 +975,29 @@ export const newCeilingId = () => `c-${Date.now().toString(36)}-${Math.random().
 export const ceilingHeight = (ceiling, level) => ceiling.height ?? level.wallHeight;
 
 /*
+* FALSE CEILING (controsoffitto, Flavio 26/10): a FLAT ceiling's `thickness` (m, default 0 = just the plane)
+* extrudes it UPWARDS from its height (the underside seen from below stays at `height`): a top face and vertical
+* SIDES (veletta), their own surface (ceilingSidesFaceId: a material and a bill row of their own). Both are cut
+* by the pitched roofs over them (roomLayout: the extrusion never pokes through a roof).
+*/
+export const CEILING_THICKNESS_LIMITS = { min: 0, max: 5 };
+export const ceilingThickness = (ceiling) => (ceiling.roof ? 0 : ceiling.thickness ?? 0);
+export const ceilingSidesFaceId = (ceilingId) => `${ceilingId}~sides`;
+// The level with ceiling `ceilingId`'s thickness (0 drops the field), or null when out of the limits
+export function setCeilingThickness(level, ceilingId, thickness) {
+    const { min, max } = CEILING_THICKNESS_LIMITS;
+    if (!(thickness >= min && thickness <= max)) return null; // also rejects NaN
+    return {
+        ...level,
+        ceilings: (level.ceilings ?? []).map((ceiling) => {
+            if (ceiling.id !== ceilingId) return ceiling;
+            const { thickness: _old, ...rest } = ceiling;
+            return thickness < 1e-9 ? rest : { ...rest, thickness };
+        })
+    };
+}
+
+/*
 * PITCHED CEILINGS (roofs, attics): ceiling.roof = { ridgeHeight (m above the level's 0, like the eave
 * height), eaves: [edge indices] }, edge i = points[i] -> points[i + 1]. The two HEIGHTS are what the user
 * sets (eave = ceiling.height, ridge = roof.ridgeHeight); the pitch follows from them (roofPitch, shown
@@ -1674,6 +1697,7 @@ export function dragDormer(level, ceilingId, dormerId, handle, to, start, startD
     const nearestWall = (a) => wallAlongs.reduce((best, w) => (Math.abs(w - a) <= radius && (best === null || Math.abs(w - a) < Math.abs(best - a)) ? w : best), null);
     const [left, right] = [startDormer.t - startDormer.width / 2, startDormer.t + startDormer.width / 2];
     let patch;
+    if (handle === 'ridgeBack' && startDormer.hipOffset != null) return dragHipGap(level, ceilingId, dormerId, inward(to), startDormer);
     if (handle === 'ridgeBack') {
         const d = Math.abs(inward(to) - depth) <= radius ? depth : inward(to); // onto the main ridge
         patch = { ridgeHeight: base + k * d };
@@ -1693,6 +1717,32 @@ export function dragDormer(level, ceilingId, dormerId, handle, to, start, startD
         patch = { t: startDormer.t + dAlong, setback: startDormer.setback + dIn, eaveHeight: startDormer.eaveHeight + k * dIn, ridgeHeight: startDormer.ridgeHeight + k * dIn };
     }
     return updateDormer(level, ceilingId, dormerId, patch);
+}
+
+/*
+* HIP MODE, the ridge's back end dragged (Flavio 26/10): it sets the GAP to the hips instead of the ridge height
+* (derived there, resolveDormer). The back end at `d` (in from the eave) = the ruling side's
+* sideDistance + r * width / 2, so that side's axes distance is (r * run - (d - r * half)) / sqrt(1 + r^2), the gap
+* that minus both half widths. Each side is tried (the one that rules at that gap is the one that resolves back
+* to `d`); the gap stays >= 0 (closest: the beams touch). Returns the level, or null when it would not fit.
+*/
+function dragHipGap(level, ceilingId, dormerId, d, dormer) {
+    const ceiling = (level.ceilings ?? []).find((item) => item.id === ceilingId);
+    const facet = facetSlope(ceiling, level, dormer.eave);
+    const hips = facetHipRatios(ceiling, level, dormer.eave);
+    if (!facet || !hips) return null;
+    const half = dormer.width / 2;
+    const widths = (BEAM_SIZE.width + DORMER_BEAM_SIZE.width) / 2;
+    const gaps = [[hips.left, dormer.t - half], [hips.right, facet.edge.length - dormer.t - half]]
+        .filter(([r]) => r !== null)
+        .map(([r, run]) => Math.max(0, (r * run - (d - r * half)) / Math.hypot(1, r) - widths));
+    const tries = gaps.map((gap) => updateDormer(level, ceilingId, dormerId, { hipOffset: gap })).filter(Boolean);
+    const backEnd = (next) => {
+        const resolved = roofDormers(next.ceilings.find((item) => item.id === ceilingId), next).find((item) => item.id === dormerId);
+        return (resolved.ridgeHeight - facet.base) / facet.k;
+    };
+    // the gap whose dormer's back end lands nearest the pointer
+    return tries.reduce((best, next) => (best === null || Math.abs(backEnd(next) - d) < Math.abs(backEnd(best) - d) ? next : best), null);
 }
 
 /*

@@ -58,7 +58,8 @@ const EDGE_HANDLE = [10, 7];     // px: resize triangle of the selected opening,
 *   (grid snap); planModel.setRoofRidge refuses an end outside the ceiling (the last valid one stays); a
 *   local draft saved on release, one undo step.
 *   DORMERS of the selected pitched ceiling (planModel dormerLines): front, two cheeks (the width) and ridge
-*   lines; handles: the ridge's back end (ridge height: length <-> height; snaps onto the main ridge), the front
+*   lines; handles: the ridge's back end (ridge height: length <-> height; snaps onto the main ridge; in hip mode the
+*   gap to the hips instead: planModel dragHipGap), the front
 *   (setback), each cheek's front end (that cheek only; snaps onto wall faces), a drag on any of its lines
 *   moves it (along the eave and up / down the slope; the nearer cheek snaps onto a wall face). While a
 *   dormer is dragged its measures show live: width, front from the eave, ridge length. A press
@@ -908,8 +909,8 @@ export default function PlanView2D() {
                                         <line key={`l${i}`} className={i === segments.length - 1 ? 'plan-dormer-ridge' : 'plan-dormer-line'} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} vectorEffect="non-scaling-stroke" />
                                     ))}
                                     {dormer.id === selectedId && [
-                                        // hip mode: the ridge follows the gap to the hips (planModel.resolveDormer), no handle
-                                        dormer.hipOffset == null && handle('rb', lines.ridge[1], 'ridgeBack'),
+                                        // hip mode: this handle sets the gap to the hips (planModel dragHipGap)
+                                        handle('rb', lines.ridge[1], 'ridgeBack'),
                                         handle('fr', lines.ridge[0], 'front'),
                                         handle('c0', lines.cheeks[0][0], 'cheek0'),
                                         handle('c1', lines.cheeks[1][0], 'cheek1')

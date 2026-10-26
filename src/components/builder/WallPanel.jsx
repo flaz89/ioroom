@@ -1,6 +1,6 @@
 import { useStore } from '../../store/appStore';
 import { useEffect } from 'react';
-import { WALL_LIMITS, activeLevel, polygonArea, removeRoofHole, roofHoleFacets, roofHoles, dormerLines, dormerOnHips, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, setWallParapet, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
+import { WALL_LIMITS, activeLevel, ceilingThickness, setCeilingThickness, polygonArea, removeRoofHole, roofHoleFacets, roofHoles, dormerLines, dormerOnHips, removeDormer, roofDormers, updateDormer, ceilingHeight, roofRidge, setRoofBeams, roofType, rotateRoof, setRoofRidge, setCeilingRoof, roofPitch, roofRidgeHeight, setRoofRidgeHeight, floorElevation, setCeilingHeight, setFloorElevation, addOpening, openingMaxLeaves, openingOperation, removeOpening, setWallJustify, setWallLength, setWallParapet, updateOpening, updateWall, wallFrame, wallJustify } from '../../plan/planModel';
 import { singleSelectedWall } from '../../store/slices/workspaceSlice';
 import { wallUnderRoof } from '../scene/level/room/roomLayout';
 import './plan-view.css';
@@ -187,6 +187,12 @@ function FloorPanel() {
                 : <Field label="Elevation" value={floorElevation(areas[index])} onApply={apply} />}
             {/* ceiling: flat or pitched (planModel roof types: 1 pitch, gable "2 falde", hip "4 falde"), pitch in
                 degrees, and the eave side (Rotate: the next side / the other pair) */}
+            {/* flat ceiling: a FALSE CEILING's thickness, extruded upwards from the height (planModel.setCeilingThickness):
+                its sides and top are cut by the pitched roofs over it; 0 = just the plane */}
+            {isCeiling && type === 'flat' && <Field label="Thickness" value={ceilingThickness(areas[index])} onApply={(text) => {
+                const next = setCeilingThickness(level, floorId, Number(String(text).replace(',', '.')));
+                if (next) setActiveLevel(next);
+            }} />}
             {isCeiling && <Toggle label="Roof" value={type} options={[['flat', 'Flat'], ['single', '1'], ['gable', '2'], ['hip', '4']]}
                 onChange={(next) => setActiveLevel(setCeilingRoof(level, floorId, next))} />}
             {/* pitched: the RIDGE height above the walking level (the eave height is above); the pitch follows */}
