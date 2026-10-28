@@ -42,5 +42,6 @@ assert.equal(isTeleportPose(0.35, 0.1, false), false, 'sideways');
 assert.equal(isTeleportPose(-0.3, 0.9, false), false, 'above the head');
 assert.equal(isTeleportPose(0.55, 0.4, false), false);
 assert.equal(isTeleportPose(0.55, 0.4, true), true, 'kept while aiming');
+assert.equal(isTeleportPose(0.4, -0.5, true), true, 'wrist tilted down to aim close by');
 assert.equal(isTeleportPose(0.7, 0.9, true), false, 'dropped while aiming');
 console.log('teleport: ok');
