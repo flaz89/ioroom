@@ -4,13 +4,17 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { activeLevel } from '../../../plan/planModel';
-import { canLand, teleportArc, teleportOffset } from './teleport';
+import { canLand, isTeleportPose, teleportArc, teleportOffset } from './teleport';
+import { measureHandPose } from './handPose';
 
 /*
 * TELEPORT with the LEFT hand (hand tracking), VR life mode only (mounted by Level.jsx; never in tabletop,
 * where the left pinch is half of the two-hand zoom, nor in AR). Hold a thumb-index pinch: a dotted arc from
 * the hand (orange, red where you cannot stand: teleport.js canLand) with a ring where it lands; release on
 * a valid place: a short fade to black, the player moves there (head above the ring), fade back.
+* - Only in the TELEPORT POSE (teleport.js isTeleportPose): hand raised in front, back of the hand towards
+*   the user. A pinch with the arm hanging along the body (still seen by the cameras) used to teleport.
+*   Leaving the pose while aiming cancels (no move).
 * - In life mode the left hand has no pointers (ray, grab, touch: xrStore.js): it only teleports.
 * - Only with every VR panel closed (isAnyPanelOpen: wrist menu, sun, materials, measure, note + keyboard),
 *   and not while the fist delete gesture is armed.
@@ -33,6 +37,7 @@ const _thumb = new Vector3();
 const _index = new Vector3();
 const _matrix = new Matrix4();
 const _dir = new Vector3();
+const _eyes = new Vector3();
 
 /*
 * Any VR panel on screen: teleport only works with all of them closed (pinching at a panel must never move
@@ -56,6 +61,7 @@ export default function TeleportGesture() {
     const aimRef = useRef(null);
     const moveRef = useRef({ session: null, base: null, offset: [0, 0] });
     const fadeStateRef = useRef(null); // { t, target } while fading
+    const inPoseRef = useRef(false); // hysteresis state of isTeleportPose
 
     useEffect(() => () => { aimRef.current = null; }, []);
 
@@ -95,14 +101,16 @@ export default function TeleportGesture() {
         const state = useStore.getState();
         const blocked = isAnyPanelOpen(state) || state.objects.deleteArmed || fadeStateRef.current != null;
         const distance = thumb && index ? _thumb.copy(thumb.transform.position).distanceTo(_index.copy(index.transform.position)) : null;
+        const handPose = joints && viewer && measureHandPose(frame, joints, space, _eyes.set(viewer.x, viewer.y, viewer.z));
+        inPoseRef.current = handPose != null && isTeleportPose(handPose.drop, handPose.backToUser, inPoseRef.current);
         const aim = aimRef.current;
         const pinching = distance != null && distance < (aim ? PINCH_END : PINCH_START);
 
-        if (aim && !pinching) {
-            // released: go (tracking lost = distance null counts as a release without moving)
-            if (distance != null && aim.valid && !blocked) fadeStateRef.current = { t: 0, head: aim.head, target: aim.landing };
+        if (aim && (!pinching || !inPoseRef.current)) {
+            // released: go. Out of the pose while aiming, or tracking lost (distance null): cancel, no move
+            if (!pinching && distance != null && aim.valid && !blocked) fadeStateRef.current = { t: 0, head: aim.head, target: aim.landing };
             aimRef.current = null;
-        } else if (pinching && aimPose && viewer && (aim || !blocked)) {
+        } else if (pinching && aimPose && viewer && inPoseRef.current && (aim || !blocked)) {
             const p = aimPose.transform.position;
             _dir.set(0, 0, -1).applyQuaternion(aimPose.transform.orientation);
             const { points, landing } = teleportArc([p.x, p.y, p.z], [_dir.x, _dir.y, _dir.z]);

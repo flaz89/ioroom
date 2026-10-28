@@ -50,4 +50,24 @@ export function canLand(level, point) {
     return point[0] >= min[0] && point[0] <= max[0] && point[1] >= min[1] && point[1] <= max[1];
 }
 
-export const teleportOffset = (offset, head, target) => [offset[0] + head[0] - target[0], offset[1] + head[1] - target[1]];
+/*
+* TELEPORT POSE (like the delete pose, fistGesture.js): the pinch only counts with the hand RAISED in front
+* (not hanging along the body, where the cameras still see it) and the BACK of the hand towards the user.
+* drop: meters from the eyes down to the wrist; backToUser: see handPose.js measureHandPose.
+* Hysteresis: enters between DROP_MIN and DROP_ENTER and within ~60° (back), leaves beyond DROP_EXIT / ~75°.
+* Calibration knobs (tune on the headset): a hanging arm is ~0.75-0.9 m below the eyes standing, ~0.6-0.7 sitting.
+*/
+const cos = (degrees) => Math.cos((degrees * Math.PI) / 180);
+export const TELEPORT_DROP_MIN = -0.15;  // hand at most this much above the eyes
+export const TELEPORT_DROP_ENTER = 0.5;
+export const TELEPORT_DROP_EXIT = 0.6;
+export const TELEPORT_BACK_ENTER = cos(60);
+export const TELEPORT_BACK_EXIT = cos(75);
+
+export function isTeleportPose(drop, backToUser, wasPose) {
+    return drop > TELEPORT_DROP_MIN && (wasPose
+        ? drop < TELEPORT_DROP_EXIT && backToUser > TELEPORT_BACK_EXIT
+        : drop < TELEPORT_DROP_ENTER && backToUser > TELEPORT_BACK_ENTER);
+}
+
+export const teleportOffset =(offset, head, target) => [offset[0] + head[0] - target[0], offset[1] + head[1] - target[1]];

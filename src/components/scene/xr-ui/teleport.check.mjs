@@ -1,6 +1,6 @@
 // Self-check for teleport.js. Run: node src/components/scene/xr-ui/teleport.check.mjs
 import assert from 'node:assert/strict';
-import { MAX_DISTANCE, canLand, teleportArc, teleportOffset } from './teleport.js';
+import { MAX_DISTANCE, canLand, isTeleportPose, teleportArc, teleportOffset } from './teleport.js';
 import { DEFAULT_PLAN, activeLevel } from '../../../plan/planModel.js';
 
 // a 45° throw from 1.2 m lands ahead, on the floor, past the top of the arc
@@ -33,4 +33,14 @@ assert.deepEqual([1 - offset[0], 2 - offset[1]], [4, -1], 'head lands on the tar
 // a second teleport adds up: head now at (4, -1) (base still (1, 2)), target (0, 0)
 const again = teleportOffset(offset, [4, -1], [0, 0]);
 assert.deepEqual([1 - again[0], 2 - again[1]], [0, 0]);
+// pose: raised hand with the back towards the user yes; hanging along the body, palm towards the user,
+// sideways or above the head no; a small drift while aiming keeps it (hysteresis)
+assert.equal(isTeleportPose(0.35, 0.9, false), true);
+assert.equal(isTeleportPose(0.85, 0.9, false), false, 'hanging arm');
+assert.equal(isTeleportPose(0.35, -0.9, false), false, 'palm towards the user');
+assert.equal(isTeleportPose(0.35, 0.1, false), false, 'sideways');
+assert.equal(isTeleportPose(-0.3, 0.9, false), false, 'above the head');
+assert.equal(isTeleportPose(0.55, 0.4, false), false);
+assert.equal(isTeleportPose(0.55, 0.4, true), true, 'kept while aiming');
+assert.equal(isTeleportPose(0.7, 0.9, true), false, 'dropped while aiming');
 console.log('teleport: ok');

@@ -5,6 +5,7 @@ import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { createFistGesture, isDeletePose } from './fistGesture';
 import { isLockedByOther } from '../../../sync/presence';
+import { measureHandPose, readJoint } from './handPose';
 
 /*
 * Deletes the selected object with an "open hand -> fist" gesture of the LEFT hand (hand tracking):
@@ -21,21 +22,7 @@ const FINGERS = ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger']
 const _wrist = new Vector3();
 const _tip = new Vector3();
 const _knuckle = new Vector3();
-const _middleKnuckle = new Vector3();
-const _indexKnuckle = new Vector3();
-const _pinkyKnuckle = new Vector3();
-const _along = new Vector3();
-const _across = new Vector3();
-const _toUser = new Vector3();
 const _eyes = new Vector3();
-
-// Joint position in the reference space, or false if not tracked this frame
-function readJoint(frame, hand, joint, referenceSpace, target) {
-    const pose = frame.getJointPose?.(hand.get(joint), referenceSpace);
-    if (pose == null) return false;
-    target.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-    return true;
-}
 
 // Average fingertip-wrist / knuckle-wrist ratio (see fistGesture.js), null if not tracked
 function measureOpenness(frame, hand, referenceSpace) {
@@ -47,26 +34,6 @@ function measureOpenness(frame, hand, referenceSpace) {
         sum += _tip.distanceTo(_wrist) / Math.max(_knuckle.distanceTo(_wrist), 1e-4);
     }
     return sum / FINGERS.length;
-}
-
-/*
-* Hand orientation for isDeletePose (fistGesture.js), or null if not tracked:
-* - along: wrist -> middle knuckle (the direction the fingers point);
-* - back normal: along x (index knuckle -> pinky knuckle). For the LEFT hand this points out of the BACK
-*   of the hand (fingers up, palm away from you: index on the right, pinky on the left, so the cross
-*   product points at you). Knuckles barely move when making a fist, so it stays valid while closing.
-* `eyes`: viewer position (same reference space).
-*/
-function measureDeletePose(frame, hand, referenceSpace, eyes) {
-    if (!readJoint(frame, hand, 'wrist', referenceSpace, _wrist)) return null;
-    if (!readJoint(frame, hand, 'middle-finger-phalanx-proximal', referenceSpace, _middleKnuckle)) return null;
-    if (!readJoint(frame, hand, 'index-finger-phalanx-proximal', referenceSpace, _indexKnuckle)) return null;
-    if (!readJoint(frame, hand, 'pinky-finger-phalanx-proximal', referenceSpace, _pinkyKnuckle)) return null;
-    _along.subVectors(_middleKnuckle, _wrist).normalize();
-    _across.subVectors(_pinkyKnuckle, _indexKnuckle);
-    const back = _across.crossVectors(_along, _across).normalize();
-    _toUser.subVectors(eyes, _wrist).setY(0).normalize();
-    return { fingersUp: _along.y, backToUser: back.dot(_toUser) };
 }
 
 export default function FistDeleteGesture() {
@@ -86,7 +53,7 @@ export default function FistDeleteGesture() {
         const referenceSpace = gl.xr.getReferenceSpace();
         const openness = measureOpenness(frame, hand, referenceSpace);
         const viewer = frame.getViewerPose(referenceSpace)?.transform.position;
-        const pose = viewer && measureDeletePose(frame, hand, referenceSpace, _eyes.set(viewer.x, viewer.y, viewer.z));
+        const pose = viewer && measureHandPose(frame, hand, referenceSpace, _eyes.set(viewer.x, viewer.y, viewer.z));
         if (openness == null || pose == null) return; // tracking lost: keep the current state
         inPose.current = isDeletePose(pose.fingersUp, pose.backToUser, inPose.current);
 
