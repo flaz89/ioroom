@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Object3D, Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
+import { useXR } from '@react-three/xr';
 import { useStore } from '../../store/appStore';
 import { sunLighting } from '../scene/sun/sunLighting';
 import SunArc from '../scene/sun/SunArc';
@@ -18,6 +19,11 @@ const NORMAL_BIAS = 0.02;  // room meters: removes shadow acne on the walls/floo
 // With a GI technique on (light probes or SSGI), the environment mostly gives the reflections: the GI does
 // the fill light (the environment's diffuse would light every room evenly again). Calibration knob.
 const ENVIRONMENT_WITH_GI = 0.25;
+// XR (WebGL, no GI): the shared look (exposure, environment light) is tuned on the desktop WITH the SSGI, which
+// darkens corners and contacts. Without it the full environment lit every face evenly from every side: on the
+// Quest the image was burnt and flat, the sun's shadows filled away. Calibration knobs (tune on the headset).
+const XR_ENVIRONMENT = 0.4; // environment light multiplier in XR
+const XR_EXPOSURE = 0.85;   // exposure multiplier in XR
 
 const _scale = new Vector3();
 
@@ -49,11 +55,13 @@ export default function Light() {
     // look of the environment (store look, shared): environment multiplier and exposure, chosen by the owner
     const look = useStore((state) => state.look);
     const gl = useThree((state) => state.gl);
+    const isXR = useXR((state) => state.mode != null);
     useLayoutEffect(() => {
-        scene.environmentIntensity = lighting.environment * look.environment * (hasProbes || hasSsgi ? ENVIRONMENT_WITH_GI : 1);
-    }, [scene, lighting, hasProbes, hasSsgi, look.environment]);
-    // tone mapping exposure: read by the renderer's output transform (and by the WebGPU post-processing's)
-    useLayoutEffect(() => { gl.toneMappingExposure = look.exposure; }, [gl, look.exposure]);
+        const gi = isXR ? XR_ENVIRONMENT : hasProbes || hasSsgi ? ENVIRONMENT_WITH_GI : 1;
+        scene.environmentIntensity = lighting.environment * look.environment * gi;
+    }, [scene, lighting, hasProbes, hasSsgi, isXR, look.environment]);
+    // tone mapping exposure: read by the renderer's output transform (also in XR; and by the WebGPU post-processing's)
+    useLayoutEffect(() => { gl.toneMappingExposure = look.exposure * (isXR ? XR_EXPOSURE : 1); }, [gl, isXR, look.exposure]);
     const appliedScale = useRef(''); // scale | shadow size | sun distance last applied to the shadow camera
     // Plan size: center [x, z] and radius (m) of the level being worked on
     const level = useStore((state) => activeLevel(state.plan));
