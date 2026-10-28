@@ -124,8 +124,11 @@ export default function Scene({xrStore}) {
                     (smoothTime); touch: one finger rotates, two zoom + pan. Never below the horizon. minDistance is
                     small because the orbit point follows the cursor (OrbitAtCursor.jsx): distances are to it.
                     dollyToCursor: the wheel / pinch zooms towards the spot under the pointer (like a CAD), not the
-                    screen's center */}
-                <CameraControls
+                    screen's center.
+                    NOT in XR: its update (every frame, before every other useFrame) rewrites the camera's pose with
+                    the orbit's, so in XR whoever read the camera got the old desktop view, not the headset (the
+                    wrist menu's "facing the eyes" test showed it only with the hand edgewise) */}
+                {!isXR && <CameraControls
                     makeDefault
                     smoothTime={ 0.2 }
                     // smoothing WHILE dragging (default 0.125 s): the orbit point is often close (the spot under the
@@ -139,7 +142,7 @@ export default function Scene({xrStore}) {
                     onStart={onOrbitStart}
                     onChange={onOrbitChange}
                     onEnd={onOrbitEnd}
-                />
+                />}
                 {/* every rotation turns around the spot under the pointer */}
                 <OrbitAtCursor />
                 {/* each device reopens the environment where it left the view (localStorage) */}

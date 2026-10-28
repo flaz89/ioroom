@@ -1,4 +1,4 @@
-import { Matrix4, PlaneGeometry, Vector3 } from 'three';
+import { Matrix4, PlaneGeometry, Triangle, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /*
@@ -96,21 +96,36 @@ export function surfaceIdAt(faceRanges, faceIndex) {
 * Sphere pointers (XR touch + grab, @pmndrs/pointer-events) test a mesh against its whole BOUNDING BOX
 * unless the mesh has a `spherecast(sphere, target)` method. A merged batch spanning several walls has a
 * box as big as the room: hands would always be "touching" it and that contact beats the ray. This
-* returns that method for a merged mesh: the sphere is tested against EACH FACE's box (as when every face
-* was its own mesh) and the nearest touched face is pushed as the intersection (faceIndex = its first
-* triangle, so surfaceIdAt works on it too). Called as a method: `this` = the mesh.
+* returns that method for a merged mesh: the sphere is tested against EACH FACE (as when every face was its
+* own mesh) and the nearest touched face is pushed as the intersection (faceIndex = its first triangle, so
+* surfaceIdAt works on it too). Called as a method: `this` = the mesh.
+* The face's box is only the quick reject: then the distance is to the face's real TRIANGLES. A sloped face
+* (roof pitch, oblique wall) has a box as big as the room part under it: with a low eave (attic) the hands
+* were always inside it and the right hand's ray never showed.
 */
 const _inverse = new Matrix4();
 const _local = new Vector3();
 const _point = new Vector3();
+const _closest = new Vector3();
+const _triangle = new Triangle();
 
 export function spherecastFaces(faceRanges) {
     return function spherecast(sphere, target) {
         _inverse.copy(this.matrixWorld).invert();
         _local.copy(sphere.center).applyMatrix4(_inverse);
+        const { index, attributes: { position } } = this.geometry;
         let best = null;
         for (const range of faceRanges) {
-            range.box.clampPoint(_local, _point).applyMatrix4(this.matrixWorld); // nearest point, world
+            range.box.clampPoint(_local, _point).applyMatrix4(this.matrixWorld); // box: a lower bound, world
+            if (_point.distanceToSquared(sphere.center) > sphere.radius * sphere.radius) continue;
+            let localSq = Infinity;
+            for (let t = range.start; t < range.end; t++) {
+                _triangle.setFromAttributeAndIndices(position, index.getX(3 * t), index.getX(3 * t + 1), index.getX(3 * t + 2));
+                _triangle.closestPointToPoint(_local, _closest);
+                const distanceSq = _closest.distanceToSquared(_local);
+                if (distanceSq < localSq) { localSq = distanceSq; _point.copy(_closest); }
+            }
+            _point.applyMatrix4(this.matrixWorld); // nearest point on the face, world
             const distanceSq = _point.distanceToSquared(sphere.center);
             if (distanceSq > sphere.radius * sphere.radius || (best != null && distanceSq >= best.distanceSq)) continue;
             best = { distanceSq, point: _point.clone(), range };

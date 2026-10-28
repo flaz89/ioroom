@@ -24,7 +24,9 @@ export default function CameraMemory() {
 
     // put the saved view back, once, as soon as the controls exist
     useEffect(() => {
-        if (controls == null || restored.current) return;
+        // no controls (XR session, Scene.jsx): restore again when they come back (WebGL-only devices keep the Canvas)
+        if (controls == null) { restored.current = false; return; }
+        if (restored.current) return;
         restored.current = true;
         try {
             const saved = JSON.parse(localStorage.getItem(storageKey()));
