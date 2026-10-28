@@ -61,7 +61,6 @@ export default function TeleportGesture() {
     const aimRef = useRef(null);
     const moveRef = useRef({ session: null, base: null, offset: [0, 0] });
     const fadeStateRef = useRef(null); // { t, target } while fading
-    const inPoseRef = useRef(false); // hysteresis state of isTeleportPose
 
     useEffect(() => () => { aimRef.current = null; }, []);
 
@@ -102,15 +101,17 @@ export default function TeleportGesture() {
         const blocked = isAnyPanelOpen(state) || state.objects.deleteArmed || fadeStateRef.current != null;
         const distance = thumb && index ? _thumb.copy(thumb.transform.position).distanceTo(_index.copy(index.transform.position)) : null;
         const handPose = joints && viewer && measureHandPose(frame, joints, space, _eyes.set(viewer.x, viewer.y, viewer.z));
-        inPoseRef.current = handPose != null && isTeleportPose(handPose.drop, handPose.backToUser, inPoseRef.current);
         const aim = aimRef.current;
+        // the relaxed rule (height only) holds only WHILE AIMING: kept between pinches it let a later pinch with
+        // the back of the hand up start a teleport
+        const inPose = handPose != null && isTeleportPose(handPose.drop, handPose.backToUser, aim != null);
         const pinching = distance != null && distance < (aim ? PINCH_END : PINCH_START);
 
-        if (aim && (!pinching || !inPoseRef.current)) {
+        if (aim && (!pinching || !inPose)) {
             // released: go. Out of the pose while aiming, or tracking lost (distance null): cancel, no move
             if (!pinching && distance != null && aim.valid && !blocked) fadeStateRef.current = { t: 0, head: aim.head, target: aim.landing };
             aimRef.current = null;
-        } else if (pinching && aimPose && viewer && inPoseRef.current && (aim || !blocked)) {
+        } else if (pinching && aimPose && viewer && inPose && (aim || !blocked)) {
             const p = aimPose.transform.position;
             _dir.set(0, 0, -1).applyQuaternion(aimPose.transform.orientation);
             const { points, landing } = teleportArc([p.x, p.y, p.z], [_dir.x, _dir.y, _dir.z]);
