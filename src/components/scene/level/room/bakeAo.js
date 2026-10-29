@@ -21,16 +21,20 @@ import { MeshBVH } from 'three-mesh-bvh';
 * - Only the rows y with y % rowStride === rowOffset: the workers split the atlas by interleaved rows (an even
 *   share of the charts each). The rays are the whole cost (~1.5 us each with the BVH on an M2 Max).
 * finishAo(size, values, covered) -> Uint8Array (255 = open, 0 = fully occluded), after merging the workers' rows:
-* - a 3 x 3 blur over covered texels only (charts are 2 * PAD apart: it never mixes two faces) smooths the noise;
+* - a 5 x 5 blur over covered texels only (BLUR < 2 * PAD, the gap between charts: it never mixes two faces)
+*   smooths the noise and the edge's gradient;
 * - uncovered texels next to covered ones are filled from them, PAD rings (aoAtlas.js PAD): linear filtering at
 *   a chart's border never reads the empty background. The rest stays 255.
 * bakeAo(size, faces, options) -> { ao, aoOpen }: all of it in one go (the check).
 * Calibration knobs (tune on the headset): rays, radius (and aoAtlas' texel); the strength is ROOM_AO_INTENSITY.
 */
 export const AO_RAYS = 16;
-export const AO_RADIUS = 0.5; // meters: the "contact" reach, not distant shadowing
+// meters: the "contact" reach, not distant shadowing. 29/10 on the Quest: 1 m (linear) a wide dark band, 0.5 m
+// (quadratic) a hard line along the edges; 0.75 m quadratic + the 5 x 5 blur in between
+export const AO_RADIUS = 0.75;
 const EPSILON = 0.002;      // meters: ray start above the surface (no self-hit at shared edges)
 const DILATE = 2;           // rings of border fill (= aoAtlas PAD)
+const BLUR = 2;             // blur half-width in texels (5 x 5): below 2 * PAD, so it never reaches another chart
 
 const _a = new Vector3(), _b = new Vector3(), _c = new Vector3();
 const _n = new Vector3(), _t = new Vector3(), _s = new Vector3();
@@ -155,14 +159,14 @@ export const finishBoth = (size, { values, valuesOpen, covered }) =>
 
 export function finishAo(size, values, covered) {
     covered = covered.slice();
-    // 3 x 3 blur over covered texels only
+    // (2 BLUR + 1)^2 blur over covered texels only
     const blurred = new Float32Array(values);
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             if (!covered[y * size + x]) continue;
             let sum = 0, count = 0;
-            for (let j = Math.max(0, y - 1); j <= Math.min(size - 1, y + 1); j++) {
-                for (let i = Math.max(0, x - 1); i <= Math.min(size - 1, x + 1); i++) {
+            for (let j = Math.max(0, y - BLUR); j <= Math.min(size - 1, y + BLUR); j++) {
+                for (let i = Math.max(0, x - BLUR); i <= Math.min(size - 1, x + BLUR); i++) {
                     if (covered[j * size + i]) { sum += values[j * size + i]; count++; }
                 }
             }

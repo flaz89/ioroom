@@ -106,6 +106,9 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
   sui muri col tetto nascosto → D7 risolta senza un secondo calcolo: lo stesso passaggio produce anche la versione
   senza soffitti (un raggio fermato da un soffitto viene rifatto sulla BVH senza soffitti), scambiata al volo
   (`showRoomAoCeilings`). Check: cima del muro sotto la gronda 0,81 col tetto, 1,00 senza.
+- 29/10, terza prova: tabletop e soffitti a posto; AO ora troppo netta, una linea lungo gli spigoli (muri contro il
+  lato lungo della falda) → raggio 0,75 m (sempre quadratica) e sfocatura 5×5 (`BLUR`, sotto il margine tra i chart).
+  Check: a 30 cm dal muro una via di mezzo. Calcolo circa 1,5 volte più lungo (6×6: 111 → 180 ms).
 - Da fare dopo (emersi dalle catture): riflesso dell'ambiente al centro del pavimento (l'AO lì non può nulla: abbassare
   l'ambiente in VR o una ruvidezza minima dei pavimenti), cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).

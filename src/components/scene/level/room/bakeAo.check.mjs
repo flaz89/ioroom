@@ -41,6 +41,9 @@ assert.ok(corner < byWall - 0.05, 'darker still in a corner');
 assert.ok(open > 0.95, 'no wall, no darkening');
 // close to the edge only (no "soft box" band along every wall: 29/10 on the Quest)
 assert.ok(aoAt(floor, [-2.4, 0, 0]) > 0.98, 'open again 60 cm from a wall');
+// ...but a gradient, not a hard line (29/10 on the Quest with 0.5 m): 30 cm out, still in between
+const at30 = aoAt(floor, [-2.7, 0, 0]);
+assert.ok(at30 > byWall + 0.03 && at30 < 0.99, `soft edge (${at30.toFixed(2)} at 30 cm)`);
 
 // a wall's inner face, low and in the middle: darkened by the floor
 const leftWall = faces.findIndex((face) => face.surfaceId === 'wall-left:inner');
