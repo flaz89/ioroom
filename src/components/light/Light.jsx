@@ -22,8 +22,15 @@ const ENVIRONMENT_WITH_GI = 0.25;
 // XR (WebGL, no GI): the shared look (exposure, environment light) is tuned on the desktop WITH the SSGI, which
 // darkens corners and contacts. Without it the full environment lit every face evenly from every side: on the
 // Quest the image was burnt and flat, the sun's shadows filled away. Calibration knobs (tune on the headset).
-const XR_ENVIRONMENT = 0.4; // environment light multiplier in XR
-const XR_EXPOSURE = 0.85;   // exposure multiplier in XR
+const XR_ENVIRONMENT = 0.15; // environment light multiplier in XR: now mostly the reflections
+const XR_EXPOSURE = 0.85;    // exposure multiplier in XR
+// XR DIRECTIONAL FILL (no GI): the environment lights every face alike, so in VR the shapes melted into each
+// other. A hemisphere light takes over most of the fill: bright from above (floor), warm and dark from below
+// (the floor's bounce: ceilings and beam undersides darker), walls in between. Costs nothing per pixel.
+// Strength x PI: three's Lambert divides the irradiance by PI. Calibration knobs (tune on the headset).
+const XR_FILL = 0.3;
+const XR_SKY = '#f2f5ff';
+const XR_GROUND = '#4d463f';
 
 const _scale = new Vector3();
 
@@ -101,6 +108,8 @@ export default function Light() {
                 color={lighting.color}
                 shadow-mapSize={[2048, 2048]}
             />
+
+            {isXR && <hemisphereLight args={[XR_SKY, XR_GROUND]} intensity={Math.PI * XR_FILL * lighting.environment * look.environment} />}
 
             <SunArc sun={sun} lighting={lighting} center={center} radius={radius} />
 

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import { Grid } from '@react-three/drei';
+import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { activeLevel, sceneBounds } from '../../../plan/planModel';
 
@@ -19,8 +20,13 @@ const MARGIN = 4;       // meters around the project
 const CELL_SIZE = 0.5;  // meters
 const SECTION = 2;      // meters
 const GRID_DROP = 0.03; // meters below the floor plane (WebGPU grid, see below)
-export default function SceneGrid({ visible }) {
+export default function SceneGrid({ visible: shown }) {
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
+    // never in VR / AR first person: seen from inside, its thin lines shimmer and it meets the floor around the
+    // room; kept in tabletop (the real floor under the model)
+    const isXR = useXR((state) => state.mode != null);
+    const isLife = useStore((state) => state.view.mode === 'life');
+    const visible = shown && !(isXR && isLife);
     const level = useStore((state) => activeLevel(state.plan));
     const { size, center } = useMemo(() => {
         const bounds = sceneBounds(level);
@@ -29,6 +35,8 @@ export default function SceneGrid({ visible }) {
         return { size: Math.max(MIN_SIZE, Math.ceil(extent / (2 * SECTION)) * 2 * SECTION), center: [snap(bounds.center[0]), snap(bounds.center[1])] };
     }, [level]);
     const SIZE = size;
+    // in XR not even mounted: no grid shader to compile or keep on the headset
+    if (isXR && !visible) return null;
 
     if (isWebGPU) {
         // Below y=0 so the room floor hides it, as drei's Grid does on WebGL (avoids z-fighting). GRID_DROP, not
