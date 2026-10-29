@@ -7,7 +7,8 @@ import { DataTexture, LinearFilter, RedFormat, UnsignedByteType } from 'three';
 * aoMap only darkens the INDIRECT light (environment, XR hemisphere light; never the sun) and, with an
 * environment map, its reflections too (three's specular occlusion).
 */
-export const ROOM_AO_INTENSITY = 1; // material aoMapIntensity (calibration knob: tune on the headset)
+// material aoMapIntensity (calibration knob: tune on the headset; 29/10: 1 read too black on the Quest)
+export const ROOM_AO_INTENSITY = 0.8;
 
 export const roomAoTexture = new DataTexture(new Uint8Array([255]), 1, 1, RedFormat, UnsignedByteType);
 roomAoTexture.channel = 1; // uv1

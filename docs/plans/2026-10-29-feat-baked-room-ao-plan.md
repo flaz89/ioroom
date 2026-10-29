@@ -95,7 +95,15 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
 - Nessun cambiamento su schermo con la SSGI attiva (D6).
 - Prova sul Quest: angoli, travi, riflesso del pavimento.
 
-### U4. Taratura e prestazioni sul Quest 2
+### U4. Taratura e prestazioni sul Quest 2 — IN CORSO
+
+- 29/10, tempi di Flavio con la sua pianta: Quest 2 circa 6,4 s, Mac circa 2 s (in background). Accettati.
+- 29/10, resa sul Quest: AO troppo pesante e nera, fascia scura larga lungo ogni spigolo (effetto "riquadro morbido"
+  su muri e falde), falde marroncine e cupe. Ora: raggio 0,5 m con attenuazione quadratica, `ROOM_AO_INTENSITY` 0,8,
+  luce dal basso in XR più chiara e quasi neutra (`XR_GROUND` #86827c). Check: a 60 cm da un muro il pavimento è aperto.
+- Da fare dopo (emersi dalle catture): riflesso dell'ambiente al centro del pavimento (l'AO lì non può nulla: abbassare
+  l'ambiente in VR o una ruvidezza minima dei pavimenti), cielo blu saturo fuori dalle finestre, seghettature dei bordi
+  in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).
 
 - Costanti: dimensione del texel, numero di raggi, raggio d'azione, intensità (`aoMapIntensity`).
 - Misure: tempo di calcolo sul Quest con la pianta reale di Flavio (obiettivo: pochi secondi, in background), memoria

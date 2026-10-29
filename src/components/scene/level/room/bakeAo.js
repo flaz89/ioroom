@@ -10,8 +10,9 @@ import { MeshBVH } from 'three-mesh-bvh';
 *   RECEIVERS (their texels get a value) and the OCCLUDERS (rays hit them: furniture is never in here, D1).
 * - Each triangle is rasterized in atlas pixels: a texel whose center lies inside it gets the triangle's point
 *   and normal there. From the point (lifted by EPSILON along the normal) `rays` cosine-weighted rays over the
-*   hemisphere test the room within `radius`: a hit at distance d occludes by (1 - d / radius), so the effect fades
-*   out smoothly at the radius. The ray set is a fixed Hammersley pattern turned by a per-texel hash (noise
+*   hemisphere test the room within `radius`: a hit at distance d occludes by (1 - d / radius)^2, so the darkening
+*   stays close to the corner and fades out smoothly well before the radius (29/10 on the Quest: 1 m with a linear
+*   falloff darkened a wide band along every edge, a "soft box" vignette on walls and roof pitches, too heavy). The ray set is a fixed Hammersley pattern turned by a per-texel hash (noise
 *   rather than banding).
 * - Only the rows y with y % rowStride === rowOffset: the workers split the atlas by interleaved rows (an even
 *   share of the charts each). The rays are the whole cost (~1.5 us each with the BVH on an M2 Max).
@@ -23,7 +24,7 @@ import { MeshBVH } from 'three-mesh-bvh';
 * Calibration knobs (tune on the headset): rays, radius (and aoAtlas' texel); the strength is ROOM_AO_INTENSITY.
 */
 export const AO_RAYS = 16;
-export const AO_RADIUS = 1; // meters: the "contact" reach, not distant shadowing
+export const AO_RADIUS = 0.5; // meters: the "contact" reach, not distant shadowing
 const EPSILON = 0.002;      // meters: ray start above the surface (no self-hit at shared edges)
 const DILATE = 2;           // rings of border fill (= aoAtlas PAD)
 
@@ -110,7 +111,7 @@ export function bakeTexels(size, faces, { rays = AO_RAYS, radius = AO_RADIUS, ro
                         _ray.origin.copy(_p);
                         _ray.direction.set(0, 0, 0).addScaledVector(_t, rx).addScaledVector(_s, ry).addScaledVector(_n, dz);
                         const hit = bvh.raycastFirst(_ray, DoubleSide, 0, radius);
-                        if (hit) occlusion += 1 - hit.distance / radius;
+                        if (hit) occlusion += (1 - hit.distance / radius) ** 2;
                     }
                     values[texel] = 1 - occlusion / rays;
                 }

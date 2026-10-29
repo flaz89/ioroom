@@ -30,9 +30,11 @@ const corner = aoAt(floor, [-2.97, 0, -2.97]);    // the back-left corner: two w
 const open = aoAt(floor, [0, 0, 2.97]);           // front edge: no wall there
 console.log(`  center ${center.toFixed(2)}, by a wall ${byWall.toFixed(2)}, corner ${corner.toFixed(2)}, open edge ${open.toFixed(2)}`);
 assert.ok(center > 0.97, 'the middle of the floor is open');
-assert.ok(byWall < center - 0.15, 'darker at the foot of a wall');
-assert.ok(corner < byWall - 0.1, 'darker still in a corner');
+assert.ok(byWall < center - 0.1, 'darker at the foot of a wall');
+assert.ok(corner < byWall - 0.05, 'darker still in a corner');
 assert.ok(open > 0.95, 'no wall, no darkening');
+// close to the edge only (no "soft box" band along every wall: 29/10 on the Quest)
+assert.ok(aoAt(floor, [-2.4, 0, 0]) > 0.98, 'open again 60 cm from a wall');
 
 // a wall's inner face, low and in the middle: darkened by the floor
 const leftWall = faces.findIndex((face) => face.surfaceId === 'wall-left:inner');
