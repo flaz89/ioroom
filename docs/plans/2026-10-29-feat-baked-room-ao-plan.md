@@ -101,6 +101,11 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
 - 29/10, resa sul Quest: AO troppo pesante e nera, fascia scura larga lungo ogni spigolo (effetto "riquadro morbido"
   su muri e falde), falde marroncine e cupe. Ora: raggio 0,5 m con attenuazione quadratica, `ROOM_AO_INTENSITY` 0,8,
   luce dal basso in XR più chiara e quasi neutra (`XR_GROUND` #86827c). Check: a 60 cm da un muro il pavimento è aperto.
+- 29/10, seconda prova: soffitti ancora molto più scuri dei muri con lo stesso stucco → `XR_GROUND` #b8b4ae (le
+  falde guardano in basso e prendono quasi solo quella luce). Tabletop: l'AO di falde, travi e controsoffitto restava
+  sui muri col tetto nascosto → D7 risolta senza un secondo calcolo: lo stesso passaggio produce anche la versione
+  senza soffitti (un raggio fermato da un soffitto viene rifatto sulla BVH senza soffitti), scambiata al volo
+  (`showRoomAoCeilings`). Check: cima del muro sotto la gronda 0,81 col tetto, 1,00 senza.
 - Da fare dopo (emersi dalle catture): riflesso dell'ambiente al centro del pavimento (l'AO lì non può nulla: abbassare
   l'ambiente in VR o una ruvidezza minima dei pavimenti), cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).

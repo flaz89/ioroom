@@ -29,10 +29,12 @@ const XR_EXPOSURE = 0.85;    // exposure multiplier in XR
 // (the floor's bounce: ceilings and beam undersides darker), walls in between. Costs nothing per pixel.
 // Strength x PI: three's Lambert divides the irradiance by PI. Calibration knobs (tune on the headset).
 // (29/10 on the Quest 2: 0.3 + ground #4d463f turned the white plaster walls grey; then #6e655b with the baked AO
-// made the roof pitches a dull brown-grey: lighter and nearly neutral now)
+// made the roof pitches a dull brown-grey; then #86827c: ceilings still far darker than walls of the same white
+// plaster. Ceilings face down and get mostly this color, walls the average: close to the sky now, as in a white
+// room where the ceiling is lit by the floor's and walls' bounce)
 const XR_FILL = 0.35;
 const XR_SKY = '#f2f5ff';
-const XR_GROUND = '#86827c';
+const XR_GROUND = '#b8b4ae';
 
 const _scale = new Vector3();
 

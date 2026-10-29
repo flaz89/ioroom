@@ -1,17 +1,17 @@
-import { bakeTexels, finishAo, mergeRows } from './bakeAo.js';
+import { bakeTexels, finishBoth, mergeRows } from './bakeAo.js';
 
 /*
 * AO bake off the main thread (bakeAo.js), driven by aoBaker.js:
-* - { type: 'texels', size, faces, rowOffset, rowStride } -> { values, covered } (this worker's rows)
-* - { type: 'finish', size, parts: [{ values, covered }] } -> { ao } (the workers' rows merged, then blur + border fill)
+* - { type: 'texels', size, faces, rowOffset, rowStride } -> { values, valuesOpen, covered } (this worker's rows)
+* - { type: 'finish', size, parts } -> { ao, aoOpen } (the workers' rows merged, then blur + border fill of both)
 * Results are transferred, not copied.
 */
 self.onmessage = ({ data }) => {
     if (data.type === 'texels') {
-        const { values, covered } = bakeTexels(data.size, data.faces, { rowOffset: data.rowOffset, rowStride: data.rowStride });
-        self.postMessage({ values, covered }, [values.buffer, covered.buffer]);
+        const part = bakeTexels(data.size, data.faces, { rowOffset: data.rowOffset, rowStride: data.rowStride });
+        self.postMessage(part, [part.values.buffer, part.valuesOpen.buffer, part.covered.buffer]);
     } else {
-        const ao = finishAo(data.size, ...mergeRows(data.size, data.parts));
-        self.postMessage({ ao }, [ao.buffer]);
+        const result = finishBoth(data.size, mergeRows(data.size, data.parts));
+        self.postMessage(result, [result.ao.buffer, result.aoOpen.buffer]);
     }
 };

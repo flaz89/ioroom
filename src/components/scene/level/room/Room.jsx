@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { aoAtlas } from './aoAtlas';
 import { bakeRoomAo } from './aoBaker';
-import { isRoomAoFor, setRoomAo } from './roomAo';
+import { isRoomAoFor, setRoomAo, showRoomAoCeilings } from './roomAo';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import UnderlayPlane from './UnderlayPlane';
@@ -106,15 +106,20 @@ export default function Room() {
 
     // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
     const plainFaces = useMemo(() => roomFaces(level), [level]);
-    // Ceilings: hidden by this device's toggle (store ceilingVisible) and always in the XR tabletop view
-    // (the miniature is looked at from above: a lid would hide the room)
     const isXR = useXR((state) => state.mode != null);
+    // Ceilings: hidden by this device's toggle (store ceilingVisible) and always in the XR tabletop view
+    // (the miniature is looked at from above: a lid would hide the room). Their faces: roof pitches / ceiling,
+    // exposed beams, dormer walls, false ceiling sides
+    const showCeilings = useStore((state) => state.ceilingVisible && !(isXR && state.view.mode === 'tabletop'));
+    const ceilingIds = useMemo(() => new Set((level.ceilings ?? []).flatMap((ceiling) =>
+        [ceiling.id, beamsFaceId(ceiling.id), dormerWallsFaceId(ceiling.id), ceilingSidesFaceId(ceiling.id)])), [level]);
 
     // BAKED AO (docs/plans/2026-10-29-feat-baked-room-ao-plan.md): in XR and on screen without the SSGI (which does
     // its own). The faces get uv1 (aoAtlas.js); BAKE_DELAY after the plan stops changing (drags, undo, edits from
     // another device) the worker bakes it (aoBaker.js); the materials use it only while the bake matches the
     // current atlas (`bakedAtlas`), else the room shows without AO until the next bake lands. A Canvas remount
-    // (entering / leaving XR) with the same plan reuses the last bake (roomAo.js isRoomAoFor).
+    // (entering / leaving XR) with the same plan reuses the last bake (roomAo.js isRoomAoFor). Each bake holds the
+    // AO with and without the ceilings: hiding them swaps the texture's data, no new bake (showRoomAoCeilings).
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
     const wantsAo = useStore((state) => isXR || !(state.settings.ssgi && isWebGPU));
     const atlas = useMemo(() => (wantsAo ? aoAtlas(plainFaces.map((face) => face.geometry)) : null), [plainFaces, wantsAo]);
@@ -124,24 +129,24 @@ export default function Room() {
     useEffect(() => {
         if (atlas == null || isRoomAoFor(level)) return;
         let alive = true;
-        const timer = setTimeout(() => bakeRoomAo(atlas).then((ao) => {
-            if (!alive || ao == null) return;
-            setRoomAo(ao, atlas.size, level);
+        const timer = setTimeout(() => bakeRoomAo(atlas, plainFaces.map((face) => ceilingIds.has(face.surfaceId))).then((bake) => {
+            if (!alive || bake == null) return;
+            setRoomAo(bake, atlas.size, level);
             setBakedAtlas(atlas);
         }), BAKE_DELAY);
         return () => { alive = false; clearTimeout(timer); };
-    }, [atlas, level]);
+    }, [atlas, level, plainFaces, ceilingIds]);
     const hasAo = atlas != null && (bakedAtlas === atlas || isRoomAoFor(level));
-    const showCeilings = useStore((state) => state.ceilingVisible && !(isXR && state.view.mode === 'tabletop'));
+    useEffect(() => { showRoomAoCeilings(showCeilings); }, [showCeilings]);
     const faces = useMemo(() => {
         const hidden = new Set([
             ...(showUnderlay && level.underlay.kind !== 'dxf' ? level.floors.map((floor) => floor.id) : []),
-            ...(showCeilings ? [] : (level.ceilings ?? []).flatMap((ceiling) => [ceiling.id, beamsFaceId(ceiling.id), dormerWallsFaceId(ceiling.id), ceilingSidesFaceId(ceiling.id)]))
+            ...(showCeilings ? [] : ceilingIds)
         ]);
         // wall tops under a roof (roomLayout onlyWithoutRoof): only with the ceilings hidden, else they would lie
         // on the roof's plane
         return allFaces.filter((face) => !hidden.has(face.surfaceId) && !(face.onlyWithoutRoof && showCeilings));
-    }, [allFaces, showUnderlay, showCeilings, level]);
+    }, [allFaces, showUnderlay, showCeilings, ceilingIds, level]);
     // Invisible ceiling for placing objects (lamps) while no ceiling is drawn: the floor polygons at wall
     // height, facing down. Drawn ceilings (level.ceilings) are real faces (roomFaces) and replace it.
     const ceilings = useMemo(() => ((level.ceilings ?? []).length > 0 ? []

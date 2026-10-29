@@ -5,22 +5,26 @@ import { MeshBVH } from 'three-mesh-bvh';
 * AO BAKE of the room (docs/plans/2026-10-29-feat-baked-room-ao-plan.md, U2): fills the atlas made by aoAtlas.js.
 * Pure (no DOM): runs in the workers (aoWorker.js, several in parallel: aoBaker.js) and in Node (bakeAo.check.mjs).
 *
-* bakeTexels(size, faces, options) -> { values: Float32Array, covered: Uint8Array } (size * size each)
-* - faces: [{ position, normal, uv1, index }] typed arrays of aoAtlas' geometries (room space). They are both the
-*   RECEIVERS (their texels get a value) and the OCCLUDERS (rays hit them: furniture is never in here, D1).
+* bakeTexels(size, faces, options) -> { values, valuesOpen: Float32Array, covered: Uint8Array } (size * size each)
+* - faces: [{ position, normal, uv1, index, ceiling }] typed arrays of aoAtlas' geometries (room space). They are both
+*   the RECEIVERS (their texels get a value) and the OCCLUDERS (rays hit them: furniture is never in here, D1).
+*   `ceiling`: a face hidden with the ceilings (roof pitches, beams, dormer walls, false ceiling sides: Room.jsx).
 * - Each triangle is rasterized in atlas pixels: a texel whose center lies inside it gets the triangle's point
 *   and normal there. From the point (lifted by EPSILON along the normal) `rays` cosine-weighted rays over the
 *   hemisphere test the room within `radius`: a hit at distance d occludes by (1 - d / radius)^2, so the darkening
 *   stays close to the corner and fades out smoothly well before the radius (29/10 on the Quest: 1 m with a linear
-*   falloff darkened a wide band along every edge, a "soft box" vignette on walls and roof pitches, too heavy). The ray set is a fixed Hammersley pattern turned by a per-texel hash (noise
-*   rather than banding).
+*   falloff darkened a wide band along every edge, a "soft box" vignette on walls and roof pitches, too heavy).
+*   The ray set is a fixed Hammersley pattern turned by a per-texel hash (noise rather than banding).
+* - TWO results in one pass: `values` with every face, `valuesOpen` as if the ceiling faces were not there (shown
+*   when the ceilings are hidden: tabletop, "Hide ceiling"; else their AO stayed on the wall tops). A ray whose
+*   first hit is a ceiling is cast again on the room without ceilings; any other ray counts the same for both.
 * - Only the rows y with y % rowStride === rowOffset: the workers split the atlas by interleaved rows (an even
 *   share of the charts each). The rays are the whole cost (~1.5 us each with the BVH on an M2 Max).
 * finishAo(size, values, covered) -> Uint8Array (255 = open, 0 = fully occluded), after merging the workers' rows:
 * - a 3 x 3 blur over covered texels only (charts are 2 * PAD apart: it never mixes two faces) smooths the noise;
 * - uncovered texels next to covered ones are filled from them, PAD rings (aoAtlas.js PAD): linear filtering at
 *   a chart's border never reads the empty background. The rest stays 255.
-* bakeAo(size, faces, options) = both, in one go (the check).
+* bakeAo(size, faces, options) -> { ao, aoOpen }: all of it in one go (the check).
 * Calibration knobs (tune on the headset): rays, radius (and aoAtlas' texel); the strength is ROOM_AO_INTENSITY.
 */
 export const AO_RAYS = 16;
@@ -50,28 +54,35 @@ function hemisphere(n) {
     return directions;
 }
 
-// All faces as one indexed geometry, for the BVH
-function mergedOccluders(faces) {
+// The faces as one indexed geometry with its BVH, and which of its vertices belong to a ceiling face (a hit's
+// triangle is read through the index AFTER the BVH is built: it may reorder the triangles, never the vertices)
+function occluders(faces) {
     const vertexCount = faces.reduce((sum, face) => sum + face.position.length / 3, 0);
     const position = new Float32Array(vertexCount * 3);
+    const ceilingVertex = new Uint8Array(vertexCount);
     const index = [];
     let offset = 0;
     for (const face of faces) {
         position.set(face.position, offset * 3);
+        if (face.ceiling) ceilingVertex.fill(1, offset, offset + face.position.length / 3);
         for (const i of face.index) index.push(i + offset);
         offset += face.position.length / 3;
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute('position', new BufferAttribute(position, 3));
     geometry.setIndex(index);
-    return geometry;
+    const bvh = new MeshBVH(geometry);
+    return { bvh, isCeiling: (faceIndex) => ceilingVertex[geometry.index.array[faceIndex * 3]] === 1 };
 }
 
 export function bakeTexels(size, faces, { rays = AO_RAYS, radius = AO_RADIUS, rowOffset = 0, rowStride = 1 } = {}) {
-    const bvh = new MeshBVH(mergedOccluders(faces));
+    const all = occluders(faces);
+    const open = faces.some((face) => face.ceiling) ? occluders(faces.filter((face) => !face.ceiling)).bvh : null;
     const directions = hemisphere(rays);
     const values = new Float32Array(size * size).fill(1);
+    const valuesOpen = new Float32Array(size * size).fill(1);
     const covered = new Uint8Array(size * size);
+    const occlusionOf = (hit) => (hit ? (1 - hit.distance / radius) ** 2 : 0);
 
     for (const face of faces) {
         const { position, normal, uv1, index } = face;
@@ -105,33 +116,42 @@ export function bakeTexels(size, faces, { rays = AO_RAYS, radius = AO_RADIUS, ro
                     // per-texel rotation of the ray set (integer hash -> angle)
                     const angle = (((Math.imul(texel, 2654435761) >>> 0) % 1024) / 1024) * 2 * Math.PI;
                     const cos = Math.cos(angle), sin = Math.sin(angle);
-                    let occlusion = 0;
+                    let occlusion = 0, occlusionOpen = 0;
                     for (const [dx, dy, dz] of directions) {
                         const rx = dx * cos - dy * sin, ry = dx * sin + dy * cos;
                         _ray.origin.copy(_p);
                         _ray.direction.set(0, 0, 0).addScaledVector(_t, rx).addScaledVector(_s, ry).addScaledVector(_n, dz);
-                        const hit = bvh.raycastFirst(_ray, DoubleSide, 0, radius);
-                        if (hit) occlusion += (1 - hit.distance / radius) ** 2;
+                        const hit = all.bvh.raycastFirst(_ray, DoubleSide, 0, radius);
+                        occlusion += occlusionOf(hit);
+                        // without the ceilings: the same unless this ray stopped on one
+                        occlusionOpen += hit && open && all.isCeiling(hit.faceIndex) ? occlusionOf(open.raycastFirst(_ray, DoubleSide, 0, radius)) : occlusionOf(hit);
                     }
                     values[texel] = 1 - occlusion / rays;
+                    valuesOpen[texel] = 1 - occlusionOpen / rays;
                 }
             }
         }
     }
-    return { values, covered };
+    return { values, valuesOpen, covered };
 }
 
-// The workers' rows ([{ values, covered }], each set only its own) as one [values, covered]: covered texels win
+// The workers' rows ([{ values, valuesOpen, covered }], each set only its own) as one { values, valuesOpen,
+// covered }: covered texels win
 export function mergeRows(size, parts) {
     const values = new Float32Array(size * size).fill(1);
+    const valuesOpen = new Float32Array(size * size).fill(1);
     const covered = new Uint8Array(size * size);
     for (const part of parts) {
         for (let i = 0; i < covered.length; i++) {
-            if (part.covered[i]) { covered[i] = 1; values[i] = part.values[i]; }
+            if (part.covered[i]) { covered[i] = 1; values[i] = part.values[i]; valuesOpen[i] = part.valuesOpen[i]; }
         }
     }
-    return [values, covered];
+    return { values, valuesOpen, covered };
 }
+
+// Both results finished (finishAo): { ao, aoOpen }
+export const finishBoth = (size, { values, valuesOpen, covered }) =>
+    ({ ao: finishAo(size, values, covered), aoOpen: finishAo(size, valuesOpen, covered) });
 
 export function finishAo(size, values, covered) {
     covered = covered.slice();
@@ -173,15 +193,14 @@ export function finishAo(size, values, covered) {
     return out;
 }
 
-export function bakeAo(size, faces, options) {
-    const { values, covered } = bakeTexels(size, faces, options);
-    return finishAo(size, values, covered);
-}
+export const bakeAo = (size, faces, options) => finishBoth(size, bakeTexels(size, faces, options));
 
-// aoAtlas geometries -> the typed arrays bakeTexels (and the workers) take
-export const bakeInput = (geometries) => geometries.map((geometry) => ({
+// aoAtlas geometries -> the typed arrays bakeTexels (and the workers) take; ceilings[i]: face i is hidden with
+// the ceilings
+export const bakeInput = (geometries, ceilings = []) => geometries.map((geometry, i) => ({
     position: geometry.attributes.position.array,
     normal: geometry.attributes.normal.array,
     uv1: geometry.attributes.uv1.array,
-    index: geometry.index.array
+    index: geometry.index.array,
+    ceiling: ceilings[i] === true
 }));
