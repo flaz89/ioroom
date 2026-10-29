@@ -177,12 +177,14 @@ const onPickHover = (event, openingId, setHoveredId) => {
 // openingId: a dragged material lands on the whole opening (MaterialDropTarget.jsx, Room.jsx VR drags)
 const DOOR_USER_DATA = (id, part) => ({ surfaceId: `${id}:${part}`, openingId: id, noPlacement: true });
 
-// Designer: a click on a door part opens / closes it (not after an orbit drag, not under the ruler / post-its)
+// Designer: a click on a door part opens / closes it and deselects the object, like a click on the room
+// (Room.jsx); not after an orbit drag, not under the ruler / post-its
 function onDoorClick(event, doorId) {
     const state = useStore.getState();
     if (state.workspace !== 'designer' || state.measures.active || state.notes.placing || !isStillClick(event)) return;
     event.stopPropagation();
     state.setDoorOpen(doorId, !state.openDoors[doorId]);
+    if (state.objects.selectedId != null) state.deselectObject();
 }
 
 // Designer: a right click on an opening with parts opens its parts menu at the cursor (same guards as the click)

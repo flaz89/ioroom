@@ -15,6 +15,10 @@ import { setAwaySource } from '../sync/presence';
 */
 const CURSOR_SIZE = 0.1;
 const TABLETOP_CURSOR_SIZE = 0.015;
+// Ray and cursor (the glow where it hits) color: the app's orange. pmndrs' default white at 0.4 opacity read as
+// grey and got lost on walls, doors and windows
+const RAY_COLOR = '#ff9a1a';
+const RAY_MODEL = { color: RAY_COLOR };
 
 /*
 * Sorting of the fingertip (touch) pointer's hits. pmndrs' sphere intersector ignores pointerEventsOrder
@@ -37,9 +41,9 @@ const handOptions = (cursorSize) => ({
     // Poking a button with the index finger lasts longer than pmndrs' default 300 ms click window
     // (press -> release), which made touch presses never fire onClick.
     touchPointer: { clickThresholdMs: 1500, customSort: sortByOrderThenDistance },
-    rayPointer: { cursorModel: { size: cursorSize } }
+    rayPointer: { cursorModel: { size: cursorSize, color: RAY_COLOR }, rayModel: RAY_MODEL }
 });
-const controllerOptions = (cursorSize) => ({ rayPointer: { cursorModel: { size: cursorSize } } });
+const controllerOptions = (cursorSize) => ({ rayPointer: { cursorModel: { size: cursorSize, color: RAY_COLOR }, rayModel: RAY_MODEL } });
 
 export const xrStore = createXRStore({
     // No desktop VR emulator (pmndrs injects one on localhost by default): testing happens on the headset

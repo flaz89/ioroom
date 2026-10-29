@@ -3,7 +3,7 @@ import { Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
-import { createFistGesture, isDeletePose } from './fistGesture';
+import { OPEN_RATIO, createFistGesture, isDeletePose } from './fistGesture';
 import { isLockedByOther } from '../../../sync/presence';
 import { measureHandPose, readJoint } from './handPose';
 
@@ -18,22 +18,37 @@ import { measureHandPose, readJoint } from './handPose';
 */
 const GESTURE_HAND = 'left';
 const FINGERS = ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'];
+const OTHER_FINGERS = FINGERS.slice(1); // all but the index: still open in a pinch, curled in a fist
+// thumb-index tips closer than this with the other fingers open = a PINCH (the teleport, TeleportGesture.jsx),
+// not a fist being made: it never arms the delete. Generous (the teleport's pinch-off distance)
+const PINCH_DISTANCE = 0.03; // meters
+// ...nor for this long after it: releasing a teleport leaves the hand open and raised, i.e. in the delete pose
+const AFTER_PINCH_MS = 1000;
 
 const _wrist = new Vector3();
 const _tip = new Vector3();
 const _knuckle = new Vector3();
+const _thumb = new Vector3();
 const _eyes = new Vector3();
 
-// Average fingertip-wrist / knuckle-wrist ratio (see fistGesture.js), null if not tracked
-function measureOpenness(frame, hand, referenceSpace) {
+// Average fingertip-wrist / knuckle-wrist ratio of `fingers` (see fistGesture.js), null if not tracked
+function measureOpenness(frame, hand, referenceSpace, fingers = FINGERS) {
     if (!readJoint(frame, hand, 'wrist', referenceSpace, _wrist)) return null;
     let sum = 0;
-    for (const finger of FINGERS) {
+    for (const finger of fingers) {
         if (!readJoint(frame, hand, `${finger}-tip`, referenceSpace, _tip)) return null;
         if (!readJoint(frame, hand, `${finger}-phalanx-proximal`, referenceSpace, _knuckle)) return null;
         sum += _tip.distanceTo(_wrist) / Math.max(_knuckle.distanceTo(_wrist), 1e-4);
     }
-    return sum / FINGERS.length;
+    return sum / fingers.length;
+}
+
+// Thumb on the index tip while middle, ring and pinky stay open (a fist curls them all)
+function isPinching(frame, hand, referenceSpace) {
+    if (!readJoint(frame, hand, 'thumb-tip', referenceSpace, _thumb)) return false;
+    if (!readJoint(frame, hand, 'index-finger-tip', referenceSpace, _tip)) return false;
+    if (_thumb.distanceTo(_tip) > PINCH_DISTANCE) return false;
+    return (measureOpenness(frame, hand, referenceSpace, OTHER_FINGERS) ?? 0) > OPEN_RATIO;
 }
 
 export default function FistDeleteGesture() {
@@ -41,6 +56,7 @@ export default function FistDeleteGesture() {
     const gl = useThree((state) => state.gl);
     const gesture = useMemo(() => createFistGesture(), []);
     const inPose = useRef(false); // hysteresis state of isDeletePose
+    const lastPinchAt = useRef(-Infinity);
 
     // Leaving XR while armed must not leave the red outline behind
     useEffect(() => () => useStore.getState().setDeleteArmed(false), []);
@@ -60,9 +76,12 @@ export default function FistDeleteGesture() {
         // Only with a selected object that is not being held, in the delete pose,
         // and never while the wrist menu is shown
         // (an object held by another device in a shared room cannot be deleted)
+        // and never during / right after a teleport pinch
+        const now = performance.now();
+        if (isPinching(frame, hand, referenceSpace)) lastPinchAt.current = now;
         const canArm = objects.selectedId != null && objects.grabbedId == null && !isLockedByOther(objects.selectedId)
-            && inPose.current && !view.handMenuVisible;
-        const result = gesture(performance.now(), openness, canArm);
+            && inPose.current && !view.handMenuVisible && now - lastPinchAt.current > AFTER_PINCH_MS;
+        const result = gesture(now, openness, canArm);
 
         const armed = result === 'armed';
         if (armed !== objects.deleteArmed) setDeleteArmed(armed);

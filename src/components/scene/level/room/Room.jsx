@@ -62,8 +62,15 @@ const NO_WALLS = []; // stable empty selection outside the builder
 const onBuilderPress = recordPress;
 function onBuilderClick(event) {
     const state = useStore.getState();
-    if (state.workspace !== 'builder' || state.measures.active || state.notes.placing) return;
+    if (state.measures.active || state.notes.placing) return;
     if (!isStillClick(event)) return;
+    // DESIGNER: a click on anything of the room (wall, floor, ceiling, roof; doors and windows deselect on their
+    // own, Openings3D.jsx) deselects the object. Only a click on nothing used to: in VR, inside a real plan,
+    // there is no "nothing" around (walls, roof, floors everywhere)
+    if (state.workspace !== 'builder') {
+        if (state.objects.selectedId != null) state.deselectObject();
+        return;
+    }
     const surfaceId = faceOf(event);
     if (surfaceId == null) return;
     event.stopPropagation();
