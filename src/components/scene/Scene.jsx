@@ -110,8 +110,11 @@ export default function Scene({xrStore}) {
                     so an object/gizmo press can disable orbiting before CameraControls sees the same press */}
                 <PointerEvents batchEvents={false} />
 
-                {/* Auto quality / resolution: keeps the frame rate at 30 fps or above (effects first, then sharpness) */}
-                <AdaptiveQuality />
+                {/* Auto quality / resolution: keeps the frame rate at 30 fps or above (effects first, then sharpness).
+                    Flatscreen only (also the headset browser's 2D window): in XR its levers do nothing (WebGL has no
+                    SSGI / SSR, three ignores pixel ratio changes while presenting), yet it stepped and saved this
+                    device's settings from the headset's frame rate */}
+                {!isXR && <AdaptiveQuality />}
                 {/* on-demand rendering: keeps frames coming while something changes, then lets the GPU rest */}
                 {frameloop === 'demand' && <FrameDriver />}
 
