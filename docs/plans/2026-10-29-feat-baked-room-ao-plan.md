@@ -83,6 +83,13 @@ del materiale condiviso con `aoMap` = quella texture (`ROOM_AO_INTENSITY`), al p
 pianta (`BAKE_DELAY`), AO usata solo se il calcolo corrisponde all'atlante attuale (`bakedAtlas`). Build ok (worker
 160 kB). Non verificata a schermo: il browser integrato rifiuta il certificato HTTPS del dev server.
 
+**Prima prova di Flavio (29/10, Mac, sua pianta, SSGI spenta):** l'AO compare ma dopo 20–30 s. Benchmark in Node su una
+mansarda 19×11 m (tetto a padiglione, gronda a 1 m, 6 tramezzi), un solo core M2 Max: 5 cm / 32 raggi 20 s; 10 cm / 32
+raggi 5,1 s; 10 cm / 16 raggi 2,7 s; 15 cm / 16 raggi 1,2 s. Correzioni: texel 10 cm e 16 raggi (default), calcolo
+diviso per righe alterne su più worker in parallelo (`hardwareConcurrency − 1`, max 6; unione e finitura in un worker,
+niente cicli lunghi sul thread della pagina; check: diviso e riunito = calcolo unico), e un calcolo riusato quando il
+Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomAoFor` in `roomAo.js`).
+
 - `Room.jsx` tiene la `DataTexture` dell'ultimo calcolo (eliminata quando ne arriva una nuova) e la passa a
   `SurfaceMesh`, che la usa come `aoMap` (`channel = 1`) con chiave di cache del materiale che include l'atlante.
 - Nessun cambiamento su schermo con la SSGI attiva (D6).

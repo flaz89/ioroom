@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { aoAtlas } from './aoAtlas';
 import { bakeRoomAo } from './aoBaker';
-import { setRoomAo } from './roomAo';
+import { isRoomAoFor, setRoomAo } from './roomAo';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import UnderlayPlane from './UnderlayPlane';
@@ -113,9 +113,8 @@ export default function Room() {
     // BAKED AO (docs/plans/2026-10-29-feat-baked-room-ao-plan.md): in XR and on screen without the SSGI (which does
     // its own). The faces get uv1 (aoAtlas.js); BAKE_DELAY after the plan stops changing (drags, undo, edits from
     // another device) the worker bakes it (aoBaker.js); the materials use it only while the bake matches the
-    // current atlas (`bakedAtlas`), else the room shows without AO until the next bake lands.
-    // ponytail: every Canvas remount (entering / leaving XR swaps the renderer) bakes again; cache by plan if
-    // the few seconds on the Quest matter
+    // current atlas (`bakedAtlas`), else the room shows without AO until the next bake lands. A Canvas remount
+    // (entering / leaving XR) with the same plan reuses the last bake (roomAo.js isRoomAoFor).
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
     const wantsAo = useStore((state) => isXR || !(state.settings.ssgi && isWebGPU));
     const atlas = useMemo(() => (wantsAo ? aoAtlas(plainFaces.map((face) => face.geometry)) : null), [plainFaces, wantsAo]);
@@ -123,16 +122,16 @@ export default function Room() {
     useEffect(() => () => atlas?.geometries.forEach((geometry) => geometry.dispose()), [atlas]);
     const [bakedAtlas, setBakedAtlas] = useState(null);
     useEffect(() => {
-        if (atlas == null) return;
+        if (atlas == null || isRoomAoFor(level)) return;
         let alive = true;
         const timer = setTimeout(() => bakeRoomAo(atlas).then((ao) => {
             if (!alive || ao == null) return;
-            setRoomAo(ao, atlas.size);
+            setRoomAo(ao, atlas.size, level);
             setBakedAtlas(atlas);
         }), BAKE_DELAY);
         return () => { alive = false; clearTimeout(timer); };
-    }, [atlas]);
-    const hasAo = atlas != null && bakedAtlas === atlas;
+    }, [atlas, level]);
+    const hasAo = atlas != null && (bakedAtlas === atlas || isRoomAoFor(level));
     const showCeilings = useStore((state) => state.ceilingVisible && !(isXR && state.view.mode === 'tabletop'));
     const faces = useMemo(() => {
         const hidden = new Set([

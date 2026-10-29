@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { Vector3 } from 'three';
 import { PAD, aoAtlas } from './aoAtlas.js';
-import { bakeAo, bakeInput } from './bakeAo.js';
+import { bakeAo, bakeInput, bakeTexels, finishAo, mergeRows } from './bakeAo.js';
 import { roomFaces } from './roomLayout.js';
 import { DEFAULT_PLAN, activeLevel } from '../../../../plan/planModel.js';
 
@@ -45,6 +45,10 @@ const chart = atlas.charts.find((c) => c.face === floor);
 const inside = ao[(chart.y + PAD) * atlas.size + chart.x + PAD];
 const margin = ao[(chart.y + PAD - 1) * atlas.size + chart.x + PAD - 1];
 assert.ok(Math.abs(inside - margin) < 40, `margin filled from the chart (${inside} vs ${margin})`);
+
+// split by interleaved rows over 3 workers, merged: the same atlas as one bake
+const parts = [0, 1, 2].map((rowOffset) => bakeTexels(atlas.size, bakeInput(atlas.geometries), { rowOffset, rowStride: 3 }));
+assert.deepEqual(finishAo(atlas.size, ...mergeRows(atlas.size, parts)), ao, 'rows split and merged = one bake');
 
 console.log(`  ${atlas.size} px atlas baked in ${ms.toFixed(0)} ms`);
 console.log('bakeAo: ok');

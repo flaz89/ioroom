@@ -17,7 +17,9 @@ import { BufferAttribute, BufferGeometry, Vector3 } from 'three';
 *   the atlas is the point origin + u * (i + 0.5) * texel + v * (j + 0.5) * texel (room space, unit u / v / normal).
 * Row 0 of the atlas is uv1 v = 0 (a DataTexture with flipY false).
 */
-export const AO_TEXEL = 0.05; // meters per texel (calibration knob: tune on the headset)
+// meters per texel (calibration knob: tune on the headset). 10 cm: the AO reaches 1 m and changes slowly, and
+// 5 cm cost 4x the rays (a 19 x 11 m attic: 20 s on an M2 Max at 5 cm / 32 rays)
+export const AO_TEXEL = 0.1;
 export const PAD = 2;         // texels of margin around each chart
 const MAX_SIZE = 2048;        // px: atlas side cap
 const MIN_SIZE = 64;

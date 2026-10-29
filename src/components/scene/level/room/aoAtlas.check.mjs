@@ -61,6 +61,6 @@ const box = mergeGeometries(Object.values(boxFaces([0, 0.5, 0], [2, 1, 3])));
 assert.equal(aoAtlas([box]).charts.length, 6, 'split by plane');
 
 // a big plan grows the atlas, then the texel, never past 2048 px
-const big = aoAtlas(roomFaces(addFloor(base, [[-60, -60], [60, -60], [60, 60], [-60, 60]], 'huge')).map((face) => face.geometry));
+const big = aoAtlas(roomFaces(addFloor(base, [[-125, -125], [125, -125], [125, 125], [-125, 125]], 'huge')).map((face) => face.geometry));
 assert.ok(big.size === 2048 && big.texel > AO_TEXEL, `${big.size} px at ${big.texel}`);
 console.log('aoAtlas: ok');

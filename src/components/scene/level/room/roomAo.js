@@ -15,9 +15,15 @@ roomAoTexture.minFilter = roomAoTexture.magFilter = LinearFilter;
 roomAoTexture.generateMipmaps = false;
 roomAoTexture.needsUpdate = true;
 
-// A new bake: its texels (size x size, one channel). A new size needs a new GPU texture (dispose first)
-export function setRoomAo(data, size) {
+// The plan level the texture was baked for: entering / leaving XR remounts the Canvas (another renderer) and the
+// room with it, but the same level gives the same atlas, so its AO is reused instead of baked again
+let bakedLevel = null;
+export const isRoomAoFor = (level) => level === bakedLevel;
+
+// A new bake of `level`: its texels (size x size, one channel). A new size needs a new GPU texture (dispose first)
+export function setRoomAo(data, size, level) {
     if (roomAoTexture.image.width !== size) roomAoTexture.dispose();
     roomAoTexture.image = { data, width: size, height: size };
     roomAoTexture.needsUpdate = true;
+    bakedLevel = level;
 }

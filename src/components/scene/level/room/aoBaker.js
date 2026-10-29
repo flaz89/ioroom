@@ -1,33 +1,48 @@
 import { bakeInput } from './bakeAo.js';
 
 /*
-* Room AO bake in a Web Worker (aoWorker.js), one at a time: a new request (the plan changed again) TERMINATES the
-* running bake (a bake is seconds on a Quest: no point finishing an outdated one) and its promise resolves to null.
+* Room AO bake in Web Workers (aoWorker.js), IN PARALLEL: WORKERS workers take interleaved rows of the atlas
+* (bakeTexels), then one of them blurs and fills the merged result (finishAo). The rays are the whole cost, so the
+* time drops about with the number of cores.
+* One bake at a time: a new request (the plan changed again) TERMINATES the running one (a bake is seconds on a
+* Quest: no point finishing an outdated one) and its promise resolves to null.
 * bakeRoomAo(atlas) -> Promise<Uint8Array | null> (aoAtlas.js result in, the atlas' AO texels out).
 */
-let running = null; // { worker, resolve }
-let nextId = 0;
+// a core is left to the page (rendering, React); the Quest 2's browser reports 8
+const WORKERS = Math.max(1, Math.min(6, (navigator.hardwareConcurrency || 4) - 1));
+
+let cancelRunning = null;
 
 export function bakeRoomAo(atlas) {
-    if (running) {
-        running.worker.terminate();
-        running.resolve(null);
-    }
-    const worker = new Worker(new URL('./aoWorker.js', import.meta.url), { type: 'module' });
-    const id = ++nextId;
-    return new Promise((resolve) => {
-        running = { worker, resolve };
-        const finish = (ao) => {
-            worker.terminate();
-            if (running?.worker === worker) running = null;
-            resolve(ao);
-        };
-        worker.onmessage = ({ data }) => finish(data.id === id ? data.ao : null);
-        worker.onerror = (error) => {
-            console.error('AO bake failed', error);
-            finish(null);
-        };
-        // copies (structured clone): the arrays stay with the geometries the scene draws
-        worker.postMessage({ id, size: atlas.size, faces: bakeInput(atlas.geometries) });
+    cancelRunning?.();
+    const workers = Array.from({ length: WORKERS }, () => new Worker(new URL('./aoWorker.js', import.meta.url), { type: 'module' }));
+    const ask = (worker, message, transfer) => new Promise((resolve, reject) => {
+        worker.onmessage = ({ data }) => resolve(data);
+        worker.onerror = reject;
+        worker.postMessage(message, transfer);
     });
+    const stop = () => workers.forEach((worker) => worker.terminate());
+
+    let canceled = false;
+    const result = new Promise((resolve) => {
+        cancelRunning = () => { canceled = true; stop(); resolve(null); };
+        // copies (structured clone): the arrays stay with the geometries the scene draws
+        const faces = bakeInput(atlas.geometries);
+        const { size } = atlas;
+        Promise.all(workers.map((worker, rowOffset) => ask(worker, { type: 'texels', size, faces, rowOffset, rowStride: WORKERS })))
+            // merged and finished in a worker too: a loop over millions of texels would hitch the page
+            .then((parts) => ask(workers[0], { type: 'finish', size, parts }, parts.flatMap((part) => [part.values.buffer, part.covered.buffer])))
+            .then(({ ao }) => { if (!canceled) resolve(ao); })
+            .catch((error) => {
+                if (canceled) return;
+                console.error('AO bake failed', error);
+                resolve(null);
+            })
+            .finally(() => {
+                if (canceled) return;
+                stop();
+                cancelRunning = null;
+            });
+    });
+    return result;
 }
