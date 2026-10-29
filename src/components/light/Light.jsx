@@ -28,9 +28,11 @@ const XR_EXPOSURE = 0.85;    // exposure multiplier in XR
 // other. A hemisphere light takes over most of the fill: bright from above (floor), warm and dark from below
 // (the floor's bounce: ceilings and beam undersides darker), walls in between. Costs nothing per pixel.
 // Strength x PI: three's Lambert divides the irradiance by PI. Calibration knobs (tune on the headset).
-const XR_FILL = 0.3;
+// (29/10 on the Quest 2: 0.3 + ground #4d463f turned the white plaster walls grey; the baked AO will darken
+// corners on top of this)
+const XR_FILL = 0.35;
 const XR_SKY = '#f2f5ff';
-const XR_GROUND = '#4d463f';
+const XR_GROUND = '#6e655b';
 
 const _scale = new Vector3();
 
