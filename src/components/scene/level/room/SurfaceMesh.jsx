@@ -2,6 +2,7 @@ import { Suspense } from 'react';
 import { MeshStandardMaterial, RepeatWrapping, SRGBColorSpace } from 'three';
 import { useTexture } from '@react-three/drei';
 import { TEXTURE_MAPS, useMaterial } from '../../../../materials/library';
+import { ROOM_AO_INTENSITY, roomAoTexture } from './roomAo';
 
 const DROP_TINT = '#ff9a1a';    // selection orange: the face a dragged material would land on
 const DROP_TINT_STRENGTH = 0.18;
@@ -18,24 +19,26 @@ const ANISOTROPY = 8;           // floors and walls are mostly seen at grazing a
 * every batch that uses it: textures are loaded once (drei cache) and never cloned, shaders and uniforms
 * are shared. The shared material is set through the mesh `material` prop (not as a JSX child), so React
 * never owns, detaches or disposes it. Built-in MeshStandardMaterial only: WebGPU and WebGL (XR).
+* `ao`: the room's baked AO (roomAo.js) as aoMap, read through uv1: only for room batches whose geometry has uv1
+* (Room.jsx, once a bake matches the plan). It replaces the material's own ORM AO (tile detail, negligible).
 */
-export default function SurfaceMesh({ materialId, tinted, color, ...meshProps }) {
+export default function SurfaceMesh({ materialId, tinted, color, ao = false, ...meshProps }) {
     const material = useMaterial(materialId);
     // a system finish (paint, fixed: library.js) is plain too, with its own color, roughness and metalness
-    const plain = <mesh {...meshProps} material={material.finish ? finishMaterial(material, tinted) : plainMaterial(color, tinted)} />;
+    const plain = <mesh {...meshProps} material={material.finish ? finishMaterial(material, tinted, ao) : plainMaterial(color, tinted, ao)} />;
     if (material.maps == null) return plain;
     return (
         <Suspense fallback={plain}>
-            <TexturedMesh material={material} tinted={tinted} meshProps={meshProps} />
+            <TexturedMesh material={material} tinted={tinted} ao={ao} meshProps={meshProps} />
         </Suspense>
     );
 }
 
-function TexturedMesh({ material, tinted, meshProps }) {
+function TexturedMesh({ material, tinted, ao, meshProps }) {
     const names = TEXTURE_MAPS.filter((name) => material.maps[name]);
     const loaded = useTexture(names.map((name) => material.maps[name]));
     const textures = Object.fromEntries(names.map((name, index) => [name, loaded[index]]));
-    return <mesh {...meshProps} material={texturedMaterial(material, textures, tinted)} />;
+    return <mesh {...meshProps} material={texturedMaterial(material, textures, tinted, ao)} />;
 }
 
 // SHARED MATERIALS ------------------------------------------------------------------------------
@@ -46,22 +49,25 @@ const materials = new Map(); // cache key -> MeshStandardMaterial
 const HOVER_TINT_STRENGTH = 0.08; // builder: wall under the mouse (tinted === 'hover'), lighter than a selection
 const tint = (tinted) => (tinted ? { emissive: DROP_TINT, emissiveIntensity: tinted === 'hover' ? HOVER_TINT_STRENGTH : DROP_TINT_STRENGTH } : {});
 
-function plainMaterial(color, tinted) {
-    const key = `plain|${color}|${tinted}`;
-    if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ color, ...tint(tinted) }));
+// the "ao" variant's extra settings (roomAo.js: one shared texture, so one variant per material)
+const bakedAo = (ao) => (ao ? { aoMap: roomAoTexture, aoMapIntensity: ROOM_AO_INTENSITY } : {});
+
+function plainMaterial(color, tinted, ao) {
+    const key = `plain|${color}|${tinted}|${ao}`;
+    if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ color, ...tint(tinted), ...bakedAo(ao) }));
     return materials.get(key);
 }
 
-function finishMaterial({ id, finish }, tinted) {
-    const key = `${id}|${tinted}`;
-    if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ ...finish, ...tint(tinted) }));
+function finishMaterial({ id, finish }, tinted, ao) {
+    const key = `${id}|${tinted}|${ao}`;
+    if (!materials.has(key)) materials.set(key, new MeshStandardMaterial({ ...finish, ...tint(tinted), ...bakedAo(ao) }));
     return materials.get(key);
 }
 
 // textures: { color, normal?, orm?, roughness? } (loaded, drei cache)
-function texturedMaterial(material, textures, tinted) {
+function texturedMaterial(material, textures, tinted, ao) {
     // tileSize in the key: an owner edit of the real size builds a new material (and re-tiles the textures)
-    const key = `${material.id}|${material.tileSize}|${tinted}`;
+    const key = `${material.id}|${material.tileSize}|${tinted}|${ao}`;
     if (!materials.has(key)) {
         // drei's cached textures, configured in place: every user of this set wants the same tiling
         for (const texture of Object.values(textures)) {
@@ -80,7 +86,8 @@ function texturedMaterial(material, textures, tinted) {
             roughnessMap: orm ?? textures.roughness ?? null,
             metalnessMap: orm,
             metalness: orm ? 1 : 0, // with a metalness map, the map (B channel) decides
-            ...tint(tinted)
+            ...tint(tinted),
+            ...bakedAo(ao) // the room's AO instead of the ORM's
         }));
     }
     return materials.get(key);

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
+import { aoAtlas } from './aoAtlas';
+import { bakeRoomAo } from './aoBaker';
+import { setRoomAo } from './roomAo';
 import { setCursorHover } from '../../sceneCursor';
 import SurfaceMesh from './SurfaceMesh';
 import UnderlayPlane from './UnderlayPlane';
@@ -59,6 +63,7 @@ function onDragDrop(event) {
 * The selected wall's faces are tinted like a material preview. Doors / windows: Openings3D.jsx.
 */
 const NO_WALLS = []; // stable empty selection outside the builder
+const BAKE_DELAY = 400; // ms of a still plan before the AO bake starts
 const onBuilderPress = recordPress;
 function onBuilderClick(event) {
     const state = useStore.getState();
@@ -100,10 +105,34 @@ export default function Room() {
     const showUnderlay = useStore((state) => state.workspace === 'builder' && state.underlayVisible) && level.underlay != null;
 
     // Every face of the room (roomLayout.js: also measured by the bill of quantities), rebuilt when the plan changes
-    const allFaces = useMemo(() => roomFaces(level), [level]);
+    const plainFaces = useMemo(() => roomFaces(level), [level]);
     // Ceilings: hidden by this device's toggle (store ceilingVisible) and always in the XR tabletop view
     // (the miniature is looked at from above: a lid would hide the room)
     const isXR = useXR((state) => state.mode != null);
+
+    // BAKED AO (docs/plans/2026-10-29-feat-baked-room-ao-plan.md): in XR and on screen without the SSGI (which does
+    // its own). The faces get uv1 (aoAtlas.js); BAKE_DELAY after the plan stops changing (drags, undo, edits from
+    // another device) the worker bakes it (aoBaker.js); the materials use it only while the bake matches the
+    // current atlas (`bakedAtlas`), else the room shows without AO until the next bake lands.
+    // ponytail: every Canvas remount (entering / leaving XR swaps the renderer) bakes again; cache by plan if
+    // the few seconds on the Quest matter
+    const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
+    const wantsAo = useStore((state) => isXR || !(state.settings.ssgi && isWebGPU));
+    const atlas = useMemo(() => (wantsAo ? aoAtlas(plainFaces.map((face) => face.geometry)) : null), [plainFaces, wantsAo]);
+    const allFaces = useMemo(() => (atlas ? plainFaces.map((face, i) => ({ ...face, geometry: atlas.geometries[i] })) : plainFaces), [plainFaces, atlas]);
+    useEffect(() => () => atlas?.geometries.forEach((geometry) => geometry.dispose()), [atlas]);
+    const [bakedAtlas, setBakedAtlas] = useState(null);
+    useEffect(() => {
+        if (atlas == null) return;
+        let alive = true;
+        const timer = setTimeout(() => bakeRoomAo(atlas).then((ao) => {
+            if (!alive || ao == null) return;
+            setRoomAo(ao, atlas.size);
+            setBakedAtlas(atlas);
+        }), BAKE_DELAY);
+        return () => { alive = false; clearTimeout(timer); };
+    }, [atlas]);
+    const hasAo = atlas != null && bakedAtlas === atlas;
     const showCeilings = useStore((state) => state.ceilingVisible && !(isXR && state.view.mode === 'tabletop'));
     const faces = useMemo(() => {
         const hidden = new Set([
@@ -119,7 +148,7 @@ export default function Room() {
     const ceilings = useMemo(() => ((level.ceilings ?? []).length > 0 ? []
         : level.floors.map((floor) => polygonGeometry(floor.points, level.wallHeight, true))), [level]);
     useEffect(() => () => ceilings.forEach((geometry) => geometry.dispose()), [ceilings]);
-    useEffect(() => () => allFaces.forEach((face) => face.geometry.dispose()), [allFaces]);
+    useEffect(() => () => plainFaces.forEach((face) => face.geometry.dispose()), [plainFaces]);
 
     // Material of each face: saved, or previewed while a material is dragged over it
     const surfaces = useStore((state) => state.surfaces);
@@ -178,6 +207,7 @@ export default function Room() {
                     geometry={batch.geometry}
                     userData={batch.userData}
                     spherecast={batch.spherecast}
+                    ao={hasAo}
                     castShadow={batch.castShadow}
                     receiveShadow
                 />
