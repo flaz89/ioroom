@@ -45,9 +45,22 @@ const handOptions = (cursorSize) => ({
 });
 const controllerOptions = (cursorSize) => ({ rayPointer: { cursorModel: { size: cursorSize, color: RAY_COLOR }, rayModel: RAY_MODEL } });
 
+/*
+* Quest 2 calibration knobs (tune on the headset):
+* - frame rate: pmndrs picks the HIGHEST supported rate by default (90/120 Hz on a Quest 2); the scene runs at
+*   ~51 fps, so the headset never hit the target and kept reprojecting (judder). 72 Hz is reachable.
+* - foveation: three's default is 1 (maximum), the edges of the view rendered at very low resolution (jagged
+*   beams at the top of the view). 0.5 still saves GPU, with much sharper edges.
+*/
+const XR_FRAME_RATE = 72;
+const XR_FOVEATION = 0.5;
+
 export const xrStore = createXRStore({
     // No desktop VR emulator (pmndrs injects one on localhost by default): testing happens on the headset
     emulate: false,
+    foveation: XR_FOVEATION,
+    // the supported rate closest to XR_FRAME_RATE
+    frameRate: (rates) => rates.reduce((best, rate) => Math.abs(rate - XR_FRAME_RATE) < Math.abs(best - XR_FRAME_RATE) ? rate : best),
     hand: handOptions(CURSOR_SIZE),
     controller: controllerOptions(CURSOR_SIZE)
 });
