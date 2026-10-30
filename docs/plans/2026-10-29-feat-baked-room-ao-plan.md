@@ -109,8 +109,12 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
 - 29/10, terza prova: tabletop e soffitti a posto; AO ora troppo netta, una linea lungo gli spigoli (muri contro il
   lato lungo della falda) → raggio 0,75 m (sempre quadratica) e sfocatura 5×5 (`BLUR`, sotto il margine tra i chart).
   Check: a 30 cm dal muro una via di mezzo. Calcolo circa 1,5 volte più lungo (6×6: 111 → 180 ms).
-- Da fare dopo (emersi dalle catture): riflesso dell'ambiente al centro del pavimento (l'AO lì non può nulla: abbassare
-  l'ambiente in VR o una ruvidezza minima dei pavimenti), cielo blu saturo fuori dalle finestre, seghettature dei bordi
+- 29/10: resa accettata da Flavio. Idea per dopo (UX): oggi entrando in VR l'AO compare dopo alcuni secondi. Due
+  strade: calcolarla già durante l'uso a schermo (anche con la SSGI attiva, usarla solo in VR: il calcolo è in
+  background nei worker e si riusa entrando con la stessa pianta) oppure una schermata di caricamento immersiva.
+- 30/10: riflesso al centro del pavimento → in XR la environment map è un gradiente cielo / orizzonte / terra
+  (`SceneEnvironment.jsx`) invece dello studio coi pannelli luminosi. Da provare sul Quest.
+- Da fare dopo (emersi dalle catture): cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).
 
 - Costanti: dimensione del texel, numero di raggi, raggio d'azione, intensità (`aoMapIntensity`).

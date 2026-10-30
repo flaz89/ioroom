@@ -151,7 +151,7 @@ export default function Scene({xrStore}) {
                 {/* each device reopens the environment where it left the view (localStorage) */}
                 <CameraMemory />
                 {/* environment lighting (reflections + indirect light) for every material, both backends */}
-                <SceneEnvironment />
+                <SceneEnvironment xr={isXR} />
                 {/* desktop WebGPU only: SSGI / SSR + TRAA post-processing (takes over the frame render) */}
                 {backend === 'webgpu' && hasPostEffects && <PostEffects />}
 
