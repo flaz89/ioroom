@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, LineBasicMaterial, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Vector3 } from 'three';
+import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial, Plane, Vector3 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { activeLevel, faceOffsets, openingClearances, openingRects, resizeOpening, wallFrame } from '../../../../plan/planModel';
 import { Html } from '@react-three/drei';
@@ -10,6 +10,7 @@ import { getPointerRay } from '../../controls/pointerRay';
 import { useStore } from '../../../../store/appStore';
 import { openingParts, partMaterialId } from './doorModel';
 import SurfaceMesh from './SurfaceMesh';
+import { mergeFaces, spherecastFaces, surfaceIdAt } from './roomGeometry';
 
 /*
 * DOORS AND WINDOWS in 3D (hinged, sliding on a face, pocket; fixed windows): frame, leaves (a window's: sash +
@@ -61,7 +62,8 @@ import SurfaceMesh from './SurfaceMesh';
 *   A RIGHT CLICK (mouse only; pmndrs emits 'contextmenu' on the release of a short press, so a right-drag
 *   pan never opens it) on any door / window with parts, fixed windows included, opens its PARTS MENU (store
 *   partsMenu, ui/parts-menu/PartsMenu.jsx); the opening stays tinted as selected while the menu is open.
-* ponytail: one mesh per leaf and per handle (a house has tens of doors); instance or merge if it shows in perf.
+* - Doors AT REST are merged into a few batches by material (buildBatches): only a moving / tinted door has its
+*   own meshes.
 */
 // Frame, leaves and handles: SurfaceMesh.jsx (library materials and system finishes, shared and tinted like
 // the walls) with the material doorModel.partMaterialId resolves. The glass is fixed: one shared material per
@@ -225,6 +227,68 @@ function buildDoors(level, partStyles) {
 }
 
 /*
+* DRAW CALL BATCHING of the doors AT REST (the Quest 2 is draw call bound: every mesh is drawn per eye plus in
+* the shadow map). Doors that are not moving, not tinted and not under a material drag are merged, at their
+* resting pose (closed or open), into ONE mesh per material (frame, leaves and handles alike) plus one for the
+* glass: a few draw calls for the whole level instead of 3-4 per door. A door that starts opening / closing
+* (or is tinted) leaves the batch and is drawn with its pivot groups as before; settled, it goes back.
+* Picking: faceRanges (triangles -> door id, roomGeometry.surfaceIdAt) like the room's batches, and the same
+* per-door sphere test (spherecastFaces): a batch spans the house, its box would always touch the hands.
+* `ids`: the resting doors' ids. Returns [{ key, materialId | glass, geometry, faceRanges }].
+*/
+const _door = new Matrix4();
+const _pivot = new Matrix4();
+const _part = new Matrix4();
+function buildBatches(doors, ids, openDoors, surfaces) {
+    const groups = new Map(); // material id | 'glass' -> faces
+    const add = (key, geometry, matrix, id) => {
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push({ geometry: geometry.clone().applyMatrix4(matrix), surfaceId: id });
+    };
+    for (const door of doors) {
+        if (!ids.has(door.id)) continue;
+        const p = openDoors[door.id] ? 1 : 0; // at rest = at its target
+        _door.makeRotationY(door.rotationY).setPosition(...door.position);
+        add(partMaterialId(surfaces, door.id, 'frame'), door.frame, _door, door.id);
+        for (const leaf of door.leaves) {
+            _pivot.makeRotationY(p * leaf.openAngle).setPosition(leaf.hinge[0] + p * leaf.openShift, 0, leaf.hinge[2]);
+            _part.multiplyMatrices(_door, _pivot);
+            add(partMaterialId(surfaces, door.id, 'leaf'), leaf.leaf, _part, door.id);
+            if (leaf.glass) add('glass', leaf.glass, _part, door.id);
+            if (leaf.handle) add(partMaterialId(surfaces, door.id, 'handle'), leaf.handle, _part, door.id);
+        }
+    }
+    return [...groups].map(([key, faces]) => {
+        const { geometry, faceRanges } = mergeFaces(faces);
+        faces.forEach((face) => face.geometry.dispose());
+        return { key, glass: key === 'glass', materialId: key, geometry, faceRanges, spherecast: spherecastFaces(faceRanges) };
+    });
+}
+
+// The batches of the doors at rest (`singleIds`: the doors drawn on their own); handlers(doorAt) = a batch's
+// pointer handlers, doorAt(event) = the door under the pointer
+function DoorBatches({ doors, singleIds, openDoors, surfaces, isPhysicalGlass, raycast, handlers }) {
+    const batches = useMemo(() => {
+        const single = new Set(singleIds.split(','));
+        return buildBatches(doors, new Set(doors.filter((door) => !single.has(door.id)).map((door) => door.id)), openDoors, surfaces);
+    }, [doors, singleIds, openDoors, surfaces]);
+    useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
+    const doorsById = useMemo(() => new Map(doors.map((door) => [door.id, door])), [doors]);
+    return batches.map((batch) => {
+        const props = {
+            geometry: batch.geometry,
+            userData: { faceRanges: batch.faceRanges, noPlacement: true },
+            raycast,
+            spherecast: batch.spherecast,
+            ...handlers((event) => doorsById.get(surfaceIdAt(batch.faceRanges, event.faceIndex)))
+        };
+        return batch.glass
+            ? <mesh key={batch.key} {...props} material={glassMaterial(false, isPhysicalGlass)} />
+            : <SurfaceMesh key={batch.key} {...props} materialId={batch.materialId} tinted={false} castShadow receiveShadow />;
+    });
+}
+
+/*
 * The selected opening's two resize handles (builder 3D): see the header. `level` is what is drawn (the
 * preview while dragging); every move resizes from the COMMITTED level, so the result never drifts.
 */
@@ -378,24 +442,40 @@ export default function Openings3D({ level }) {
         : (id === partsMenuId ? true : id === hoveredDoorId ? 'hover' : false));
     const pivotsRef = useRef(new Map()); // '<opening>:<index>' -> pivot group (mounted)
     const progressRef = useRef(new Map()); // '<opening>:<index>' -> current progress (0 closed .. 1 open)
+    // door id -> 0 | 1 (settled there) | 'moving' (useFrame): a door whose rest differs from its target has just
+    // been toggled and leaves the batch at once (render), before its first animated frame
+    const [rest, setRest] = useState({});
+    const targetOf = (id) => (openDoors[id] ? 1 : 0);
+    const isMoving = (id) => rest[id] === 'moving' || (rest[id] ?? targetOf(id)) !== targetOf(id);
+    // drawn on its own (pivot groups): moving, tinted or under a material drag; every other door is batched
+    const isSingle = (door) => isMoving(door.id) || tintOf(door.id) || drag?.surfaceId === door.id;
+    const singleIds = doors.filter(isSingle).map((door) => door.id).join(',');
 
-    // leaves eased towards open / closed (a leaf without a stored progress snaps: no animation on load)
+    // leaves eased towards open / closed (a leaf seen for the first time starts at its target: no animation on
+    // load); a door's rest follows (moving / settled), which moves it out of / back into the batch
     useFrame((_state, delta) => {
         const progress = progressRef.current;
         const k = 1 - Math.exp(-OPEN_SPEED * Math.min(delta, 0.1));
+        const changes = {};
         for (const door of doors) {
+            const target = targetOf(door.id);
+            let settled = true;
             door.leaves.forEach((leaf, index) => {
                 const key = `${door.id}:${index}`;
-                const pivot = pivotsRef.current.get(key);
-                if (pivot == null) return;
-                const target = openDoors[door.id] ? 1 : 0;
                 let p = progress.get(key) ?? target;
-                p = Math.abs(target - p) < SETTLED ? target : p + (target - p) * k;
+                const pivot = pivotsRef.current.get(key);
+                if (pivot != null) {
+                    p = Math.abs(target - p) < SETTLED ? target : p + (target - p) * k;
+                    pivot.rotation.y = p * leaf.openAngle;
+                    pivot.position.x = leaf.hinge[0] + p * leaf.openShift; // the group's local x = along the wall
+                }
                 progress.set(key, p);
-                pivot.rotation.y = p * leaf.openAngle;
-                pivot.position.x = leaf.hinge[0] + p * leaf.openShift; // the group's local x = along the wall
+                if (p !== target) settled = false;
             });
+            const next = settled ? target : 'moving';
+            if (rest[door.id] !== next) changes[door.id] = next;
         }
+        if (Object.keys(changes).length) setRest((previous) => ({ ...previous, ...changes }));
     });
     useEffect(() => () => doors.forEach((door) => {
         door.frame.dispose();
@@ -415,8 +495,18 @@ export default function Openings3D({ level }) {
     // builder: the pick boxes take the clicks. Designer: the mesh's own raycast, passed EXPLICITLY: R3F ignores
     // an `undefined` prop, so a door mounted in the builder kept noRaycast after switching to the designer
     const partRaycast = pickDoors ? Mesh.prototype.raycast : noRaycast;
+    // a batch's handlers: the door under the pointer (hit triangle), then that door's own handlers
+    const batchHandlers = (doorAt) => (!pickDoors ? {} : {
+        onContextMenu: (event) => { const door = doorAt(event); if (door) doorHandlers(door).onContextMenu(event); },
+        onClick: (event) => { const door = doorAt(event); if (door) doorHandlers(door).onClick?.(event); },
+        onPointerOver: (event) => { const door = doorAt(event); onDoorHover(event, door?.opens ? door.id : null); },
+        onPointerMove: (event) => { const door = doorAt(event); onDoorHover(event, door?.opens ? door.id : null); }, // two doors, one batch
+        onPointerOut: (event) => onDoorHover(event, null)
+    });
 
-    return [...doors.map((door) => (
+    return [<DoorBatches key="batches" doors={doors} singleIds={singleIds} openDoors={openDoors} surfaces={surfaces}
+        isPhysicalGlass={isPhysicalGlass} raycast={partRaycast} handlers={batchHandlers} />,
+    ...doors.filter(isSingle).map((door) => (
         <group key={door.key} position={door.position} rotation-y={door.rotationY} {...doorHandlers(door)}>
             <SurfaceMesh geometry={door.frame} materialId={materialOf(door, 'frame')} tinted={partTint(door, 'frame')} userData={DOOR_USER_DATA(door.id, 'frame')} raycast={partRaycast} castShadow receiveShadow />
             {door.leaves.map((leaf, index) => (
