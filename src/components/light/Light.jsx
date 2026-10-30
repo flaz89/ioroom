@@ -22,8 +22,11 @@ const ENVIRONMENT_WITH_GI = 0.25;
 // XR (WebGL, no GI): the shared look (exposure, environment light) is tuned on the desktop WITH the SSGI, which
 // darkens corners and contacts. Without it the full environment lit every face evenly from every side: on the
 // Quest the image was burnt and flat, the sun's shadows filled away. Calibration knobs (tune on the headset).
-const XR_ENVIRONMENT = 0.15; // environment light multiplier in XR: now mostly the reflections
-const XR_EXPOSURE = 0.85;    // exposure multiplier in XR
+// environment light multiplier in XR: mostly the reflections. 0.15 with the studio's bright panels; with the
+// sky gradient (SceneEnvironment.jsx, no panels to streak the floor) 0.15 left black marble pitch black seen
+// head-on (it lives on reflections: ~4% of the environment) and the whole room a touch dark (30/10 on the Quest)
+const XR_ENVIRONMENT = 0.35;
+const XR_EXPOSURE = 0.85;   // exposure multiplier in XR
 // XR DIRECTIONAL FILL (no GI): the environment lights every face alike, so in VR the shapes melted into each
 // other. A hemisphere light takes over most of the fill: bright from above (floor), warm and dark from below
 // (the floor's bounce: ceilings and beam undersides darker), walls in between. Costs nothing per pixel.

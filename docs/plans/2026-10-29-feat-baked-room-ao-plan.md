@@ -113,7 +113,9 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
   strade: calcolarla già durante l'uso a schermo (anche con la SSGI attiva, usarla solo in VR: il calcolo è in
   background nei worker e si riusa entrando con la stessa pianta) oppure una schermata di caricamento immersiva.
 - 30/10: riflesso al centro del pavimento → in XR la environment map è un gradiente cielo / orizzonte / terra
-  (`SceneEnvironment.jsx`) invece dello studio coi pannelli luminosi. Da provare sul Quest.
+  (`SceneEnvironment.jsx`) invece dello studio coi pannelli luminosi. Flavio: va bene, ma tutto un po' più scuro e
+  il marmo nero nero pieno guardato dritto (vive di riflessi) → `XR_ENVIRONMENT` da 0,15 a 0,35 (senza pannelli non
+  torna la striscia).
 - Da fare dopo (emersi dalle catture): cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).
 
