@@ -115,7 +115,7 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
 - 30/10: riflesso al centro del pavimento → in XR la environment map è un gradiente cielo / orizzonte / terra
   (`SceneEnvironment.jsx`) invece dello studio coi pannelli luminosi. Flavio: va bene, ma tutto un po' più scuro e
   il marmo nero nero pieno guardato dritto (vive di riflessi) → `XR_ENVIRONMENT` da 0,15 a 0,35 (senza pannelli non
-  torna la striscia).
+  torna la striscia). Accettato.
 - Da fare dopo (emersi dalle catture): cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).
 

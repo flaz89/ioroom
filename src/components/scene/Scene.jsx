@@ -12,6 +12,7 @@ import CameraMemory from './controls/CameraMemory';
 import SceneEnvironment from '../light/SceneEnvironment';
 import PostEffects from './PostEffects';
 import SceneGrid from './helpers/SceneGrid';
+import SkyDome from './sun/SkyDome';
 import OrbitAtCursor from './controls/OrbitAtCursor';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
@@ -156,6 +157,8 @@ export default function Scene({xrStore}) {
                 {backend === 'webgpu' && hasPostEffects && <PostEffects />}
 
                 <XR store={xrStore}>
+                    {/* VR only: the sky out of the windows, colored by the sun */}
+                    <SkyDome />
                     <SceneGrid visible={isGridVisible} />
                     {/* 'listener' is the pmndrs default; it must be explicit ('undefined' is ignored by R3F) */}
                     <group pointerEvents={isOrbiting ? 'none' : 'listener'}>
