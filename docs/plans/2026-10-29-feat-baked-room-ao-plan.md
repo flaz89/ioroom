@@ -116,6 +116,10 @@ Canvas si ricostruisce con la stessa pianta (entrare / uscire dalla VR: `isRoomA
   (`SceneEnvironment.jsx`) invece dello studio coi pannelli luminosi. Flavio: va bene, ma tutto un po' più scuro e
   il marmo nero nero pieno guardato dritto (vive di riflessi) → `XR_ENVIRONMENT` da 0,15 a 0,35 (senza pannelli non
   torna la striscia). Accettato.
+- 30/10, AO pronta all'ingresso in VR (idea del 29/10): calcolata sempre, anche su schermo con la SSGI (mostrata solo
+  dove serve); `bakeRoomAo(atlas, ceilings, level)` riusa il calcolo in corso per la stessa pianta (entrare in VR a
+  metà calcolo ricostruisce la stanza: prima il calcolo ripartiva da zero) e `Room.jsx` salva il risultato anche se
+  smontata nel frattempo.
 - Da fare dopo (emersi dalle catture): cielo blu saturo fuori dalle finestre, seghettature dei bordi
   in VR (verificare l'MSAA del framebuffer XR), ombre di contatto sotto gli oggetti (piano a parte).
 
