@@ -19,6 +19,8 @@ export default function PerfPanel() {
     const rows = [
         ['FPS', fixed(stats.fps, 0)],
         ['Frame', `${fixed(stats.frameMs)} ms`],
+        ['CPU update', `${fixed(stats.cpuMs - stats.renderMs)} ms`],
+        ['CPU render', `${fixed(stats.renderMs)} ms`],
         ['GPU', stats.gpuMs == null ? '-' : `${fixed(stats.gpuMs, 2)} ms`],
         ['Draw calls', count(stats.drawCalls)],
         ['Triangles', count(stats.triangles)],

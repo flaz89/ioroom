@@ -42,6 +42,25 @@ const XR_GROUND = '#b8b4ae';
 const _scale = new Vector3();
 
 /*
+* Fingerprint of everything that shapes the shadow map: every visible shadow caster (the sun included) with its
+* world matrix, object and geometry. Changes when something moves (drag, door, tabletop, sun), appears, hides
+* or is rebuilt (plan edit). One traversal of the visible scene per frame.
+* ponytail: a float sum, a collision would only skip one shadow redraw until the next change.
+*/
+function shadowKey(root) {
+    let key = 0;
+    let n = 0;
+    root.traverseVisible((object) => {
+        if (!object.castShadow) return;
+        n++;
+        const e = object.matrixWorld.elements;
+        for (let i = 0; i < 16; i++) key += e[i] * (i + 1) * n;
+        key += (object.id + (object.geometry?.id ?? 0) * 0.37) * n;
+    });
+    return key + n * 1e9;
+}
+
+/*
 * Scene lights: the sun, the only directional light (it casts the shadows), plus the environment map's
 * fill light (SceneEnvironment.jsx; no ambient light: the environment replaces it), dimmed here at night.
 * The sun follows the real solar arc of the environment's location, day and clock time (store `sun`,
@@ -76,6 +95,29 @@ export default function Light() {
     }, [scene, lighting, hasProbes, hasSsgi, isXR, look.environment]);
     // tone mapping exposure: read by the renderer's output transform (also in XR; and by the WebGPU post-processing's)
     useLayoutEffect(() => { gl.toneMappingExposure = look.exposure * (isXR ? XR_EXPOSURE : 1); }, [gl, isXR, look.exposure]);
+    // STILL SHADOWS in XR: the shadow map is redrawn only in the frames where a caster or the sun moved
+    // (scene.onBeforeRender runs after the matrix update and before the shadow pass)
+    const getThree = useThree((state) => state.get);
+    useLayoutEffect(() => {
+        if (!isXR) return;
+        const { gl: renderer, scene: root } = getThree();
+        const shadowMap = renderer.shadowMap;
+        const onBeforeRender = root.onBeforeRender;
+        let lastKey = NaN;
+        shadowMap.autoUpdate = false;
+        root.onBeforeRender = function (...args) {
+            const key = shadowKey(root);
+            if (key !== lastKey) {
+                lastKey = key;
+                shadowMap.needsUpdate = true;
+            }
+            onBeforeRender.apply(this, args);
+        };
+        return () => {
+            root.onBeforeRender = onBeforeRender;
+            shadowMap.autoUpdate = true;
+        };
+    }, [isXR, getThree]);
     const appliedScale = useRef(''); // scale | shadow size | sun distance last applied to the shadow camera
     // Plan size: center [x, z] and radius (m) of the level being worked on
     const level = useStore((state) => activeLevel(state.plan));

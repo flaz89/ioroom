@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { addAfterEffect, useThree } from '@react-three/fiber';
+import { addAfterEffect, addEffect, useThree } from '@react-three/fiber';
 import { useStore } from '../../../store/appStore';
 
 const SAMPLE_INTERVAL_MS = 500; // how often stats are published to the store
@@ -36,7 +36,7 @@ function backendLabel(gl) {
 * Must be read right AFTER rendering: WebGPURenderer resets renderer.info at the start of each
 * animation frame, before R3F renders, so a useFrame callback would always read zeros.
 */
-function readStats(gl, frames, elapsedMs, gpuMs, gpuName) {
+function readStats(gl, frames, elapsedMs, cpuMs, renderMs, gpuMs, gpuName) {
     const info = gl.info;
     const isWebGPU = gl.isWebGPURenderer === true;
     const heap = performance.memory; // non-standard, Chromium only
@@ -46,6 +46,8 @@ function readStats(gl, frames, elapsedMs, gpuMs, gpuName) {
         gpuName,
         fps: (frames * 1000) / elapsedMs,
         frameMs: elapsedMs / frames,
+        cpuMs,
+        renderMs, // part of cpuMs spent in renderer.render (the rest = useFrame updates)
         gpuMs, // null when GPU timestamps are unavailable
         drawCalls: isWebGPU ? info.render.drawCalls : info.render.calls,
         triangles: info.render.triangles,
@@ -65,20 +67,42 @@ function readStats(gl, frames, elapsedMs, gpuMs, gpuName) {
 * GPU time (WebGPU only): the renderer is created with trackTimestamp, so every frame we resolve the
 * timestamp queries (async GPU readback) and average the results over the sample window.
 * ponytail: no GPU time on WebGL; add EXT_disjoint_timer_query_webgl2 if it becomes necessary.
+*
+* CPU time: JavaScript time of one frame, from R3F's before-effects (start of the tick) to its after-effects:
+* every useFrame (pmndrs pointers and XR included) + building and submitting the draw calls. GPU work runs
+* asynchronously and is not in it: CPU close to Frame = CPU bound, far below = GPU (or compositor) bound.
+* Split: renderer.render is timed by wrapping it (while the sampler is mounted): Render = three building and
+* submitting the draw calls (shadow map + both eyes), Update = the rest (useFrame callbacks, XR pointers).
 */
 export default function PerfSampler() {
     const setPerfStats = useStore((state) => state.setPerfStats);
 
     // Accumulators for the current sample window (mutable, no re-render)
     // (window start is set on the first frame: render must stay pure)
-    const sample = useRef({ frames: 0, start: null, gpuMsSum: 0, gpuSamples: 0, resolving: false, gpuName: undefined });
+    const sample = useRef({ frames: 0, start: null, tickStart: null, cpuMsSum: 0, renderMsSum: 0, gpuMsSum: 0, gpuSamples: 0, resolving: false, gpuName: undefined });
 
     const getThree = useThree((state) => state.get);
+
+    useEffect(() => addEffect(() => { sample.current.tickStart = performance.now(); }), []);
+
+    useEffect(() => {
+        const gl = getThree().gl;
+        const render = gl.render;
+        const acc = sample.current;
+        gl.render = function timedRender(...args) {
+            const start = performance.now();
+            const result = render.apply(this, args);
+            acc.renderMsSum += performance.now() - start;
+            return result;
+        };
+        return () => { gl.render = render; };
+    }, [getThree]);
 
     useEffect(() => addAfterEffect(() => {
         const gl = getThree().gl;
         const acc = sample.current;
         acc.start ??= performance.now();
+        if (acc.tickStart != null) acc.cpuMsSum += performance.now() - acc.tickStart;
         if (acc.gpuName === undefined) acc.gpuName = describeGpu(gl); // once per Canvas/renderer
         acc.frames++;
 
@@ -99,9 +123,12 @@ export default function PerfSampler() {
         if (elapsed < SAMPLE_INTERVAL_MS) return;
 
         const gpuMs = acc.gpuSamples > 0 ? acc.gpuMsSum / acc.gpuSamples : null;
-        setPerfStats(readStats(gl, acc.frames, elapsed, gpuMs, acc.gpuName));
+        const menuHidden = gl.xr?.isPresenting === true && !useStore.getState().view.handMenuVisible;
+        setPerfStats(readStats(gl, acc.frames, elapsed, acc.cpuMsSum / acc.frames, acc.renderMsSum / acc.frames, gpuMs, acc.gpuName), menuHidden);
 
         acc.frames = 0;
+        acc.cpuMsSum = 0;
+        acc.renderMsSum = 0;
         acc.start = now;
         acc.gpuMsSum = 0;
         acc.gpuSamples = 0;

@@ -74,6 +74,10 @@ export default function WristMenu() {
     const togglePerf = useStore((state) => state.togglePerf);
     const isWireframe = useStore((state) => state.wireframe);
     const toggleWireframe = useStore((state) => state.toggleWireframe);
+    const xrFoveation = useStore((state) => state.xrFoveation);
+    const cycleXrFoveation = useStore((state) => state.cycleXrFoveation);
+    // foveation (store xrFoveation): applied live, and again when a session starts (three keeps the value)
+    useEffect(() => { getThree().gl.xr.setFoveation(xrFoveation); }, [getThree, xrFoveation]);
     const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
     const isMaterialsOpen = useStore((state) => state.openPanel === 'materials'); // VRMaterialsPanel (same)
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)
@@ -144,7 +148,9 @@ export default function WristMenu() {
                             <VRButton svg={svg.redo} onClick={redo} position={[STEP_X * 2, BUTTON_STEP, 0]} />
                             {/* debug: whole scene in wireframe (scene/perf/Wireframe.jsx) */}
                             <VRButton label="Wire" active={isWireframe} onClick={toggleWireframe} position={[STEP_X * 2, BUTTON_STEP * 4, 0]} />
-                            {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.06, 0]} />}
+                            {/* foveation: 1 (fastest) -> 0.75 -> 0.5 (sharper edges); highlighted when not the default */}
+                            <VRButton label={`Fov ${xrFoveation}`} active={xrFoveation !== 1} onClick={cycleXrFoveation} position={[STEP_X * 3, BUTTON_STEP * 4, 0]} />
+                            {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.076, 0]} />}
                         </group>
                         {/* catalog: NOT shifted with the buttons (it overlapped them in its old relative place) */}
                         {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
