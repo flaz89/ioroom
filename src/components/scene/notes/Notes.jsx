@@ -12,9 +12,9 @@ import { setCursorHover } from '../sceneCursor';
 *   NotePlacer, press on the canvas; XR: XRNotePlacer, controller trigger / hand pinch with the ray).
 * - NotePin: one note, a square HUD card in its author's color just off the surface (three canvas-drawn
 *   layers: a glass card tinted with the author's color with the "NOTE" title and decorative text lines,
-*   glowing corner brackets that breathe, a scan line sweeping down the card; the note text is never
-*   drawn on it: the card is a static texture per color) with an always visible HUD tag (leader line from the
-*   card corner + author's name); hover enlarges it and speeds it up; click / finger touch opens the
+*   glowing corner brackets that breathe; the note text is never
+*   drawn on it: the card is a static texture per color) with a HUD tag flat on the surface (leader line
+*   from the card corner + author's name); hover enlarges it and speeds it up; click / finger touch opens the
 *   editor (ui/note-modal/ on desktop, xr-ui/VRNotePanel.jsx in XR).
 *   Notes stuck on an object are rendered by SingleObject.jsx inside the object, so they follow it.
 * Calibration knobs in board meters (real size at 1:1, scaled down with the tabletop model).
@@ -23,12 +23,11 @@ const MARKER_SIZE = 0.22;          // side of the square card
 const MARKER_OFFSET = 0.004;       // distance of the first layer from the surface (no z-fighting)
 const LAYER_GAP = 0.001;           // distance between the marker layers
 const BRACKET_PULSE = 0.035;       // corner brackets "breathing" amplitude (fraction of the card size)
-const SCAN_PERIOD = 2.6;           // seconds for the scan line to sweep the card
 const HOVER_SPEED = 2.5;           // animation speed multiplier while hovered
 const HOVER_SCALE = 1.12;          // marker scale while hovered
 const TEXTURE_PIXELS = 256;        // canvas resolution of the card and brackets layers
 const CARD_LINES = 7;              // decorative text lines drawn on the card
-const TAG_SIZE = [0.88, 0.22];     // author tag sprite [width, height] (same 4:1 aspect as TAG_PIXELS)
+const TAG_SIZE = [0.88, 0.22];     // author tag [width, height] (same 4:1 aspect as TAG_PIXELS)
 const TAG_PIXELS = [512, 128];     // canvas resolution of the tag
 const TABLETOP_BOOST = 2;          // notes this much bigger on the tabletop model (easier to aim at with a ray)
 const NOTE_USER_DATA = { isNote: true }; // skipped by placing and by surfaceDrag.js (never a support)
@@ -103,7 +102,7 @@ export function NotePin({ note, objectScale }) {
                     onPointerEnter={() => setIsHovered(true)}
                     onPointerLeave={() => setIsHovered(false)}
                 />
-                {/* tag anchored on the card's upper right corner, always facing the viewer */}
+                {/* tag anchored on the card's upper right corner, flat on the surface like the card */}
                 <NoteTag
                     name={note.author.name}
                     color={note.author.color}
@@ -118,8 +117,7 @@ export function NotePin({ note, objectScale }) {
 * Square HUD card, in the XY plane facing +Z (WebGL and WebGPU: built-in materials only):
 * - card (catches the pointer): glass tinted with the author's color, bright outline, "NOTE" title,
 *   decorative text lines (a reference, not the note's text: one static texture per color);
-* - corner brackets: glowing, breathing outwards;
-* - scan line: a soft bar of the author's color sweeping down the card.
+* - corner brackets: glowing, breathing outwards.
 * `phase` desyncs the animation of different notes.
 *
 * TOUCH (XR): a fingertip pressing the card also touches the wall right behind it (pmndrs sphere
@@ -134,19 +132,13 @@ const CARD_POINTER_TYPES = { deny: ['grab'] };
 function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
     const rootRef = useRef();
     const bracketsRef = useRef();
-    const scanRef = useRef();
     const timeRef = useRef(phase); // animation clock, runs faster while hovered
     const card = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawCard(ctx, w, color), [color]);
     const brackets = useCanvasTexture(TEXTURE_PIXELS, TEXTURE_PIXELS, (ctx, w) => drawBrackets(ctx, w, color), [color]);
-    const scan = useCanvasTexture(TEXTURE_PIXELS, 16, (ctx, w, h) => drawScanLine(ctx, w, h, color), [color]);
 
     useFrame((_state, delta) => {
         const time = (timeRef.current += delta * (isHovered ? HOVER_SPEED : 1));
         bracketsRef.current.scale.setScalar(1 + BRACKET_PULSE * (0.5 + 0.5 * Math.sin(time * 2.4)));
-        // scan line: top to bottom of the content area, fading in and out at the ends
-        const progress = (time / SCAN_PERIOD) % 1;
-        scanRef.current.position.y = MARKER_SIZE * (0.22 - 0.62 * progress);
-        scanRef.current.material.opacity = Math.sin(progress * Math.PI);
         rootRef.current.scale.setScalar(THREE.MathUtils.damp(rootRef.current.scale.x, isHovered ? HOVER_SCALE : 1, 12, delta));
     });
 
@@ -155,10 +147,6 @@ function NoteMarker({ color, phase, isHovered, ...pointerHandlers }) {
             <mesh position={[0, 0, MARKER_OFFSET]} userData={NOTE_USER_DATA} renderOrder={1} pointerEventsOrder={1} pointerEventsType={CARD_POINTER_TYPES} {...pointerHandlers}>
                 <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
                 <MarkerMaterial map={card} />
-            </mesh>
-            <mesh ref={scanRef} position={[0, 0, MARKER_OFFSET + LAYER_GAP]} raycast={noRaycast} renderOrder={2}>
-                <planeGeometry args={[MARKER_SIZE * 0.84, MARKER_SIZE * 0.06]} />
-                <MarkerMaterial map={scan} />
             </mesh>
             <mesh ref={bracketsRef} position={[0, 0, MARKER_OFFSET + 2 * LAYER_GAP]} raycast={noRaycast} renderOrder={3}>
                 <planeGeometry args={[MARKER_SIZE, MARKER_SIZE]} />
@@ -239,30 +227,20 @@ function drawBrackets(ctx, size, color) {
     }
 }
 
-// Scan line: horizontal bar of the author's color, bright in the middle, fading to the sides
-function drawScanLine(ctx, width, height, color) {
-    const gradient = ctx.createLinearGradient(0, 0, width, 0);
-    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    gradient.addColorStop(0.5, color);
-    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.globalAlpha = 0.55;
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, height * 0.35, width, height * 0.3);
-}
-
 /*
-* Author tag in HUD style: a sprite anchored at its bottom left corner (= `position`, the marker edge),
-* drawn as a leader line rising from there + a dark bar with a colored accent and the name in capitals.
-* Drawn like a game HUD waypoint: no depth test, so the camera-facing sprite never cuts into the wall it
-* stands on (and stays readable behind objects). renderOrder -2: first among the transparent things, so
-* in-VR panels, menus and the markers themselves draw over it.
+* Author tag in HUD style, anchored at its bottom left corner (= `position`, the marker edge): a leader
+* line rising from there + a dark bar with a colored accent and the name in capitals.
+* Flat on the surface like the card, depth tested: hidden by walls and furniture in front of it (2/11,
+* Flavio's call; it used to be a camera-facing sprite without depth test, readable through everything,
+* and a camera-facing sprite with depth test would cut into the wall it stands on).
 */
+const TAG_GEOMETRY = new THREE.PlaneGeometry(TAG_SIZE[0], TAG_SIZE[1]).translate(TAG_SIZE[0] / 2, TAG_SIZE[1] / 2, 0);
 function NoteTag({ name, color, position }) {
     const texture = useCanvasTexture(TAG_PIXELS[0], TAG_PIXELS[1], (ctx, w, h) => drawTag(ctx, w, h, name, color), [name, color]);
     return (
-        <sprite position={position} center={[0, 0]} scale={[TAG_SIZE[0], TAG_SIZE[1], 1]} raycast={noRaycast} renderOrder={-2}>
-            <spriteMaterial map={texture} transparent depthTest={false} depthWrite={false} toneMapped={false} />
-        </sprite>
+        <mesh position={position} geometry={TAG_GEOMETRY} raycast={noRaycast} renderOrder={4}>
+            <meshBasicMaterial map={texture} transparent depthWrite={false} toneMapped={false} side={THREE.DoubleSide} />
+        </mesh>
     );
 }
 
