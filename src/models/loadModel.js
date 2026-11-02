@@ -59,6 +59,9 @@ export function mergeParts(root) {
     return { geometry, materials: parts.map((part) => part.material) };
 }
 
+// A GLB file's content (ArrayBuffer) -> the loader's gltf (upload checks: models/inspectGlb.js)
+export const parseGlb = (buffer) => gltfLoader().parseAsync(buffer, '');
+
 const pending = new Map(); // GLB url -> Promise
 const loaded = new Map();  // GLB url -> { geometry, materials }
 

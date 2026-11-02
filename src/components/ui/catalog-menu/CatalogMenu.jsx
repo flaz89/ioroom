@@ -3,12 +3,16 @@ import { useStore } from '../../../store/appStore';
 import { objectsList } from '../../../store/slices/objectsSlice';
 import { useModelList } from '../../../models/catalog';
 import { SHAPES, brandsOf, categoriesWith, modelsIn, searchModels, subtypesIn } from '../../../models/grouping';
-import { modelFileUrl } from '../../../models/modelsApi';
+import { deleteModel, modelFileUrl } from '../../../models/modelsApi';
 import { spawnPoint } from '../../../models/spawnPoint';
 import { activeLevel } from '../../../plan/planModel';
+import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import { viewGroundPoint } from '../../scene/level/viewGroundProbe';
 import { usePanelInViewport } from '../usePanelInViewport';
+import ModelCreateModal from './ModelCreateModal';
 import './catalog-menu.css';
+
+const canManage = Boolean(SYNC_HOST) && isAdmin;
 
 /*
 * "+" menu (plan U5, R1–R4): the furniture catalog in two levels.
@@ -21,6 +25,9 @@ import './catalog-menu.css';
 *   center of the view, inside the plan (models/spawnPoint.js), selected; the menu closes.
 * - Basic shapes add the primitives as before (no variant).
 * Catalog loading / failed (Retry) / empty results are shown in place of the grid.
+* OWNER (admin token): "+" next to the search uploads a new piece (ModelCreateModal.jsx), "✎" on a model
+* edits its card and variants (same modal), "×" deletes it from the catalog (second press confirms). Furniture
+* already placed from a deleted model shows a placeholder box.
 */
 export default function CatalogMenu({ onClose }) {
     const panelRef = useRef();
@@ -35,6 +42,25 @@ export default function CatalogMenu({ onClose }) {
     const [picked, setPicked] = useState(null); // { model, variantId }
     const brands = brandsOf(models);
     const searching = query.trim() !== '';
+
+    // owner: the upload / edit modal ({ model } = edit, {} = new) and the delete waiting for its confirming press
+    const [modal, setModal] = useState(null);
+    const [confirmDelete, setConfirmDelete] = useState(null);
+    const [deleteError, setDeleteError] = useState(null);
+    const remove = async (model) => {
+        if (confirmDelete !== model.id) return setConfirmDelete(model.id);
+        setConfirmDelete(null);
+        setDeleteError(null);
+        try {
+            await deleteModel(model.id);
+            const { libraryModels, setLibraryModels } = useStore.getState();
+            setLibraryModels(libraryModels.filter((item) => item.id !== model.id));
+            if (picked?.model.id === model.id) setPicked(null);
+        } catch (error) {
+            setDeleteError(error.message);
+        }
+    };
+    const manage = canManage ? { confirmDelete, onEdit: (model) => setModal({ model }), onDelete: remove } : null;
 
     const openCategory = (id) => { setCategory(id); setSubtype(null); setPicked(null); };
     const pickBrand = (name) => { setBrand(name); setBrandsOpen(false); setSubtype(null); setPicked(null); };
@@ -51,7 +77,7 @@ export default function CatalogMenu({ onClose }) {
     } else if (searching) {
         const results = searchModels(models, query, brand);
         body = results.length > 0
-            ? <ModelGrid models={results} picked={picked} onPick={setPicked} />
+            ? <ModelGrid models={results} picked={picked} onPick={setPicked} manage={manage} />
             : <Empty text={brand ? `No results for "${query.trim()}" from ${brand}` : `No results for "${query.trim()}"`}
                 actions={[brand && ['Clear manufacturer', () => setBrand(null)], ['Clear search', () => setQuery('')]]} />;
     } else if (category === SHAPES) {
@@ -83,7 +109,7 @@ export default function CatalogMenu({ onClose }) {
                     </div>
                 )}
                 {shown.length > 0
-                    ? <ModelGrid models={shown} picked={picked} onPick={setPicked} />
+                    ? <ModelGrid models={shown} picked={picked} onPick={setPicked} manage={manage} />
                     : <Empty text={`No ${label.toLowerCase()} from ${brand}`} actions={[['Clear manufacturer', () => setBrand(null)]]} />}
             </>
         );
@@ -120,6 +146,7 @@ export default function CatalogMenu({ onClose }) {
     }
 
     return (
+        <>
         <div className="catalog-menu" ref={panelRef} role="dialog" aria-label="Add">
             {brands.length > 0 && (
                 <aside className="catalog-brands" aria-label="Manufacturers">
@@ -134,7 +161,11 @@ export default function CatalogMenu({ onClose }) {
                         <button className={brandsOpen ? 'catalog-brands-toggle is-active' : 'catalog-brands-toggle'}
                             aria-pressed={brandsOpen} onClick={() => setBrandsOpen(!brandsOpen)}>Brands</button>
                     )}
+                    {canManage && (
+                        <button className="catalog-new" onClick={() => setModal({})} title="New furniture" aria-label="New furniture">+</button>
+                    )}
                 </div>
+                {deleteError && <span className="catalog-note is-error" role="alert">{deleteError}</span>}
                 {brand != null && !brandsOpen && (
                     <span className="catalog-brand-chip">
                         {brand}
@@ -160,10 +191,17 @@ export default function CatalogMenu({ onClose }) {
                 )}
             </div>
         </div>
+        {/* outside the panel: its transform would become the containing block of the fixed backdrop */}
+        {modal != null && (
+            <ModelCreateModal model={modal.model} onClose={() => setModal(null)}
+                initialCategory={category != null && category !== SHAPES ? category : undefined} />
+        )}
+        </>
     );
 }
 
-function ModelGrid({ models, picked, onPick }) {
+// manage (owner): { confirmDelete, onEdit(model), onDelete(model) } -> ✎ and × on every tile
+function ModelGrid({ models, picked, onPick, manage }) {
     return (
         <div className="catalog-grid">
             {models.map((model) => (
@@ -174,6 +212,19 @@ function ModelGrid({ models, picked, onPick }) {
                     <img className="catalog-thumb" src={modelFileUrl(model.files.thumb)} alt="" loading="lazy" />
                     <span className="catalog-tile-name">{model.name}</span>
                     {model.fixed && <span className="catalog-fixed" title="Fixed: it cannot be moved in first-person VR">Fixed</span>}
+                    {manage && (<>
+                        <span className="catalog-manage is-edit" role="button" tabIndex={0} title="Edit furniture" aria-label={`Edit ${model.name}`}
+                            onClick={(event) => { event.stopPropagation(); manage.onEdit(model); }}
+                            onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); manage.onEdit(model); } }}>✎</span>
+                        <span className={manage.confirmDelete === model.id ? 'catalog-manage is-delete is-confirm' : 'catalog-manage is-delete'}
+                            role="button" tabIndex={0}
+                            title={manage.confirmDelete === model.id ? 'Press again to delete' : 'Delete furniture'}
+                            aria-label={manage.confirmDelete === model.id ? `Press again to delete ${model.name}` : `Delete ${model.name}`}
+                            onClick={(event) => { event.stopPropagation(); manage.onDelete(model); }}
+                            onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); manage.onDelete(model); } }}>
+                            {manage.confirmDelete === model.id ? '?' : '×'}
+                        </span>
+                    </>)}
                 </button>
             ))}
         </div>

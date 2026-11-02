@@ -18,7 +18,14 @@ const PLACEHOLDER = [new THREE.MeshStandardMaterial({ color: '#d0d0d0', roughnes
 const placeholders = new Map(); // "w,h,d" -> box geometry standing on y = 0
 function placeholderGeometry(size = FALLBACK_SIZE) {
     const key = size.join(',');
-    if (!placeholders.has(key)) placeholders.set(key, new THREE.BoxGeometry(...size).translate(0, size[1] / 2, 0));
+    if (!placeholders.has(key)) {
+        const box = new THREE.BoxGeometry(...size).translate(0, size[1] / 2, 0);
+        // one group for all the faces: BoxGeometry has a group (material index) per face, and with the
+        // one-material array of the placeholder only the first face was drawn
+        box.clearGroups();
+        box.addGroup(0, Infinity, 0);
+        placeholders.set(key, box);
+    }
     return placeholders.get(key);
 }
 

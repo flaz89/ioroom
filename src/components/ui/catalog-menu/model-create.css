@@ -1,0 +1,55 @@
+/* New / edit furniture form (ModelCreateModal.jsx): the materials modal's look (material-create.css) plus
+   the thumbnail preview and the variants editor */
+/* text-align: it opens inside the "+" button's column (.objects-selection, centered) */
+.model-create { width: min(480px, calc(100vw - 32px)); text-align: left; }
+
+.model-create-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.model-create .model-create-check {
+    flex-direction: row;
+    align-items: center;
+    gap: .5em;
+}
+.model-create .model-create-check input[type="checkbox"] { width: auto; }
+.model-create .model-create-check input[type="color"] {
+    width: 34px;
+    height: 24px;
+    padding: 0;
+    border-radius: 6px;
+}
+.model-create .model-create-check input[type="color"]:disabled { opacity: .35; }
+
+.model-create-variants {
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+}
+
+/* One GLB material inside a variant: name, tint, texture */
+.model-create-material {
+    display: flex;
+    flex-direction: column;
+    gap: .35em;
+    padding-top: .45em;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.model-create-material-name { font-weight: 600; overflow-wrap: anywhere; }
+.model-create-texture { display: flex; align-items: center; gap: .6em; opacity: .85; }
+
+/* Text buttons: add / remove a variant, remove a saved texture */
+.model-create-link {
+    align-self: flex-start;
+    padding: 0;
+    border: none;
+    background: none;
+    color: #ffb733;
+    font: inherit;
+    cursor: pointer;
+}
+.model-create-link:hover { text-decoration: underline; }
