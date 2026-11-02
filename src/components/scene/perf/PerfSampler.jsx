@@ -89,11 +89,19 @@ export default function PerfSampler() {
         const gl = getThree().gl;
         const render = gl.render;
         const acc = sample.current;
+        // only the OUTERMOST call counts: with the post-processing pipeline (WebGPU, PostEffects.jsx) the
+        // passes render the scene from inside the output render, and counting both made Render > CPU (a
+        // negative Update)
+        let depth = 0;
         gl.render = function timedRender(...args) {
             const start = performance.now();
-            const result = render.apply(this, args);
-            acc.renderMsSum += performance.now() - start;
-            return result;
+            depth++;
+            try {
+                return render.apply(this, args);
+            } finally {
+                depth--;
+                if (depth === 0) acc.renderMsSum += performance.now() - start;
+            }
         };
         return () => { gl.render = render; };
     }, [getThree]);
