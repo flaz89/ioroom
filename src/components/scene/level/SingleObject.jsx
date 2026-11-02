@@ -12,6 +12,9 @@ import { NotePin } from "../notes/Notes";
 import { meshSpherecast } from "../controls/meshSpherecast";
 import { objectMeshes } from "./objectMeshes";
 import { setCursorGrabbing, setCursorHover } from "../sceneCursor";
+import { useModel } from "../../../models/catalog";
+import { tintedMaterials, useModelMesh } from "../../../models/useModelMesh";
+import { acceleratedRaycast } from "three-mesh-bvh";
 
 function renderGeometry(type) {
   switch(type) {
@@ -95,6 +98,8 @@ const _liveQuaternion = new THREE.Quaternion();
 const _liveScale = new THREE.Vector3();
 const _liveMatrix = new THREE.Matrix4();
 const HOVER_TINT = 0.35;               // strength of the hover tint (emissive intensity)
+// furniture: the glow goes through the color texture (useModelMesh.js tintedMaterials), so 1 = twice as bright
+const MODEL_HOVER_TINT = 3;
 const HOVER_FALLBACK_COLOR = '#ffffff'; // hover tint without a shared room
 const REMOTE_FOLLOW_RATE = 20; // 1/s: how fast an object follows another device's drag (higher = snappier)
 const _twist = new THREE.Quaternion();
@@ -117,6 +122,11 @@ function nearGrabYaw(grab, pointerQuaternion) {
 *   └─ PivotControls   <- flatscreen gizmo; its inner matrix is a delta, reset to identity on commit
 *      ├─ mesh (meshRef) <- click to select, press + drag (mouse) / grip (controller) / pinch (hand) to grab
 *      └─ NotePin...     <- post-it notes stuck on the object (object local space, see scene/notes/Notes.jsx)
+*
+* Two kinds of objects share this component: PRIMITIVES (data.geometryType, own geometry and material) and
+* catalog FURNITURE (data.modelId + data.variantId): the GLB as one geometry with a group per material,
+* shared by every copy (models/useModelMesh.js), a placeholder box while it loads; real size, so the gizmo
+* never scales it (plan KTD13).
 */
 export default function SingleObject({ data, notes, showPivot, pointerRotation, nearGrabFootprint }) {
 
@@ -139,6 +149,9 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // locked by others.
     const [isHovered, setIsHovered] = useState(false);
     const hoverColor = useSelfColor() ?? HOVER_FALLBACK_COLOR;
+    // catalog furniture: shared geometry and variant materials (placeholder box while loading / unknown)
+    const isModel = data.modelId != null;
+    const modelMesh = useModelMesh(useModel(data.modelId), data.variantId);
     // true while a grab started on a locked object (or lost the tie): the grab does nothing until released
     const blockedGrabRef = useRef(false);
 
@@ -406,6 +419,16 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // Identity delta for the gizmo; PivotControls mutates it in place while dragging
     const pivotMatrix = useMemo(() => new THREE.Matrix4(), []);
 
+    const showHover = isHovered && !isSelected && isGrabbing === false && !isGizmoDragging && lockColor == null;
+    // furniture: shared geometry / materials as props, never disposed by React (tinted copies while hovered);
+    // raycasts walk the geometry's BVH (loadModel.js; the placeholder box has none: plain three.js raycast)
+    const modelProps = isModel && {
+        geometry: modelMesh.geometry,
+        material: showHover ? tintedMaterials(modelMesh.materials, hoverColor, MODEL_HOVER_TINT) : modelMesh.materials,
+        raycast: acceleratedRaycast,
+        dispose: null
+    };
+
     return (
         <>
         <group
@@ -420,6 +443,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
                 enabled={showPivot && isSelected && !isGrabbing && lockColor == null}
                 depthTest={false}
                 scale={GIZMO_SCALE}
+                disableScaling={isModel}
                 anchor={[0, 0, 0]}
                 onDragStart={handlePivotDragStart}
                 onDrag={handlePivotDrag}
@@ -433,18 +457,20 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
                     castShadow
                     receiveShadow
                     onClick={handleClick}
+                    {...modelProps}
                 >
-                    {renderGeometry(data.geometryType)}
+                    {!isModel && renderGeometry(data.geometryType)}
                     {/* hover overlay: emissive tint, so it shows on any base color and in any lighting */}
-                    <meshStandardMaterial
+                    {!isModel && <meshStandardMaterial
                         color={data.color}
-                        emissive={isHovered && !isSelected && isGrabbing === false && !isGizmoDragging && lockColor == null ? hoverColor : '#000000'}
+                        emissive={showHover ? hoverColor : '#000000'}
                         emissiveIntensity={HOVER_TINT}
-                    />
-                    {/* locked by another device: its color; else selected: orange, red = VR delete gesture armed */}
+                    />}
+                    {/* locked by another device: its color; else selected: orange, red = VR delete gesture armed.
+                        Keyed by the geometry: the outline follows the furniture's placeholder -> GLB swap */}
                     {lockColor != null
-                        ? <SelectionOutline color={lockColor} thickness={3} />
-                        : isSelected && <SelectionOutline color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
+                        ? <SelectionOutline key={modelMesh.geometry.uuid} color={lockColor} thickness={3} />
+                        : isSelected && <SelectionOutline key={modelMesh.geometry.uuid} color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
                 </mesh>
                 {notes.map((note) => <NotePin key={note.id} note={note} objectScale={data.scale} />)}
             </PivotControls>

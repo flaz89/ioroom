@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { abs, dot, float, normalView, positionViewDirection, pow, uniform } from 'three/tsl';
+import { useModel } from '../../../models/catalog';
+import { useModelMesh } from '../../../models/useModelMesh';
 
 /*
 * Frozen "hologram" of a furniture object, drawn instead of SingleObject in the builder (ObjectRenderer.jsx):
@@ -86,7 +88,9 @@ function shapeOf(type) {
 
 export default function ObjectGhost({ data }) {
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
-    const body = shapeOf(data.geometryType);
+    // catalog furniture: its shared GLB geometry (one material over all its groups), or the placeholder box
+    const modelGeometry = useModelMesh(useModel(data.modelId), data.variantId).geometry;
+    const body = data.modelId != null ? modelGeometry : shapeOf(data.geometryType);
     return (
         <group position={data.position} rotation={data.rotation} scale={data.scale} pointerEvents="none">
             <mesh geometry={body} material={isWebGPU ? hologramNodeMaterial() : hologramGlslMaterial()} dispose={null} />

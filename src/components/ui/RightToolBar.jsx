@@ -2,7 +2,7 @@ import './ui.css'
 import CircleButton from './circle-button/CircleButton';
 import { svg } from '../../utils/svg-logos';
 import { useStore } from '../../store/appStore';
-import ObjectsMenu from './objects-menu/ObjectsMenu';
+import CatalogMenu from './catalog-menu/CatalogMenu';
 import { enterXR, useXRModeSupported } from '../../xr/xrStore';
 import SnapControl from './snap-control/SnapControl';
 import { isLockedByOther } from '../../sync/presence';
@@ -93,7 +93,7 @@ export default function RightToolBar() {
                     {/* orange "+" (same orange as the snap step buttons) */}
                     <CircleButton svg={svg.add} onClick={() => togglePanel('objects')} title={"Add"} isActive={objectsMenuOpen} style={objectsMenuOpen ? undefined : { color: '#ff9a1a' }}/>
                     { selectedObject && <CircleButton svg={svg.trash} style={{background: "linear-gradient(35deg, rgba(255, 0, 0, 1) 0%, rgba(203, 0, 0, 0.56) 60%)"}} onClick={() => { if (!isLockedByOther(selectedObject)) removeSelectedObject(selectedObject); }} title={"Delete selected object"}/> }
-                    { objectsMenuOpen && (<ObjectsMenu onClose={closePanel}/>) }
+                    { objectsMenuOpen && (<CatalogMenu onClose={closePanel}/>) }
                 </div>}
                 
                 <div className="experience-mode">

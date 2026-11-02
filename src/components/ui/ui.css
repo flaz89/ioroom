@@ -154,7 +154,7 @@
        desktop placement rules in each component's own css. Add new menus to this list (the materials panel
        is the exception: docked low between the toolbars, see materials-panel.css). */
     .ui .sun-panel,
-    .ui .objects-menu,
+    .ui .catalog-menu,
     .ui .room-users-list {
         position: fixed;
         left: 50%;

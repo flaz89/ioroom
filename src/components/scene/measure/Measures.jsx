@@ -16,8 +16,15 @@ import './measures.css';
 * BoardMeasures sits inside the Board: measures are stored and drawn in board space, so they follow the
 * tabletop model and their length is always in real meters.
 * - Saved measures (shared, author's color) and my local temporary ones (orange) are drawn as a line with
-*   end dots and a length label. Line and dots are drawn over everything (depthTest off, like CAD
-*   dimensions); label and dots keep a constant size on screen (sprites without size attenuation).
+*   end dots and a length label, drawn over floors and furniture (depthTest off, like CAD dimensions) but
+*   HIDDEN BY WALLS AND OPENINGS in front of them (2/11, Flavio's call: they were readable through walls;
+*   depth testing cut them on furniture and floors too). The GPU cannot ignore some objects in the depth
+*   test, so it is a CPU check: a few times a second (VISIBILITY_MS) a ray from the eye to each end and to
+*   the middle, against the wall and door / window meshes only (occluders, refreshed every OCCLUDERS_MS);
+*   something within the ray before the point (VISIBILITY_MARGIN off it: the wall a measure lies on never
+*   counts) hides that end's dot, or line + label for the middle. Hidden parts are not clickable. The snap
+*   markers while measuring are never hidden. Dots keep a constant size on screen (sprites without size
+*   attenuation).
 * - Click a label: actions (Save = share with the room, for my temporary measures; Delete).
 * - Ruler mode (desktop): move over walls, floor and objects: the point snaps to nearby corners (green) and
 *   edges (yellow) of the surface under the pointer, and to the ends (green) / lines (yellow) of the
@@ -59,6 +66,12 @@ const TABLETOP_LABEL_BOOST = 2;   // tabletop: labels this much bigger, like the
 const HANDLE_AIM = 0.04; // XR: a handle is aimed at within this angle (radians, ~2.3°) of the ray
 const SNAP_SCREEN = 0.02;            // snap distance = 2% of the camera distance (same feel at any zoom)
 const HANDLE_SCALE = 2;              // end dots of an editable measure (grab handles)
+// Hidden behind walls / openings (see the header): how often each measure checks (ms), how often the list
+// of occluding meshes is rebuilt (ms), and how far before a point a hit still counts (board meters: the
+// wall or door a measure was taken on is not "in front" of it)
+const VISIBILITY_MS = 100;
+const OCCLUDERS_MS = 500;
+const VISIBILITY_MARGIN = 0.05;
 const CLICK_SLOP = 5;                // pixels: a press that moves more is an orbit, not a click
 const noRaycast = () => null;
 /*
@@ -66,7 +79,11 @@ const noRaycast = () => null;
 * desktop screen pointer has it; XR rays do not (three would throw): there they are simply not hit yet.
 */
 function labelRaycast(raycaster, intersects) {
-    if (raycaster.camera != null) THREE.Sprite.prototype.raycast.call(this, raycaster, intersects);
+    if (raycaster.camera != null && this.visible) THREE.Sprite.prototype.raycast.call(this, raycaster, intersects);
+}
+// Label cards: not hit while hidden behind a wall (pmndrs and three's raycaster ignore `visible`)
+function cardRaycast(raycaster, intersects) {
+    if (this.visible) THREE.Mesh.prototype.raycast.call(this, raycaster, intersects);
 }
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 8);
 const labelPlane = new THREE.PlaneGeometry(1, 1);
@@ -115,6 +132,11 @@ export default function BoardMeasures() {
     const boost = isTabletop ? TABLETOP_BOOST : 1;
     // handles: desktop 3D view, and XR in first person (on the tabletop the ends are too small to aim at)
     const canEdit = isXR ? !isTabletop : !isPlanView;
+    // walls / openings that hide the measures (refreshOccluders), rebuilt a couple of times a second
+    useFrame(() => {
+        const board = rootRef.current?.parent;
+        if (board != null) refreshOccluders(board, performance.now());
+    });
 
     return (
         <group ref={rootRef}>
@@ -226,7 +248,7 @@ function labelUnderRay(ray, root, camera) {
     let best = null;
     root.traverse((object) => {
         const measureId = object.userData.measureId;
-        if (measureId == null) return;
+        if (measureId == null || !object.visible) return; // hidden behind a wall
         object.getWorldPosition(_labelPosition);
         _toLabel.subVectors(_labelPosition, ray.origin);
         const along = _toLabel.dot(ray.direction);
@@ -247,7 +269,7 @@ function handleUnderRay(ray, root) {
     let best = null;
     root.traverse((object) => {
         const handle = object.userData.measureHandle;
-        if (handle == null) return;
+        if (handle == null || !object.visible) return; // hidden behind a wall
         object.getWorldPosition(_handlePosition);
         _toHandle.subVectors(_handlePosition, ray.origin);
         const along = _toHandle.dot(ray.direction);
@@ -617,6 +639,7 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
     const [text, setText] = useState(() => formatLength(new THREE.Vector3(...a.p).distanceTo(new THREE.Vector3(...b.p))));
     const textRef = useRef(text);
     const radius = LINE_RADIUS * boost;
+    const checkedAtRef = useRef(-Infinity); // last visibility check (behind walls), performance.now()
 
     useFrame(({ camera }, delta) => {
         const space = groupRef.current?.parent;
@@ -631,13 +654,22 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         dotARef.current.position.copy(start);
         dotBRef.current.position.copy(end);
         labelRef.current.position.copy(_middle);
+        camera.getWorldPosition(_eyeLocal);
+        // BEHIND A WALL / OPENING (header): checked a few times a second, from the eye in world space
+        const now = performance.now();
+        if (now - checkedAtRef.current >= VISIBILITY_MS) {
+            checkedAtRef.current = now;
+            const margin = VISIBILITY_MARGIN * space.getWorldScale(_spaceScale).x; // board meters -> world
+            dotARef.current.visible = !isBehindWall(_eyeLocal, space.localToWorld(_point.copy(start)), margin);
+            dotBRef.current.visible = !isBehindWall(_eyeLocal, space.localToWorld(_point.copy(end)), margin);
+            lineRef.current.visible = labelMeshRef.current.visible = !isBehindWall(_eyeLocal, space.localToWorld(_point.copy(_middle)), margin);
+        }
+        space.worldToLocal(_eyeLocal);
         // LABEL: a flat card in 3D, its long side ALONG the line, turned around the line to face the eye as
         // much as it can, text never upside down (its up has a positive world-up component; the board only
         // turns around Y, so local up = world up). Stereo-safe: a real 3D orientation, not a screen-space one.
         const card = labelMeshRef.current;
         if (card != null && length > 1e-6) {
-            camera.getWorldPosition(_eyeLocal);
-            space.worldToLocal(_eyeLocal);
             _axisX.copy(_direction); // unit, start -> end (normalized above)
             _axisZ.subVectors(_eyeLocal, _middle);
             _axisZ.addScaledVector(_axisX, -_axisZ.dot(_axisX)); // towards the eye, square to the line
@@ -675,11 +707,11 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
                     geometry={labelPlane}
                     dispose={null}
                     renderOrder={11}
-                    // drawn over everything, so it also WINS the pointer events (like the notes' cards and the gizmo):
-                    // a measure taken on a wall has its label flush with the wall, which would be hit first
+                    // WINS the pointer events (like the notes' cards and the gizmo): a measure taken on a wall has its
+                    // label almost flush with the wall, which would otherwise be hit first
                     pointerEventsOrder={1}
                     userData={isLocked ? undefined : { measureId: measure.id }}
-                    raycast={isLocked ? noRaycast : undefined}
+                    raycast={isLocked ? noRaycast : cardRaycast}
                     // XR: selection comes from the session's select (XRMeasurePlacer), not this click (no double toggle)
                     onClick={isLocked || isXR ? undefined : (event) => { event.stopPropagation(); selectMeasure(selected ? null : measure.id); }}
                     onPointerEnter={isLocked ? undefined : () => setIsHovered(true)}
@@ -700,6 +732,41 @@ function MeasureLine({ measure, color, boost, selected = false, saved = false, p
         </group>
     );
 }
+/*
+* Meshes that hide the measures (header): the walls (vertical room batches, userData.surface 'wall', Room.jsx)
+* and the doors / windows (userData.noPlacement, Openings3D.jsx), visible ones only. Rebuilt every
+* OCCLUDERS_MS by BoardMeasures (a traversal of the board), shared by every measure.
+*/
+const occluders = [];
+let occludersAt = -Infinity;
+function refreshOccluders(board, now) {
+    if (now - occludersAt < OCCLUDERS_MS) return;
+    occludersAt = now;
+    occluders.length = 0;
+    board.traverse((object) => {
+        if (!object.isMesh || (object.userData.surface !== 'wall' && !object.userData.noPlacement)) return;
+        for (let o = object; o != null; o = o.parent) if (!o.visible) return; // hidden (e.g. builder pick boxes)
+        if (isInRoom(object)) occluders.push(object);
+    });
+}
+
+// Whether a wall / opening stands between `eye` and `point` (world space), ignoring hits within `margin` of
+// the point. three's own mesh raycast, called directly: door parts turn their raycast off in the builder.
+const _occlusionRay = new THREE.Raycaster();
+const _occlusionHits = [];
+function isBehindWall(eye, point, margin) {
+    const distance = eye.distanceTo(point);
+    if (distance <= margin) return false;
+    _occlusionRay.set(eye, _occlusionDirection.subVectors(point, eye).divideScalar(distance));
+    _occlusionRay.far = distance - margin;
+    for (const mesh of occluders) {
+        _occlusionHits.length = 0;
+        THREE.Mesh.prototype.raycast.call(mesh, _occlusionRay, _occlusionHits);
+        if (_occlusionHits.length > 0) return true;
+    }
+    return false;
+}
+const _occlusionDirection = new THREE.Vector3(), _point = new THREE.Vector3(), _spaceScale = new THREE.Vector3();
 const _eyeLocal = new THREE.Vector3(), _axisX = new THREE.Vector3(), _axisY = new THREE.Vector3(), _axisZ = new THREE.Vector3();
 const _basis = new THREE.Matrix4();
 const _start = new THREE.Vector3(), _end = new THREE.Vector3(), _direction = new THREE.Vector3(), _middle = new THREE.Vector3();

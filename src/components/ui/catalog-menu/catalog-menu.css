@@ -1,0 +1,244 @@
+/* "+" menu (CatalogMenu.jsx): to the left of the right toolbar, vertically centered on the "+" button
+   (usePanelInViewport keeps it in the window), glass style like the materials panel */
+.catalog-menu {
+    position: absolute;
+    right: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+    display: flex;
+    width: 470px;
+    max-height: min(560px, calc(100vh - 32px));
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 15px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+    text-align: left;
+    overflow: hidden;
+}
+.catalog-menu button {
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+
+/* Manufacturers: a column on the left (desktop); on phones the "Brands" button shows them instead */
+.catalog-brands {
+    width: 130px;
+    flex-shrink: 0;
+    padding: .8em .4em .8em .8em;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-y: auto;
+}
+.catalog-brand-list {
+    display: flex;
+    flex-direction: column;
+    gap: .2em;
+}
+.catalog-brand-list button {
+    padding: .45em .6em;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    text-align: left;
+    opacity: .8;
+}
+.catalog-brand-list button:hover { background: rgba(255, 255, 255, 0.1); opacity: 1; }
+.catalog-brand-list button.is-active { opacity: 1; background: rgba(255, 154, 26, 0.3); }
+.catalog-brands-toggle { display: none; }
+
+.catalog-main {
+    flex: 1;
+    min-width: 0;
+    padding: .8em;
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+}
+.catalog-top { display: flex; gap: .4em; }
+.catalog-search {
+    flex: 1;
+    min-width: 0;
+    padding: .5em .7em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.25);
+    color: white;
+    font: inherit;
+}
+.catalog-search::placeholder { color: rgba(255, 255, 255, 0.5); }
+.catalog-search:focus { outline: none; border-color: rgba(255, 154, 26, 0.9); }
+
+/* Active manufacturer: chip with × */
+.catalog-brand-chip {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: .4em;
+    padding: .2em .3em .2em .7em;
+    border: 1px solid rgba(255, 154, 26, 0.9);
+    border-radius: 999px;
+    background: rgba(255, 154, 26, 0.3);
+}
+.catalog-brand-chip button {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(16, 20, 48, 0.6);
+    line-height: 1;
+}
+
+.catalog-body {
+    display: flex;
+    flex-direction: column;
+    gap: .6em;
+    overflow-y: auto;
+    min-height: 0;
+}
+.catalog-back { display: flex; align-items: center; gap: .5em; font-weight: 600; }
+.catalog-back button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 1.3em;
+    line-height: 1;
+}
+
+/* Subtypes: chips like the materials kinds */
+.catalog-chips { display: flex; flex-wrap: wrap; gap: .3em; }
+.catalog-chips button {
+    padding: .25em .7em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: none;
+}
+.catalog-chips button.is-active { border-color: rgba(255, 154, 26, 0.9); background: rgba(255, 154, 26, 0.3); }
+
+/* Categories, models and shapes: tiles with a square thumbnail and the name under it */
+.catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: .5em;
+}
+.catalog-tile {
+    position: relative;
+    min-height: 44px;
+    padding: .4em;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .3em;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.18);
+}
+.catalog-tile:hover { border-color: rgba(255, 154, 26, 0.6); }
+.catalog-tile.is-picked { border-color: rgba(255, 154, 26, 0.95); background: rgba(255, 154, 26, 0.18); }
+.catalog-tile.is-shape { justify-content: center; min-height: 56px; }
+.catalog-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: contain;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.85);
+}
+.catalog-tile-name { font-size: .9em; text-align: center; line-height: 1.15; }
+.catalog-tile-count {
+    position: absolute;
+    top: .4em;
+    right: .4em;
+    min-width: 20px;
+    padding: 0 .3em;
+    border-radius: 999px;
+    background: rgba(16, 20, 48, 0.85);
+    font-size: .85em;
+    line-height: 20px;
+}
+/* Fixed pieces (cannot be moved in first-person VR) */
+.catalog-fixed {
+    position: absolute;
+    top: .4em;
+    left: .4em;
+    padding: 0 .4em;
+    border-radius: 4px;
+    background: rgba(16, 20, 48, 0.85);
+    font-size: .8em;
+    line-height: 18px;
+}
+
+/* Loading / error / no results: a line of text with its buttons */
+.catalog-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .5em;
+    opacity: .85;
+}
+.catalog-note.is-error { color: #ff8a8a; opacity: 1; }
+.catalog-note button {
+    padding: .3em .7em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+}
+
+/* Picked model: its variants and Add */
+.catalog-pick {
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+    padding-top: .6em;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+.catalog-pick-name { font-weight: 600; }
+.catalog-variants { display: flex; flex-wrap: wrap; gap: .3em; }
+.catalog-variants button {
+    display: inline-flex;
+    align-items: center;
+    gap: .4em;
+    padding: .25em .7em .25em .3em;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    background: none;
+}
+.catalog-variants button.is-active { border-color: rgba(255, 154, 26, 0.9); background: rgba(255, 154, 26, 0.3); }
+.catalog-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    background: linear-gradient(135deg, #d8d2c8, #8a8378);
+}
+.catalog-add {
+    padding: .55em;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(35deg, rgba(255, 183, 51, 0.9) 0%, rgba(255, 140, 0, 0.9) 70%);
+    font-weight: 600;
+}
+
+/* ------------------- MOBILE ----------------------
+   Centered card (ui.css); the manufacturers move behind the "Brands" button */
+@media (max-width: 767px) {
+    .ui .catalog-menu { width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 140px); }
+    .ui .catalog-brands { display: none; }
+    .ui .catalog-brands-toggle {
+        display: block;
+        padding: 0 .8em;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.2);
+    }
+    .ui .catalog-brands-toggle.is-active { border-color: rgba(255, 154, 26, 0.9); background: rgba(255, 154, 26, 0.3); }
+}

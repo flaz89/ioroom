@@ -4,6 +4,7 @@ import { YServer } from 'y-partyserver';
 import * as Y from 'yjs';
 import { removeAwarenessStates } from 'y-protocols/awareness';
 import { handleMaterials } from './materials.js';
+import { handleModels } from './models.js';
 import { handleUnderlays } from './underlays.js';
 
 /*
@@ -27,6 +28,7 @@ import { handleUnderlays } from './underlays.js';
 * The list lives in the RoomRegistry Durable Object (rooms cannot be enumerated otherwise).
 *
 * MATERIAL LIBRARY API (/api/materials, /files/materials/...): see materials.js (R2 storage).
+* FURNITURE CATALOG (/api/models, /files/models/...): see models.js (R2 storage).
 * FLOOR PLAN UNDERLAYS (/api/underlays, /files/underlays/...): see underlays.js (R2 storage).
 */
 const STORAGE_KEY = 'document';
@@ -279,6 +281,7 @@ export default {
     async fetch(request, env) {
         return (await handleApi(request, env))
             ?? (await handleMaterials(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
+            ?? (await handleModels(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
             ?? (await handleUnderlays(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env), usedKeys: () => usedUnderlayKeys(env) }))
             ?? (await routePartykitRequest(request, env))
             ?? new Response('Not Found', { status: 404 });

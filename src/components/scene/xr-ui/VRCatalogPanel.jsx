@@ -7,7 +7,7 @@ const ICON_SIZE = 0.03;          // meters, square icon buttons
 const CELL = ICON_SIZE + 0.005;  // meters between cells (button + gap)
 
 /*
-* In-VR catalog: one icon button per entry of the objects catalog (same list as the desktop ObjectsMenu).
+* In-VR catalog: one icon button per entry of the objects catalog (objectsList: the basic shapes of the desktop "+" menu, CatalogMenu.jsx).
 * Entries without an icon fall back to their name. onPick(type) is called with the chosen object type.
 */
 export default function VRCatalogPanel({ onPick, ...groupProps }) {

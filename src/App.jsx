@@ -41,6 +41,10 @@ export default function App() {
       });
   }, []);
 
+  // Furniture catalog (GLB models stored in R2, server/src/models.js): loaded once for everyone. The scene
+  // does not wait for it: furniture shows a placeholder box until its model arrives.
+  useEffect(() => { useStore.getState().loadLibraryModels(); }, []);
+
   // Environment document: always created (undo / redo, sync/history.js). Shared room (?room=<id> in the
   // URL, same scene on every device that opens the link) only when VITE_SYNC_HOST is configured;
   // otherwise local mode (only the owner creates rooms).

@@ -1,6 +1,6 @@
 /*
-* End-to-end check of the "My environments" API, room access and the material library API
-* (server/src/index.js, server/src/materials.js).
+* End-to-end check of the "My environments" API, room access, the material library and furniture catalog APIs
+* (server/src/index.js, server/src/materials.js, server/src/models.js).
 * Needs a local server with a known token:
 *   echo "ADMIN_TOKEN=test" > server/.dev.vars && npm --prefix server run dev
 * then: node server/api.check.mjs   (env SYNC_HOST / ADMIN_TOKEN override localhost:8787 / "test")
@@ -75,5 +75,50 @@ assert.equal(edited.kind, 'wood'); assert.equal(edited.tileSize, 2); assert.equa
 assert.equal((await fetch(`${M}/${mat.id}`, { method: 'DELETE', headers: ownerOnly })).status, 204);
 assert.ok(!(await (await fetch(M)).json()).some((m) => m.id === mat.id));
 assert.equal((await fetch(`http://${H}/files/${mat.maps.color}`)).status, 404);
+
+// Furniture catalog (models.js)
+const MO = `http://${H}/api/models`;
+const glb = new Blob([new TextEncoder().encode('glTF'), new Uint8Array(16)], { type: 'model/gltf-binary' });
+const notGlb = new Blob([new TextEncoder().encode('nope'), new Uint8Array(16)], { type: 'model/gltf-binary' });
+const variants = [{ name: 'Oak', code: 'CH-1', price: 120, vatRate: 22, overrides: { fabric: { tint: '#AABBCC' } } }];
+const modelForm = (over = {}) => form({ name: ' Chair ', brand: 'Acme', category: 'seating', subtype: 'chair', size: '[0.5,0.9,0.5]', fixed: 'false', variants: JSON.stringify(variants), glb, thumb: png, ...over });
+const postModel = (over, headers = ownerOnly) => fetch(MO, { method: 'POST', headers, body: modelForm(over) });
+assert.equal((await postModel({}, {})).status, 401);
+assert.equal((await postModel({ glb: notGlb })).status, 400);
+assert.equal((await postModel({ glb: new Blob([new TextEncoder().encode('glTF'), new Uint8Array(30 * 1024 * 1024)]) })).status, 400);
+assert.equal((await postModel({ variants: '[]' })).status, 400);
+assert.equal((await postModel({ variants: JSON.stringify([{ name: 'x', price: -1 }]) })).status, 400);
+assert.equal((await postModel({ brand: '' })).status, 400);
+assert.equal((await postModel({ subtype: '' })).status, 400);
+assert.equal((await postModel({ variants: JSON.stringify([{ name: 'x', overrides: { fabric: { map: 'materials/x/color.png' } } }]) })).status, 400);
+const model = await (await postModel()).json();
+assert.equal(model.owner, 'system'); assert.equal(model.name, 'Chair'); assert.deepEqual(model.size, [0.5, 0.9, 0.5]); assert.equal(model.fixed, false);
+assert.ok(model.variants[0].id); assert.equal(model.variants[0].overrides.fabric.tint, '#aabbcc');
+assert.ok((await (await fetch(MO)).json()).some((m) => m.id === model.id)); // public list
+const glbServed = await fetch(`http://${H}/files/${model.files.glb}`);
+assert.equal(glbServed.status, 200); assert.equal(glbServed.headers.get('content-type'), 'model/gltf-binary');
+// variant texture: key inside the model's prefix, served, then usable in a PATCH
+const texForm = new FormData(); texForm.append('file', png);
+assert.equal((await fetch(`${MO}/${model.id}/textures`, { method: 'POST', body: texForm })).status, 401);
+const { keys } = await (await fetch(`${MO}/${model.id}/textures`, { method: 'POST', headers: ownerOnly, body: texForm })).json();
+assert.equal((await fetch(`http://${H}/files/${keys[0]}`)).status, 200);
+const patchModel = (body, headers = { ...ownerOnly, 'Content-Type': 'application/json' }) => fetch(`${MO}/${model.id}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
+assert.equal((await patchModel({ fixed: true }, { 'Content-Type': 'application/json' })).status, 401);
+const walnut = { name: 'Walnut', price: 140, overrides: { fabric: { map: keys[0] } } };
+const editedModel = await (await patchModel({ name: 'Armchair', fixed: true, variants: [model.variants[0], walnut] })).json();
+assert.equal(editedModel.name, 'Armchair'); assert.equal(editedModel.fixed, true); assert.equal(editedModel.brand, 'Acme');
+assert.equal(editedModel.variants[0].id, model.variants[0].id); assert.equal(editedModel.variants[1].overrides.fabric.map, keys[0]);
+assert.deepEqual(editedModel.files, model.files);
+// variant textures nobody uses are deleted by the next PATCH of the variants: the dropped one and a stray upload
+const stray = (await (await fetch(`${MO}/${model.id}/textures`, { method: 'POST', headers: ownerOnly, body: texForm })).json()).keys[0];
+assert.equal((await patchModel({ name: 'Armchair 2' })).status, 200); // no variants in the edit: textures untouched
+assert.equal((await fetch(`http://${H}/files/${keys[0]}`)).status, 200);
+assert.equal((await patchModel({ variants: [model.variants[0]] })).status, 200);
+for (const key of [keys[0], stray]) assert.equal((await fetch(`http://${H}/files/${key}`)).status, 404);
+assert.equal((await fetch(`http://${H}/files/${model.files.glb}`)).status, 200);
+assert.equal((await fetch(`${MO}/${model.id}`, { method: 'DELETE' })).status, 401);
+assert.equal((await fetch(`${MO}/${model.id}`, { method: 'DELETE', headers: ownerOnly })).status, 204);
+assert.ok(!(await (await fetch(MO)).json()).some((m) => m.id === model.id));
+for (const key of [model.files.glb, model.files.thumb]) assert.equal((await fetch(`http://${H}/files/${key}`)).status, 404);
 console.log('OK');
 process.exit(0);
