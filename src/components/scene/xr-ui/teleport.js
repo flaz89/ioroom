@@ -1,15 +1,19 @@
-import { floorAt, levelBounds, pointInPolygon, wallFootprint } from '../../../plan/planModel.js';
+import { floorAt, floorElevation, levelBounds, pointInPolygon, wallFootprint } from '../../../plan/planModel.js';
 
 /*
 * TELEPORT (VR, life mode, left hand pinch: TeleportGesture.jsx). Pure functions, world = plan meters
-* (in life mode the board is the identity: plan [x, z] = world x, z; the floor is y = 0).
+* (in life mode the board is the identity: plan [x, z] = world x, z; the ground is y = 0, raised floors at
+* their elevation).
 *
-* teleportArc(origin, dir) -> { points, landing }: the aiming arc, a throw from the hand along `dir` (unit
-*   vector) at ARC_SPEED under gravity, sampled every ARC_STEP s; points: [[x, y, z]] up to where it meets
-*   the floor; landing: [x, z] there, or null when it never comes down within ARC_TIME or MAX_DISTANCE.
+* teleportArc(origin, dir, groundAt) -> { points, landing, height }: the aiming arc, a throw from the hand
+*   along `dir` (unit vector) at ARC_SPEED under gravity, sampled every ARC_STEP s; points: [[x, y, z]] up to
+*   where it meets the ground (groundAt([x, z]) = its height there, default 0); landing: [x, z] there and
+*   height = the ground's height, or landing null when it never comes down within ARC_TIME or MAX_DISTANCE.
+* groundHeight(level, [x, z]): the elevation of the floor there (planModel floorAt), 0 off every floor.
 * canLand(level, [x, z]): a valid place to stand: on a drawn floor and not inside a wall's footprint; a level
 *   with no floors yet: anywhere inside its bounds (walls still excluded).
-* teleportOffset(offset, head, target) -> new offset [x, z] of the XR reference space (XRRigidTransform position
+* teleportOffset(offset, head, target) -> new offset [x, z] of the XR reference space (its y is -height of the
+*   landing: the user's real floor, y 0 of the base space, goes to the floor stood on) (XRRigidTransform position
 *   relative to the session's base space) that puts the head's ground point on `target`: poses in the offset
 *   space are base poses minus the offset, so new = old + head - target (head: current world [x, z]).
 * Calibration knobs (tune on the headset): ARC_SPEED (reach), MAX_DISTANCE.
@@ -22,23 +26,27 @@ const ARC_STEP = 1 / 60;   // s between samples
 const ARC_TIME = 2.5;      // s: longest arc
 export const MAX_DISTANCE = 12; // meters on the floor from the hand
 
-export function teleportArc(origin, dir) {
+export function teleportArc(origin, dir, groundAt = () => 0) {
     const points = [origin];
     const [vx, vy, vz] = dir.map((d) => d * ARC_SPEED);
     for (let t = ARC_STEP; t <= ARC_TIME + 1e-9; t += ARC_STEP) {
         const p = [origin[0] + vx * t, origin[1] + vy * t - (GRAVITY * t * t) / 2, origin[2] + vz * t];
-        if (Math.hypot(p[0] - origin[0], p[2] - origin[2]) > MAX_DISTANCE) return { points, landing: null };
-        if (p[1] <= 0) {
+        if (Math.hypot(p[0] - origin[0], p[2] - origin[2]) > MAX_DISTANCE) return { points, landing: null, height: 0 };
+        const ground = groundAt([p[0], p[2]]);
+        if (p[1] <= ground) {
             const q = points[points.length - 1];
-            const k = q[1] / (q[1] - p[1]); // where the last step crosses y = 0
-            const hit = [q[0] + (p[0] - q[0]) * k, 0, q[2] + (p[2] - q[2]) * k];
+            // where the last step crosses the ground (the step's end height: a 1/60 s step is a few cm)
+            const k = q[1] > ground ? (q[1] - ground) / (q[1] - p[1]) : 1;
+            const hit = [q[0] + (p[0] - q[0]) * k, ground, q[2] + (p[2] - q[2]) * k];
             points.push(hit);
-            return { points, landing: [hit[0], hit[2]] };
+            return { points, landing: [hit[0], hit[2]], height: ground };
         }
         points.push(p);
     }
-    return { points, landing: null };
+    return { points, landing: null, height: 0 };
 }
+
+export const groundHeight = (level, point) => floorElevation(floorAt(level, point) ?? {});
 
 export function canLand(level, point) {
     if (level.walls.some((wall) => {

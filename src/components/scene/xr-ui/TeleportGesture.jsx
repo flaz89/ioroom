@@ -4,7 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { activeLevel } from '../../../plan/planModel';
-import { canLand, isTeleportPose, teleportArc, teleportOffset } from './teleport';
+import { canLand, groundHeight, isTeleportPose, teleportArc, teleportOffset } from './teleport';
 import { measureHandPose } from './handPose';
 
 /*
@@ -57,20 +57,21 @@ export default function TeleportGesture() {
     const dotsRef = useRef();
     const ringRef = useRef();
     const fadeRef = useRef();
-    // aim: { landing: [x, z] | null, valid, head: [x, z] } while pinching; move: per session base / offset
+    // aim: { landing: [x, z] | null, height, valid, head: [x, z] } while pinching; move: per session base / offset
     const aimRef = useRef(null);
     const moveRef = useRef({ session: null, base: null, offset: [0, 0] });
     const fadeStateRef = useRef(null); // { t, target } while fading
 
     useEffect(() => () => { aimRef.current = null; }, []);
 
-    // the reference space moved so that the head's ground point is on `target` ([x, z], world)
-    const teleport = (head, target) => {
+    // the reference space moved so that the head's ground point is on `target` ([x, z], world), standing on a
+    // floor `height` m up (raised floors): the base space's y 0 (the real floor) goes there
+    const teleport = (head, target, height) => {
         const session = gl.xr.getSession();
         const move = moveRef.current;
         if (move.session !== session) Object.assign(move, { session, base: gl.xr.getReferenceSpace(), offset: [0, 0] });
         move.offset = teleportOffset(move.offset, head, target);
-        gl.xr.setReferenceSpace(move.base.getOffsetReferenceSpace(new XRRigidTransform({ x: move.offset[0], y: 0, z: move.offset[1] })));
+        gl.xr.setReferenceSpace(move.base.getOffsetReferenceSpace(new XRRigidTransform({ x: move.offset[0], y: -height, z: move.offset[1] })));
     };
 
     useFrame((_state, delta, frame) => {
@@ -85,7 +86,7 @@ export default function TeleportGesture() {
             fading.t += delta;
             if (viewer) fade.position.set(viewer.x, viewer.y, viewer.z);
             if (fading.target && fading.t >= FADE_OUT) {
-                teleport(fading.head, fading.target);
+                teleport(fading.head, fading.target, fading.height);
                 Object.assign(fading, { target: null, t: 0 });
             }
             fade.material.opacity = fading.target ? Math.min(fading.t / FADE_OUT, 1) : Math.max(1 - fading.t / FADE_IN, 0);
@@ -109,14 +110,15 @@ export default function TeleportGesture() {
 
         if (aim && (!pinching || !inPose)) {
             // released: go. Out of the pose while aiming, or tracking lost (distance null): cancel, no move
-            if (!pinching && distance != null && aim.valid && !blocked) fadeStateRef.current = { t: 0, head: aim.head, target: aim.landing };
+            if (!pinching && distance != null && aim.valid && !blocked) fadeStateRef.current = { t: 0, head: aim.head, target: aim.landing, height: aim.height };
             aimRef.current = null;
         } else if (pinching && aimPose && viewer && inPose && (aim || !blocked)) {
             const p = aimPose.transform.position;
             _dir.set(0, 0, -1).applyQuaternion(aimPose.transform.orientation);
-            const { points, landing } = teleportArc([p.x, p.y, p.z], [_dir.x, _dir.y, _dir.z]);
-            const valid = landing != null && canLand(activeLevel(state.plan), landing);
-            aimRef.current = { landing, valid, head: [viewer.x, viewer.z] };
+            const level = activeLevel(state.plan);
+            const { points, landing, height } = teleportArc([p.x, p.y, p.z], [_dir.x, _dir.y, _dir.z], (point) => groundHeight(level, point));
+            const valid = landing != null && canLand(level, landing);
+            aimRef.current = { landing, height, valid, head: [viewer.x, viewer.z] };
             const color = valid ? ORANGE : RED;
             let count = 0;
             for (let i = DOT_EVERY; i < points.length && count < MAX_DOTS; i += DOT_EVERY, count++) {
@@ -126,7 +128,7 @@ export default function TeleportGesture() {
             dots.instanceMatrix.needsUpdate = true;
             dots.material.color.copy(color);
             ring.visible = landing != null;
-            if (landing) ring.position.set(landing[0], 0.01, landing[1]);
+            if (landing) ring.position.set(landing[0], height + 0.01, landing[1]);
             ring.material.color.copy(color);
             dots.visible = true;
             return;

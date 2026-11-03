@@ -1,6 +1,6 @@
 // Self-check for teleport.js. Run: node src/components/scene/xr-ui/teleport.check.mjs
 import assert from 'node:assert/strict';
-import { MAX_DISTANCE, canLand, isTeleportPose, teleportArc, teleportOffset } from './teleport.js';
+import { MAX_DISTANCE, canLand, groundHeight, isTeleportPose, teleportArc, teleportOffset } from './teleport.js';
 import { DEFAULT_PLAN, activeLevel } from '../../../plan/planModel.js';
 
 // a 45° throw from 1.2 m lands ahead, on the floor, past the top of the arc
@@ -22,6 +22,16 @@ const level = activeLevel(DEFAULT_PLAN);
 assert.equal(canLand(level, [0, 0]), true);
 assert.equal(canLand(level, [-3.07, 0]), false, 'in the left wall');
 assert.equal(canLand(level, [10, 0]), false, 'outside every floor');
+// RAISED FLOOR: the arc lands on its top (+0.40) and says so; around it the ground stays at 0
+const stage = { ...level, floors: [...level.floors, { id: 'stage', points: [[-2, -7], [2, -7], [2, -3], [-2, -3]], elevation: 0.4 }] };
+assert.equal(groundHeight(stage, [0, -5]), 0.4);
+assert.equal(groundHeight(stage, [0, 0]), 0);
+assert.equal(groundHeight(stage, [20, 0]), 0, 'off every floor');
+const onStage = teleportArc([0, 1.2, 0], up45, (point) => groundHeight(stage, point));
+assert.equal(onStage.height, 0.4);
+assert.equal(onStage.points.at(-1)[1], 0.4);
+assert.ok(onStage.landing[1] > landing[1], `lands a bit sooner, on the stage: ${onStage.landing}`);
+assert.equal(teleportArc([0, 1.2, 0], up45).height, 0);
 // no floors yet: inside the walls' bounds
 assert.equal(canLand({ ...level, floors: [] }, [1, 1]), true);
 assert.equal(canLand({ ...level, floors: [] }, [10, 0]), false);

@@ -1,4 +1,4 @@
-import { priceSnapshot } from '../materials/billOfQuantities.js';
+import { priceSnapshot } from '../materials/pricing.js';
 
 /*
 * Furniture variants (plan R5, KTD4), pure: which variant an object shows and what it changes on each

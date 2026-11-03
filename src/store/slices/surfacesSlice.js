@@ -1,4 +1,4 @@
-import { priceSnapshot } from '../../materials/billOfQuantities';
+import { priceSnapshot } from '../../materials/pricing';
 import { activeLevel } from '../../plan/planModel';
 import { PLAIN_ID } from '../../materials/library';
 

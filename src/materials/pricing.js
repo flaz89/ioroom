@@ -28,3 +28,10 @@ export function priceBreakdown(quantity, price, vatRate = DEFAULT_VAT) {
     const vat = cents(net * (vatRate ?? DEFAULT_VAT) / 100);
     return { net, vat, total: cents(net + vat) };
 }
+
+// Product card frozen into a project (only what the bill needs); null when the material has no price yet
+export function priceSnapshot(material) {
+    if (material?.price == null) return null;
+    const { name, code = null, url = null, price, vatRate = null, waste = null } = material;
+    return { name, code, url, price, vatRate, waste };
+}

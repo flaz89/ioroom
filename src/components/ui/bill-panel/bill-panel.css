@@ -76,3 +76,11 @@
 .bill-printable > * { flex-shrink: 0; }
 /* phones: the material column keeps a readable width, the numbers scroll sideways */
 .bill-table td:first-child { min-width: 10em; }
+
+/* Section heading of each table (Materials, Furniture): orange fading out before the number columns */
+.bill-table th.bill-section {
+    opacity: 1;
+    font-weight: 700;
+    background: linear-gradient(90deg, rgba(255, 154, 26, 0.55), rgba(255, 154, 26, 0));
+    border-radius: 6px 0 0 6px;
+}

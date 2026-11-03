@@ -67,6 +67,15 @@ assert.equal(surfaceLabel('floor', level), 'Floor');
         }
     }
     assert.ok(Math.abs(maxY - 0.3) < 1e-6 && sides === 4 * 4, 'top at +0.30, 4 side quads');
+    // bill: only the visible step counts (the open front, 6 m × 0.30; the three walls cover the others)
+    const flat = surfaceAreas(level).floor;
+    assert.ok(Math.abs(surfaceAreas(raised).floor - (flat + 6 * 0.3)) < 0.01, `raised floor area ${surfaceAreas(raised).floor}`);
+    // a 2 × 2 platform +0.45 on a floor raised +0.30: 4 sides × 2 m × 0.15 m showing above it
+    const platform = { id: 'p', points: [[-1, -1], [1, -1], [1, 1], [-1, 1]], elevation: 0.45 };
+    const areas = surfaceAreas({ ...raised, floors: [...raised.floors, platform] });
+    assert.ok(Math.abs(areas.p - (4 + 4 * 2 * 0.15)) < 0.01, `platform area ${areas.p}`);
+    // a lowered floor (-0.20, a pit in the middle): its sides from the floor around down to its bottom
+    assert.ok(Math.abs(surfaceAreas({ ...level, floors: [...level.floors, { ...platform, elevation: -0.2 }] }).p - (4 + 4 * 2 * 0.2)) < 0.01);
 }
 // CEILING (area tool, key 'ceilings'): a face at the wall height facing down, own id, area and label
 {

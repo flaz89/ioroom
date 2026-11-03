@@ -1,4 +1,5 @@
 import { DEFAULT_VAT, priceBreakdown } from './pricing.js';
+import { variantOf, variantPriceKey } from '../models/variants.js';
 
 /*
 * Bill of quantities ("computo metrico") of the room surfaces: one row per material in use (Plain is never
@@ -38,18 +39,45 @@ export function billOfQuantities({ surfaces, areas, snapshots, library, plainId 
             faces, area, waste, quantity, price: priced ? card.price : null, vatRate, frozen: snapshot != null, ...amounts
         };
     }).sort((a, b) => a.name.localeCompare(b.name));
-    const priced = rows.filter((row) => row.net != null);
-    const totals = {
-        net: round2(priced.reduce((sum, row) => sum + row.net, 0)),
-        vat: round2(priced.reduce((sum, row) => sum + row.vat, 0)),
-        total: round2(priced.reduce((sum, row) => sum + row.total, 0))
-    };
-    return { rows, totals, unpriced: rows.length - priced.length };
+    return { rows, totals: sumTotals(rows), unpriced: rows.filter((row) => row.net == null).length };
 }
 
-// Product card frozen into a project (only what the bill needs); null when the material has no price yet
-export function priceSnapshot(material) {
-    if (material?.price == null) return null;
-    const { name, code = null, url = null, price, vatRate = null, waste = null } = material;
-    return { name, code, url, price, vatRate, waste };
+/*
+* Furniture rows of the bill (plan U9): one row per catalog model + variant in the scene (primitives are never
+* billed), with the number of pieces. Price per piece: the one frozen in the project (snapshots
+* `model:<id>:<variant>`, models/variants.js), else the current catalog; a model deleted from the catalog
+* keeps its snapshot, or shows up without a price.
+* input: instances (store objects.instances), snapshots, models (store libraryModels).
+* output: { rows: [{ key, name, brand, variant, code, url, quantity, price, vatRate, frozen, net, vat, total }],
+*          totals: { net, vat, total }, unpriced } (same shape as billOfQuantities).
+*/
+export function furnitureBill({ instances, snapshots, models }) {
+    const counts = new Map();
+    for (const object of instances) {
+        if (object.type !== 'model') continue;
+        const key = variantPriceKey(object.modelId, object.variantId);
+        counts.set(key, { object, quantity: (counts.get(key)?.quantity ?? 0) + 1 });
+    }
+    const rows = [...counts.entries()].map(([key, { object, quantity }]) => {
+        const model = models.find((item) => item.id === object.modelId);
+        const variant = model ? variantOf(model, object.variantId) : null;
+        const snapshot = snapshots[key];
+        const card = snapshot ?? (model
+            ? { name: model.name, brand: model.brand, variant: variant?.name, code: variant?.code, url: model.url, price: variant?.price, vatRate: variant?.vatRate }
+            : { name: 'Deleted furniture' });
+        const vatRate = card.vatRate ?? DEFAULT_VAT;
+        const priced = card.price != null;
+        const amounts = priced ? priceBreakdown(quantity, card.price, vatRate) : { net: null, vat: null, total: null };
+        return {
+            key, name: card.name, brand: card.brand ?? null, variant: card.variant ?? null, code: card.code || null, url: card.url || null,
+            quantity, price: priced ? card.price : null, vatRate, frozen: snapshot != null, ...amounts
+        };
+    }).sort((a, b) => a.name.localeCompare(b.name) || (a.variant ?? '').localeCompare(b.variant ?? ''));
+    return { rows, totals: sumTotals(rows), unpriced: rows.filter((row) => row.net == null).length };
+}
+
+// { net, vat, total } of priced rows (or of other totals), rounded to cents
+export function sumTotals(items) {
+    const sum = (key) => round2(items.reduce((total, item) => total + (item[key] ?? 0), 0));
+    return { net: sum('net'), vat: sum('vat'), total: sum('total') };
 }

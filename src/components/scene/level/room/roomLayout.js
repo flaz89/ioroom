@@ -249,7 +249,7 @@ function roofGeometry(facets, holesByEdge = {}) {
 * The vertical sides of a floor polygon raised (or lowered) by `elevation`: one quad per edge from 0 to the
 * elevation, facing outwards; UVs in meters (along the edge, up), so a pattern looks like the floor's.
 * ponytail: sides are built all round, also where a wall covers them (hidden inside it: no visible harm);
-* the bill of quantities does not count them yet.
+* the bill of quantities counts only the visible part (stepSidesArea).
 */
 function stepSides(points, elevation) {
     const [y0, y1] = elevation > 0 ? [0, elevation] : [elevation, 0];
@@ -264,6 +264,36 @@ function stepSides(points, elevation) {
         const u0 = run, u1 = (run += length);
         return quad([[p[0], y0, p[1]], [q[0], y0, q[1]], [q[0], y1, q[1]], [p[0], y1, p[1]]], normal, [[u0, y0], [u1, y0], [u1, y1], [u0, y1]]);
     }); // no zero-length edges: planModel.floorPolygon drops consecutive duplicates
+}
+
+/*
+* Visible area of a raised (or lowered) floor's step sides, for the bill: along each edge, every 5 cm, the
+* point 2 cm outside tells what is in front of the side: a wall (covered: nothing), another floor (only the
+* difference of height shows) or nothing (the whole step, from 0).
+* ponytail: sampled every 5 cm (error under 5 cm × step per change of neighbour); exact clipping if needed.
+*/
+const SIDE_SAMPLE = 0.05, SIDE_PROBE = 0.02;
+function stepSidesArea(level, floor, footprints) {
+    const elevation = floorElevation(floor);
+    if (Math.abs(elevation) < 1e-6) return 0;
+    const { points } = floor;
+    let area = 0;
+    points.forEach((p, i) => {
+        const q = points[(i + 1) % points.length];
+        const length = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        let normal = [(q[1] - p[1]) / length, -(q[0] - p[0]) / length];
+        if (pointInPolygon([(p[0] + q[0]) / 2 + normal[0] * 1e-4, (p[1] + q[1]) / 2 + normal[1] * 1e-4], points)) normal = normal.map((v) => -v);
+        const samples = Math.max(1, Math.ceil(length / SIDE_SAMPLE));
+        for (let k = 0; k < samples; k++) {
+            const t = (k + 0.5) / samples;
+            const probe = [p[0] + (q[0] - p[0]) * t + normal[0] * SIDE_PROBE, p[1] + (q[1] - p[1]) * t + normal[1] * SIDE_PROBE];
+            if (footprints.some((footprint) => pointInPolygon(probe, footprint))) continue;
+            const neighbour = floorElevation(floorAt(level, probe) ?? {});
+            const height = elevation > 0 ? elevation - Math.max(0, neighbour) : Math.min(0, neighbour) - elevation;
+            if (height > 0) area += (length / samples) * height;
+        }
+    });
+    return area;
 }
 
 /*
@@ -908,13 +938,15 @@ export function roomFaces(level) {
 * Area of every face id of a level: { surfaceId: m² }, from the plan data (no geometry): floor polygons;
 * inner face = inner line x height (exactly the side the room sees); outer = outer line x height; edge =
 * top (footprint) + free ends + opening reveals (no threshold where a floor fills the opening: that strip
-* counts for the floor). Openings are subtracted from the inner / outer faces
+* counts for the floor); a raised floor adds its visible step sides (stepSidesArea). Openings are subtracted
+* from the inner / outer faces
 * (the part of each opening within that face). Rounded to cm².
 */
 export function surfaceAreas(level) {
     const areas = {};
     const put = (id, value) => { areas[id] = Math.round(((areas[id] ?? 0) + value) * 100) / 100; };
-    for (const floor of level.floors) put(floor.id, polygonArea(floor.points));
+    const footprints = level.walls.map((wall) => { const f = wallFootprint(wall, level.walls); return [f.a, f.b, f.bOut, f.aOut]; });
+    for (const floor of level.floors) put(floor.id, polygonArea(floor.points) + stepSidesArea(level, floor, footprints));
     // ceilings: a pitched one counts its true sloped area (plan area x sqrt(1 + slope²))
     for (const ceiling of level.ceilings ?? []) {
         const facets = roofFacets(ceiling, level);
