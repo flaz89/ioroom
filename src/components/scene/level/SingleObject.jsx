@@ -12,7 +12,7 @@ import { NotePin } from "../notes/Notes";
 import { meshSpherecast } from "../controls/meshSpherecast";
 import { objectMeshes } from "./objectMeshes";
 import { setCursorGrabbing, setCursorHover } from "../sceneCursor";
-import { useModel } from "../../../models/catalog";
+import { isFixedPiece, useModel } from "../../../models/catalog";
 import { tintedMaterials, useModelMesh } from "../../../models/useModelMesh";
 import { acceleratedRaycast } from "three-mesh-bvh";
 
@@ -101,6 +101,11 @@ const HOVER_TINT = 0.35;               // strength of the hover tint (emissive i
 // furniture: the glow goes through the color texture (useModelMesh.js tintedMaterials), so 1 = twice as bright
 const MODEL_HOVER_TINT = 3;
 const HOVER_FALLBACK_COLOR = '#ffffff'; // hover tint without a shared room
+// XR: a ray resting this long on a furniture piece selects it and opens its product card (xr-ui/VRObjectPanel.jsx)
+const CARD_DWELL_MS = 1500;
+// first-person XR, press on a FIXED piece (refused grab): grey outline for this long (not orange = selected, red = delete)
+const FIXED_FLASH_COLOR = '#9aa0a6';
+const FIXED_FLASH_MS = 500;
 const REMOTE_FOLLOW_RATE = 20; // 1/s: how fast an object follows another device's drag (higher = snappier)
 const _twist = new THREE.Quaternion();
 
@@ -154,6 +159,17 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     const modelMesh = useModelMesh(useModel(data.modelId), data.variantId);
     // true while a grab started on a locked object (or lost the tie): the grab does nothing until released
     const blockedGrabRef = useRef(false);
+    // first-person XR ('free'): a FIXED piece is never grabbed; trying flashes a grey outline (FIXED_FLASH_MS)
+    const [fixedFlash, setFixedFlash] = useState(false);
+    const fixedFlashTimer = useRef();
+    useEffect(() => () => clearTimeout(fixedFlashTimer.current), []);
+    const refuseFixedGrab = () => {
+        if (pointerRotation !== 'free' || !isFixedPiece(useStore.getState(), data.id)) return false;
+        setFixedFlash(true);
+        clearTimeout(fixedFlashTimer.current);
+        fixedFlashTimer.current = setTimeout(() => setFixedFlash(false), FIXED_FLASH_MS);
+        return true;
+    };
 
     // true while the object itself is grabbed: the gizmo is hidden and comes back on release
     // false, or how it is grabbed: 'ray' (mouse, controller/hand ray) / 'near' (grip or pinch touching it)
@@ -194,6 +210,9 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // Registered with addEventListener (not onPointerDown props) because pmndrs pointer events
     // ignore R3F prop handlers on objects that already have three.js listeners (Handle uses them),
     // and in a layout effect so they run before useHandle binds its own listeners.
+    // read by the listeners below (bound once, before useHandle's: see above)
+    const dwellRef = useRef({});
+    useLayoutEffect(() => { dwellRef.current = { pointerRotation, isModel, id: data.id }; });
     useLayoutEffect(() => {
         const mesh = meshRef.current;
         const setOrbitEnabled = (enabled) => {
@@ -203,8 +222,24 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
         const lock = () => setOrbitEnabled(false);
         const unlock = () => setOrbitEnabled(true);
         // ray pointers only (mouse, controller/hand ray): a hand or controller touching the object never tints it
-        const enter = (event) => { if (isRayPointer(event)) setIsHovered(true); };
-        const leave = (event) => { if (isRayPointer(event)) setIsHovered(false); };
+        // XR (not the mouse): a ray resting CARD_DWELL_MS on a catalog piece opens its card; a press, leaving
+        // or a grab in the meantime cancels it
+        let dwell;
+        const cancelDwell = () => clearTimeout(dwell);
+        const enter = (event) => {
+            if (!isRayPointer(event)) return;
+            setIsHovered(true);
+            cancelDwell();
+            if (dwellRef.current.pointerRotation === 'none' || !dwellRef.current.isModel) return;
+            dwell = setTimeout(() => {
+                const state = useStore.getState();
+                if (state.objects.grabbedId != null || state.workspace !== 'designer' || state.notes.placing || state.measures.active) return;
+                state.selectObject(dwellRef.current.id);
+                state.showPanel('object');
+            }, CARD_DWELL_MS);
+        };
+        const leave = (event) => { if (isRayPointer(event)) { setIsHovered(false); cancelDwell(); } };
+        mesh.addEventListener('pointerdown', cancelDwell);
         mesh.addEventListener('pointerdown', lock);
         mesh.addEventListener('pointerup', unlock);
         mesh.addEventListener('pointercancel', unlock);
@@ -216,6 +251,8 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
             mesh.removeEventListener('pointercancel', unlock);
             mesh.removeEventListener('pointerenter', enter);
             mesh.removeEventListener('pointerleave', leave);
+            mesh.removeEventListener('pointerdown', cancelDwell);
+            cancelDwell();
         };
     }, [getThree]);
 
@@ -246,8 +283,9 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
         handle: meshRef,
         // post-it placing mode (scene/notes/Notes.jsx): the press sticks a note, it never grabs
         // builder mode (workspaceSlice.js): furniture is locked while the environment is being built
+        // fixed pieces in first-person XR: refused (selection still works: handleClick)
         filter: () => !useStore.getState().notes.placing && !useStore.getState().measures.active
-            && useStore.getState().workspace !== 'builder',
+            && useStore.getState().workspace !== 'builder' && !refuseFixedGrab(),
         translate: true,
         rotate: HANDLE_ROTATE[pointerRotation],
         scale: false,
@@ -470,6 +508,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
                         Keyed by the geometry: the outline follows the furniture's placeholder -> GLB swap */}
                     {lockColor != null
                         ? <SelectionOutline key={modelMesh.geometry.uuid} color={lockColor} thickness={3} />
+                        : fixedFlash ? <SelectionOutline key={`fixed${modelMesh.geometry.uuid}`} color={FIXED_FLASH_COLOR} thickness={3} />
                         : isSelected && <SelectionOutline key={modelMesh.geometry.uuid} color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
                 </mesh>
                 {notes.map((note) => <NotePin key={note.id} note={note} objectScale={data.scale} />)}

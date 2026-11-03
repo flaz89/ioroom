@@ -115,6 +115,18 @@ export async function enterXR(mode) {
 }
 
 /*
+* Opens a web page from inside VR (e.g. the manufacturer page of a product card) in a new tab, inside the
+* press (the browser blocks pop-ups opened later). The immersive session stays (Flavio 3/11: ending it closed
+* the experience). Quest Browser keeps the tab behind the immersive scene: the user brings the browser
+* panel up over the paused scene with the Meta button; a web page cannot do that itself yet (WebXR has no
+* API for the overlay browser, proposal immersive-web/webxr#1365; tab.focus() tried on the Quest 3/11: no effect).
+*/
+export function openOutsideXR(url) {
+    const tab = window.open(url, '_blank');
+    if (tab) tab.opener = null; // the page cannot reach back into the app
+}
+
+/*
 * Whether this browser can start an immersive session of `mode` right now. Re-checked on 'devicechange',
 * so on a Windows PC a headset connected later through Quest Link / Air Link / SteamVR (OpenXR) enables
 * the desktop VR button without a reload. Starting the session still needs a click (WebXR rule).

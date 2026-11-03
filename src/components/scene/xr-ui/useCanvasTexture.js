@@ -71,3 +71,24 @@ export function wrapLines(ctx, text, maxWidth, maxLines) {
     kept[maxLines - 1] = `${kept[maxLines - 1].slice(0, -1)}…`;
     return kept;
 }
+
+const THUMB_PIXELS = 128;
+
+/*
+* Small thumbnails for the VR panels (material color maps, furniture thumbnails): url -> ImageBitmap (THUMB_PIXELS square).
+* Decoded AND downscaled off the main thread (createImageBitmap with resize), and cached for the session
+* (reopening the panel costs nothing). All the pending ones are fetched together and handed over in ONE
+* state update, so the grid canvas is redrawn / uploaded once, not once per thumbnail.
+*/
+const thumbnailCache = new Map(); // url -> Promise<ImageBitmap | null>
+
+export function loadThumbnail(url) {
+    if (!thumbnailCache.has(url)) {
+        thumbnailCache.set(url, fetch(url, { mode: 'cors' })
+            .then((response) => response.blob())
+            .then((blob) => createImageBitmap(blob, { resizeWidth: THUMB_PIXELS, resizeHeight: THUMB_PIXELS, resizeQuality: 'medium' }))
+            .catch(() => null));
+    }
+    return thumbnailCache.get(url);
+}
+

@@ -4,7 +4,7 @@ import { useXR } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { preloadMaterialTextures, useMaterialList } from '../../../materials/library';
 import { MATERIAL_CATEGORIES, kindsIn, visibleMaterials } from '../../../materials/grouping';
-import { drawPanel, useCanvasTexture } from './useCanvasTexture';
+import { drawPanel, loadThumbnail, useCanvasTexture } from './useCanvasTexture';
 import VRButton from './VRButton';
 import VRGrabBar from './VRGrabBar';
 import VRMaterialCard, { CARD_WIDTH } from './VRMaterialCard';
@@ -47,30 +47,11 @@ const TITLE_H = 0.04;
 const WIDTH = COLUMNS * CELL_W + PAD * 2;
 const PIXELS_PER_METER = 4000;
 const GRID_PIXELS_PER_METER = 2500; // the balls grid: ~650 px wide, enough at arm's length, 40% of the upload
-const THUMB_PIXELS = 128;    // thumbnails of the color maps
 const ACTIVE = '#ff9628'; // dragged ball ring
 const CARD_OPEN_MS = 1000;   // ray resting on a ball -> its card (VRMaterialCard.jsx)
 const CARD_SWITCH_MS = 350;  // card open, resting on another ball -> switch (hand rays jitter across balls)
 const CARD_CLOSE_MS = 300;   // after leaving the balls
 const HOVER_RING = '#ffffff';
-
-/*
-* Small thumbnails of the color maps: id -> ImageBitmap (THUMB_PIXELS square).
-* Decoded AND downscaled off the main thread (createImageBitmap with resize), and cached for the session
-* (reopening the panel costs nothing). All the pending ones are fetched together and handed over in ONE
-* state update, so the grid canvas is redrawn / uploaded once, not once per thumbnail.
-*/
-const thumbnailCache = new Map(); // url -> Promise<ImageBitmap | null>
-
-function loadThumbnail(url) {
-    if (!thumbnailCache.has(url)) {
-        thumbnailCache.set(url, fetch(url, { mode: 'cors' })
-            .then((response) => response.blob())
-            .then((blob) => createImageBitmap(blob, { resizeWidth: THUMB_PIXELS, resizeHeight: THUMB_PIXELS, resizeQuality: 'medium' }))
-            .catch(() => null));
-    }
-    return thumbnailCache.get(url);
-}
 
 function useThumbnails(materials) {
     const [thumbnails, setThumbnails] = useState({});

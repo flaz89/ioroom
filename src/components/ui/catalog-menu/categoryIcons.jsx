@@ -1,7 +1,8 @@
 /*
 * Line symbols of the "+" menu (CatalogMenu.jsx): catalog categories by id (models/grouping.js) and basic
 * shapes by type (objectsList in objectsSlice.js). 48×48, stroke in currentColor; an id without its own
-* symbol gets a box.
+* symbol gets a box. `color` / `width` / `height`: for the VR panel, which draws them as images
+* (xr-ui/buttonFace.js loadSvgImage passes them).
 */
 const paths = {
     // chair from the front: framed backrest with a rail, seat, front legs long and back legs short
@@ -42,16 +43,16 @@ const shapes = {
     knot: <path d="M24.0 19.4 26.9 19.6 29.7 20.2 32.3 21.3 34.6 22.6 36.5 24.2 37.9 26.1 38.9 28.0 39.3 29.9 39.2 31.8 38.5 33.4 37.4 34.8 35.9 35.8 34.0 36.4 31.9 36.5 29.6 36.2 27.2 35.4 24.9 34.1 22.7 32.3 20.8 30.2 19.2 27.8 17.9 25.2 17.0 22.4 16.6 19.7 16.6 17.0 17.1 14.6 18.0 12.4 19.1 10.6 20.6 9.3 22.3 8.5 24.0 8.2 25.7 8.5 27.4 9.3 28.9 10.6 30.0 12.4 30.9 14.6 31.4 17.0 31.4 19.7 31.0 22.4 30.1 25.2 28.8 27.8 27.2 30.2 25.3 32.3 23.1 34.1 20.8 35.4 18.4 36.2 16.1 36.5 14.0 36.4 12.1 35.8 10.6 34.8 9.5 33.4 8.8 31.8 8.7 29.9 9.1 28.0 10.1 26.1 11.5 24.2 13.4 22.6 15.7 21.3 18.3 20.2 21.1 19.6Z" />
 };
 
-export const ShapeIcon = ({ type }) => <Icon>{shapes[type]}</Icon>;
+export const ShapeIcon = ({ type, ...size }) => <Icon {...size}>{shapes[type]}</Icon>;
 
-export default function CategoryIcon({ id }) {
-    return <Icon>{paths[id]}</Icon>;
+export default function CategoryIcon({ id, ...size }) {
+    return <Icon {...size}>{paths[id]}</Icon>;
 }
 
-function Icon({ children }) {
+function Icon({ children, color, width, height }) {
     return (
         <svg className="catalog-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" color={color} width={width} height={height}>
             {children ?? <rect x="10" y="10" width="28" height="28" rx="2" />}
         </svg>
     );

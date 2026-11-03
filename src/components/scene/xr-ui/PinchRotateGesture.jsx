@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { TWIST_TO_YAW, twistAngle, twistWithDeadzone } from '../controls/surfaceDrag';
+import { isFixedPiece } from '../../../models/catalog';
 import { isLockedByOther } from '../../../sync/presence';
 
 /*
@@ -49,7 +50,9 @@ export default function PinchRotateGesture() {
         const { objects, settings, updateObject } = useStore.getState();
         const distance = _thumb.copy(thumb.transform.position).distanceTo(_middle.copy(middle.transform.position));
         const pinching = distance < (rotationRef.current ? PINCH_END : PINCH_START);
-        if (!pinching || objects.selectedId == null || objects.grabbedId != null || isLockedByOther(objects.selectedId)) {
+        // fixed pieces never rotate in first person (tabletop: they do)
+        const fixed = useStore.getState().view.mode !== 'tabletop' && isFixedPiece(useStore.getState(), objects.selectedId);
+        if (!pinching || objects.selectedId == null || objects.grabbedId != null || isLockedByOther(objects.selectedId) || fixed) {
             rotationRef.current = null;
             return;
         }

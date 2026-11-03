@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { Vector3 } from 'three';
+import { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { XRSpace, useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
@@ -8,7 +7,6 @@ import { svg } from '../../../utils/svg-logos';
 import { useFacingViewer } from './useFacingViewer';
 import WristBoard from './WristBoard';
 import { BUTTON_SIZE } from './layout';
-import VRCatalogPanel from './VRCatalogPanel';
 import VRStatsPanel from './VRStatsPanel';
 import { PointerFilterContext, acceptsWristPointer } from './pointers';
 import { undo, redo } from '../../../sync/history';
@@ -27,10 +25,8 @@ const MENU_POSITION = [0.002, 0.07, 0];        // meters: above the back of the 
 const MENU_ROTATION = [-Math.PI / 2,  Math.PI / 2, -Math.PI / 2];  // calibrated on the headset
 
 const BUTTON_STEP = BUTTON_SIZE[1] + 0.008; // meters between stacked buttons (height + gap)
-const SIDE_PANEL_X = 0.115;  // meters: catalog panel center, to the side of the button column
-const SPAWN_DISTANCE = 1.2;  // meters in front of the user for objects added at 1:1 scale
 const STEP_X = BUTTON_SIZE[0] + 0.006; // meters: snap step buttons, to the right of their snap toggle
-const BUTTONS_X = -STEP_X;   // meters: the button columns sit one column left, clear of the catalog panel
+const BUTTONS_X = -STEP_X;   // meters: the button columns sit one column left of the wrist
 
 // Next step in the list (wraps around); a value not in the list restarts from the first
 const nextStep = (steps, current) => steps[(steps.indexOf(current) + 1) % steps.length];
@@ -50,8 +46,6 @@ function tabletopIcon(ctx, x, y, s) {
     ctx.strokeRect(x - s * 0.12, y - s * 0.38, s * 0.24, s * 0.2); // the model on it
 }
 
-const _eye = new Vector3();
-const _forward = new Vector3();
 
 export default function WristMenu() {
     const controller = useXRInputSourceState('controller', 'left');
@@ -66,7 +60,6 @@ export default function WristMenu() {
         setHandMenuVisible(isVisible);
         return () => setHandMenuVisible(false);
     }, [isVisible, setHandMenuVisible]);
-    const [isCatalogOpen, setIsCatalogOpen] = useState(false);
     const getThree = useThree((state) => state.get);
 
     const isPerfVisible = useStore((state) => state.perfOpen);
@@ -80,6 +73,7 @@ export default function WristMenu() {
     useEffect(() => { getThree().gl.xr.setFoveation(xrFoveation); }, [getThree, xrFoveation]);
     const isSunOpen = useStore((state) => state.openPanel === 'sun'); // VRSunPanel (rendered by Level, in world space)
     const isMaterialsOpen = useStore((state) => state.openPanel === 'materials'); // VRMaterialsPanel (same)
+    const isCatalogOpen = useStore((state) => state.openPanel === 'objects'); // VRCatalogPanel (same)
     // post-it placing mode: the next trigger/pinch aimed at a surface sticks a note (scene/notes/Notes.jsx)
     const isPlacingNote = useStore((state) => state.notes.placing);
     const setPlacingNote = useStore((state) => state.setPlacingNote);
@@ -95,23 +89,6 @@ export default function WristMenu() {
     const setGridSnapStep = useStore((state) => state.setGridSnapStep);
     const toggleRotationSnap = useStore((state) => state.toggleRotationSnap);
     const setRotationSnapStep = useStore((state) => state.setRotationSnapStep);
-    const addObject = useStore((state) => state.addObject);
-
-    // Tabletop: in the middle of the model. 1:1: on the floor in front of the user (board = identity).
-    const addFromCatalog = (type) => {
-        if (isTabletop) {
-            addObject(type);
-        } else {
-            const camera = getThree().camera;
-            camera.getWorldPosition(_eye);
-            camera.getWorldDirection(_forward).setY(0);
-            if (_forward.lengthSq() < 1e-6) _forward.set(0, 0, -1);
-            _forward.normalize();
-            addObject(type, [_eye.x + _forward.x * SPAWN_DISTANCE, 0.5, _eye.z + _forward.z * SPAWN_DISTANCE]);
-        }
-        setIsCatalogOpen(false);
-    };
-
     // Main page: [col, row] cells, rows stacked along the menu's local +Y (the palm becomes the control board)
     const buttons = [
         { id: 'perf', col: 0, row: 0, svg: svg.performance, active: isPerfVisible, onClick: togglePerf },
@@ -122,7 +99,7 @@ export default function WristMenu() {
         { id: 'tabletop', col: 0, row: 1, icon: tabletopIcon, active: isTabletop, onClick: toggleTabletop },
         { id: 'materials', col: 1, row: 1, svg: svg.materials, active: isMaterialsOpen, onClick: () => togglePanel('materials') },
         { id: 'redo', col: 2, row: 1, svg: svg.redo, onClick: redo },
-        { id: 'add', col: 0, row: 2, svg: svg.add, active: isCatalogOpen, onClick: () => setIsCatalogOpen(!isCatalogOpen) },
+        { id: 'add', col: 0, row: 2, svg: svg.add, active: isCatalogOpen, onClick: () => togglePanel('objects') },
         { id: 'note', col: 1, row: 2, svg: svg.note, active: isPlacingNote, onClick: () => setPlacingNote(!isPlacingNote) },
         { id: 'ruler', col: 2, row: 2, svg: svg.ruler, active: isMeasuring, onClick: () => setMeasuring(!isMeasuring) },
         // Snaps: toggle on the left, current step on the right (press = next step, turns the snap on)
@@ -158,8 +135,6 @@ export default function WristMenu() {
                             <WristBoard buttons={buttons} size={BUTTON_SIZE} step={[STEP_X, BUTTON_STEP]} />
                             {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.076, 0]} />}
                         </group>
-                        {/* catalog: NOT shifted with the buttons (it overlapped them in its old relative place) */}
-                        {isCatalogOpen && <VRCatalogPanel onPick={addFromCatalog} position={[SIDE_PANEL_X, BUTTON_STEP, 0]} />}
                     </PointerFilterContext.Provider>
                 </group>
 

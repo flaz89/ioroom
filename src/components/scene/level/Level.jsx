@@ -12,6 +12,8 @@ import TeleportGesture from "../xr-ui/TeleportGesture";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import VRNotePanel from "../xr-ui/VRNotePanel";
 import VRMaterialsPanel from "../xr-ui/VRMaterialsPanel";
+import VRCatalogPanel from "../xr-ui/VRCatalogPanel";
+import VRObjectPanel from "../xr-ui/VRObjectPanel";
 import VRMeasurePanel from "../xr-ui/VRMeasurePanel";
 import { useStore } from "../../../store/appStore";
 import Light from "../../light/Light";
@@ -33,6 +35,8 @@ export default function Level() {
     const isTabletop = useStore((state) => state.view.mode === 'tabletop') && isXR;
     const isSunPanelOpen = useStore((state) => state.openPanel === 'sun');
     const isMaterialsPanelOpen = useStore((state) => state.openPanel === 'materials');
+    const isCatalogPanelOpen = useStore((state) => state.openPanel === 'objects');
+    const isObjectPanelOpen = useStore((state) => state.openPanel === 'object');
 
     return(
         <>
@@ -69,6 +73,10 @@ export default function Level() {
             {isXR && isSunPanelOpen && <VRSunPanel />}
             {/* VR || AR: materials panel (wrist button), drag a ball with the ray onto a floor/wall face */}
             {isXR && isMaterialsPanelOpen && <VRMaterialsPanel />}
+            {/* VR || AR: "+" catalog (wrist button), first person and tabletop */}
+            {isXR && isCatalogPanelOpen && <VRCatalogPanel />}
+            {/* VR || AR: product card of the selected piece (ray resting 1.5 s on it, SingleObject.jsx) */}
+            {isXR && isObjectPanelOpen && <VRObjectPanel />}
             {/* VR || AR: actions of the selected ruler measure (Save / Delete) */}
             {isXR && <VRMeasurePanel />}
             {/* VR || AR: post-it editor (open note or new one), world space, in front of the user */}

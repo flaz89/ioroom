@@ -47,7 +47,7 @@ const _eyes = new Vector3();
 * environments...) left open before entering VR are not shown in VR and do not count. A new VR panel must
 * be added here.
 */
-const VR_PANELS = ['sun', 'materials'];
+const VR_PANELS = ['sun', 'materials', 'objects', 'object'];
 const isAnyPanelOpen = (state) => state.view.handMenuVisible || VR_PANELS.includes(state.openPanel)
     || state.measures.selectedId != null || state.notes.draft != null || state.notes.openId != null;
 
