@@ -1,0 +1,63 @@
+/* Product card of the selected furniture piece (ObjectCard.jsx): under the compass (.top-center, ui.css),
+   collapsed to a pill with the name, expanded to the card */
+.object-card {
+    max-width: calc(100vw - 140px);
+    max-height: calc(100vh - 8em);
+    overflow-y: auto;
+    pointer-events: all;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6), 0 2px 6px rgba(10, 20, 60, 0.35);
+    color: white;
+    font-family: "SUSE Mono", monospace;
+    font-size: .8em;
+}
+.object-card button { font: inherit; color: inherit; cursor: pointer; }
+.object-card.is-open { width: 260px; }
+.object-card-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .6em;
+    min-height: 34px;
+    padding: .3em 1.1em;
+    border: none;
+    background: none;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.object-card-chevron { opacity: .7; }
+.object-card-thumb { width: 100%; aspect-ratio: 1; max-height: 160px; object-fit: contain; }
+.object-card-body { padding: .7em .8em .8em; display: flex; flex-direction: column; gap: .35em; }
+.object-card-meta { opacity: .7; }
+.object-card-price { display: flex; flex-direction: column; gap: .15em; }
+.object-card-link { color: #ffb733; text-decoration: none; }
+.object-card-link:hover { text-decoration: underline; }
+.object-card-variant-label { margin-top: .3em; }
+/* one dot per variant (its swatch color, neutral gradient without one) */
+.object-card-variants { display: flex; flex-wrap: wrap; gap: .5em; }
+.object-card-variants button {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 50%;
+    outline: 3px solid transparent;
+    background: linear-gradient(135deg, #d8d2c8, #8a8378);
+}
+.object-card-variants button:hover { border-color: rgba(255, 255, 255, 0.8); }
+.object-card-variants button.is-active { outline-color: rgba(255, 154, 26, 0.9); border-color: rgba(0, 0, 0, 0.35); }
+.object-card-variants button:disabled { cursor: not-allowed; opacity: .5; }
+
+/* Phones: no thumbnail */
+@media (max-width: 767px) {
+    .object-card { max-height: 45vh; }
+    .object-card.is-open { width: calc(100vw - 140px); }
+    .object-card-thumb { display: none; }
+}

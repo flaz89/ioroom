@@ -72,6 +72,17 @@ assert.equal(card.price, 45.5); assert.equal(card.url, 'https://example.com/oak'
 assert.equal((await (await patch({ price: null })).json()).price, null);
 const edited = await (await patch({ kind: 'wood', tileSize: 2 })).json();
 assert.equal(edited.kind, 'wood'); assert.equal(edited.tileSize, 2); assert.equal(edited.name, 'Test'); assert.deepEqual(edited.maps, mat.maps);
+// replace maps (owner only): the given ones get new keys, the old files go, the others stay
+const putMaps = (fields, headers = ownerOnly) => fetch(`${M}/${mat.id}/maps`, { method: 'POST', headers, body: form(fields) });
+assert.equal((await putMaps({ color: png }, {})).status, 401);
+assert.equal((await putMaps({})).status, 400);
+const withNormal = await (await putMaps({ normal: png })).json();
+assert.equal(withNormal.maps.color, mat.maps.color); assert.ok(withNormal.maps.normal);
+const recolored = await (await putMaps({ color: png })).json();
+assert.notEqual(recolored.maps.color, mat.maps.color); assert.equal(recolored.maps.normal, withNormal.maps.normal);
+assert.equal((await fetch(`http://${H}/files/${mat.maps.color}`)).status, 404, 'old color deleted');
+assert.equal((await fetch(`http://${H}/files/${recolored.maps.color}`)).status, 200);
+mat.maps = recolored.maps;
 assert.equal((await fetch(`${M}/${mat.id}`, { method: 'DELETE', headers: ownerOnly })).status, 204);
 assert.ok(!(await (await fetch(M)).json()).some((m) => m.id === mat.id));
 assert.equal((await fetch(`http://${H}/files/${mat.maps.color}`)).status, 404);
@@ -80,8 +91,8 @@ assert.equal((await fetch(`http://${H}/files/${mat.maps.color}`)).status, 404);
 const MO = `http://${H}/api/models`;
 const glb = new Blob([new TextEncoder().encode('glTF'), new Uint8Array(16)], { type: 'model/gltf-binary' });
 const notGlb = new Blob([new TextEncoder().encode('nope'), new Uint8Array(16)], { type: 'model/gltf-binary' });
-const variants = [{ name: 'Oak', code: 'CH-1', price: 120, vatRate: 22, overrides: { fabric: { tint: '#AABBCC' } } }];
-const modelForm = (over = {}) => form({ name: ' Chair ', brand: 'Acme', category: 'seating', subtype: 'chair', size: '[0.5,0.9,0.5]', fixed: 'false', variants: JSON.stringify(variants), glb, thumb: png, ...over });
+const variants = [{ name: 'Oak', code: 'CH-1', price: 120, vatRate: 22, swatch: '#112233', overrides: { fabric: { tint: '#AABBCC' } } }];
+const modelForm = (over = {}) => form({ name: ' Chair ', brand: 'Acme', category: 'seating', subtype: 'chair', size: '[0.5,0.9,0.5]', fixed: 'false', variants: JSON.stringify(variants), materialLabels: JSON.stringify({ fabric: ' Fabric ', wood: '' }), glb, thumb: png, ...over });
 const postModel = (over, headers = ownerOnly) => fetch(MO, { method: 'POST', headers, body: modelForm(over) });
 assert.equal((await postModel({}, {})).status, 401);
 assert.equal((await postModel({ glb: notGlb })).status, 400);
@@ -94,6 +105,8 @@ assert.equal((await postModel({ variants: JSON.stringify([{ name: 'x', overrides
 const model = await (await postModel()).json();
 assert.equal(model.owner, 'system'); assert.equal(model.name, 'Chair'); assert.deepEqual(model.size, [0.5, 0.9, 0.5]); assert.equal(model.fixed, false);
 assert.ok(model.variants[0].id); assert.equal(model.variants[0].overrides.fabric.tint, '#aabbcc');
+assert.equal(model.variants[0].swatch, '#112233'); assert.deepEqual(model.materialLabels, { fabric: 'Fabric' });
+assert.equal((await postModel({ variants: JSON.stringify([{ name: 'x', swatch: 'red' }]) })).status, 400);
 assert.ok((await (await fetch(MO)).json()).some((m) => m.id === model.id)); // public list
 const glbServed = await fetch(`http://${H}/files/${model.files.glb}`);
 assert.equal(glbServed.status, 200); assert.equal(glbServed.headers.get('content-type'), 'model/gltf-binary');

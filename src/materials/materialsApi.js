@@ -3,7 +3,7 @@ import { API_ORIGIN, adminToken } from '../sync/roomSync';
 /*
 * Client of the material library API of the server (server/src/materials.js, Cloudflare R2).
 * - listMaterials(): public, every viewer loads it (materials used in a room must render for guests);
-* - createMaterial / updateMaterial / deleteMaterial: owner only (admin token kept by roomSync.js).
+* - createMaterial / updateMaterial / replaceMaterialMaps / deleteMaterial: owner only (admin token kept by roomSync.js).
 * Records come back with absolute texture URLs (maps.color / normal / orm), ready for the scene and
 * the library (materials/library.js).
 * Errors reject with an Error whose message is meant for the UI.
@@ -43,6 +43,15 @@ export async function updateMaterial(id, fields) {
         headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(fields)
     }));
+    return withUrls(await response.json());
+}
+
+// Replaces some maps of a material ({ color?, normal?, orm? }: Blobs); the others stay. New files get new
+// URLs, so every viewer loads them (the old files are cached as immutable)
+export async function replaceMaterialMaps(id, files) {
+    const form = new FormData();
+    for (const [map, blob] of Object.entries(files)) if (blob) form.append(map, blob, `${map}.${blob.type.split('/')[1]}`);
+    const response = await check(await fetch(`${API}/${id}/maps`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}` }, body: form }));
     return withUrls(await response.json());
 }
 

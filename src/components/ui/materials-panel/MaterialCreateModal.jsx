@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
-import { createMaterial, updateMaterial } from '../../../materials/materialsApi';
+import { createMaterial, replaceMaterialMaps, updateMaterial } from '../../../materials/materialsApi';
 import { MATERIAL_CATEGORIES, MATERIAL_KINDS, kindOf } from '../../../materials/grouping';
 import { DEFAULT_VAT, formatDecimal, parseDecimal } from '../../../materials/pricing';
 import { ORM_MAX_SIZE, imageToWebp, packOrm } from '../../../materials/imageToWebp';
@@ -29,9 +29,9 @@ const SEPARATE_MAPS = [
 * server/src/materials.js, R2). The new material joins the library right away (store
 * `libraryMaterials`) and can be dragged onto surfaces.
 * A preview ball shows the chosen color map. Escape or a click on the backdrop closes it.
-* EDIT mode (`material` given, the "✎" of the panel): same form for name, category, kind and real size,
-* without the maps (they never change; to replace them, upload a new material). Saved with
-* updateMaterial (PATCH): surfaces using it update right away (new tile size, panel group).
+* EDIT mode (`material` given, the "✎" of the panel): same form; the map fields are optional and REPLACE
+* only the maps given (replaceMaterialMaps, new URLs), the fields are saved with updateMaterial (PATCH):
+* surfaces using it update right away (new tile size, new textures, panel group).
 * initialCategory: preselected category of a new material (the panel's current tab).
 * PRODUCT CARD (optional, both modes): net price €/m² (VAT excluded), VAT %, waste %, manufacturer code
 * and link (materials/pricing.js). They feed the material card and the bill of quantities.
@@ -73,21 +73,23 @@ export default function MaterialCreateModal({ material = null, initialCategory =
         setError(null);
         try {
             const fields = { name: name.trim(), category, kind, tileSize: size, ...card, code: code.trim() || null, url: url.trim() || null };
-            const { libraryMaterials, setLibraryMaterials } = useStore.getState();
-            if (isEdit) {
-                const updated = await updateMaterial(material.id, fields);
-                setLibraryMaterials(libraryMaterials.map((item) => (item.id === updated.id ? updated : item)));
-                onClose();
-                return;
-            }
             const converted = {
-                color: await imageToWebp(files.color, { quality: 0.85 }),
+                color: files.color ? await imageToWebp(files.color, { quality: 0.85 }) : null,
                 // normal maps carry data, not color: a higher quality keeps them smooth
                 normal: files.normal ? await imageToWebp(files.normal, { quality: 0.9 }) : null,
                 orm: files.arm
                     ? await imageToWebp(files.arm, { maxSize: ORM_MAX_SIZE, quality: 0.9 })
                     : await packOrm(files)
             };
+            const { libraryMaterials, setLibraryMaterials } = useStore.getState();
+            if (isEdit) {
+                // maps first: a failure there leaves the fields as they were
+                if (Object.values(converted).some(Boolean)) await replaceMaterialMaps(material.id, converted);
+                const updated = await updateMaterial(material.id, fields);
+                setLibraryMaterials(libraryMaterials.map((item) => (item.id === updated.id ? updated : item)));
+                onClose();
+                return;
+            }
             const created = await createMaterial(fields, converted);
             setLibraryMaterials([...libraryMaterials, created]);
             onClose();
@@ -157,14 +159,15 @@ export default function MaterialCreateModal({ material = null, initialCategory =
                     </label>
                     <span className="material-create-help">Waste = extra material to buy for cuts and breakage (e.g. 10% for tiles).</span>
                 </fieldset>
-                {!isEdit && (<>
-                    <span className="material-create-help">Maps: upload the best you have (2K recommended). Everything is resized to 1K.</span>
-                    {[...MAIN_MAPS, ARM_MAP].map((map) => <FileField key={map.key} map={map} onPick={pickFile} />)}
-                    <fieldset className="material-create-group" disabled={files.arm != null}>
-                        <legend>{files.arm ? 'Separate maps (not needed: ARM given)' : 'Or separate maps (packed automatically)'}</legend>
-                        {SEPARATE_MAPS.map((map) => <FileField key={map.key} map={map} onPick={pickFile} />)}
-                    </fieldset>
-                </>)}
+                <span className="material-create-help">
+                    {isEdit ? 'Maps: pick only the ones to replace, the others stay as they are. ' : 'Maps: upload the best you have (2K recommended). '}
+                    Everything is resized to 1K.
+                </span>
+                {[...MAIN_MAPS, ARM_MAP].map((map) => <FileField key={map.key} map={map} onPick={pickFile} replace={isEdit} />)}
+                <fieldset className="material-create-group" disabled={files.arm != null}>
+                    <legend>{files.arm ? 'Separate maps (not needed: ARM given)' : 'Or separate maps (packed automatically)'}</legend>
+                    {SEPARATE_MAPS.map((map) => <FileField key={map.key} map={map} onPick={pickFile} replace={isEdit} />)}
+                </fieldset>
 
                 {error && <span className="material-create-error" role="alert">{error}</span>}
                 <div className="material-create-actions">
@@ -176,11 +179,11 @@ export default function MaterialCreateModal({ material = null, initialCategory =
     );
 }
 
-// One map file input
-function FileField({ map, onPick }) {
+// One map file input; `replace` (edit mode): every map is optional and replaces the saved one
+function FileField({ map, onPick, replace }) {
     return (
         <label className="material-create-file">
-            <span>{map.label}{map.required ? '' : ' · optional'}</span>
+            <span>{map.label}{replace ? ' · replace' : map.required ? '' : ' · optional'}</span>
             <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => onPick(map.key, event.target.files[0] ?? null)} />
         </label>
     );

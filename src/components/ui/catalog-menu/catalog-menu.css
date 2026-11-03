@@ -152,6 +152,9 @@
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.85);
 }
+/* category symbol (categoryIcons.jsx), level 1 */
+.catalog-icon { width: 100%; max-width: 64px; aspect-ratio: 1; margin: .3em auto 0; opacity: .85; }
+.catalog-tile:hover .catalog-icon { color: #ff9a1a; opacity: 1; }
 .catalog-tile-name { font-size: .9em; text-align: center; line-height: 1.15; }
 .catalog-tile-count {
     position: absolute;

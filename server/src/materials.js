@@ -15,6 +15,9 @@
 *   PATCH  /api/materials/:id         JSON { name, category, kind, tileSize, price, vatRate, waste, code,
 *                                     url } (any subset; null clears an optional field)
 *                                     -> record     owner only: edits the fields, never the maps
+*   POST   /api/materials/:id/maps    multipart: color / normal / orm (files, at least one) -> record
+*                                     owner only: replaces those maps, keeps the others; new files get new
+*                                     keys (files are cached as immutable), the old ones are deleted
 *   DELETE /api/materials/:id         -> 204        owner only: removes the record and its files
 *   GET    /files/materials/:id/:file -> the texture file (public, immutable, cached for a year)
 *
@@ -87,14 +90,8 @@ function readFields(raw, partial = false) {
     return { fields };
 }
 
-// Validates the multipart form; returns { fields, files } or { error }
-async function readUpload(request) {
-    const form = await request.formData().catch(() => null);
-    if (!form) return { error: 'Expected a multipart form' };
-    const { fields, error } = readFields(Object.fromEntries(
-        ['name', 'category', 'kind', 'tileSize', 'price', 'vatRate', 'waste', 'code', 'url'].map((key) => [key, form.get(key)])
-    ));
-    if (error) return { error };
+// Map files of a multipart form: { files } (only the maps given) or { error }
+function readMaps(form) {
     const files = {};
     for (const map of MAPS) {
         const file = form.get(map);
@@ -103,6 +100,29 @@ async function readUpload(request) {
         if (file.size > MAX_FILE_BYTES) return { error: `${map}: file too large (max 4 MB)` };
         files[map] = file;
     }
+    return { files };
+}
+
+// Stores the map files of material `id` under new keys -> { map: key }
+async function putMaps(env, id, files) {
+    const maps = {};
+    for (const [map, blob] of Object.entries(files)) {
+        maps[map] = `materials/${id}/${map}-${crypto.randomUUID().slice(0, 8)}.${FILE_TYPES[blob.type]}`;
+        await env.MATERIALS.put(maps[map], blob.stream(), { httpMetadata: { contentType: blob.type } });
+    }
+    return maps;
+}
+
+// Validates the multipart form; returns { fields, files } or { error }
+async function readUpload(request) {
+    const form = await request.formData().catch(() => null);
+    if (!form) return { error: 'Expected a multipart form' };
+    const { fields, error } = readFields(Object.fromEntries(
+        ['name', 'category', 'kind', 'tileSize', 'price', 'vatRate', 'waste', 'code', 'url'].map((key) => [key, form.get(key)])
+    ));
+    if (error) return { error };
+    const { files, error: badFile } = readMaps(form);
+    if (badFile) return { error: badFile };
     if (!files.color) return { error: 'The color map is required' };
     const id = form.get('id') ? String(form.get('id')) : null;
     if (id != null && !ID_PATTERN.test(id)) return { error: 'Invalid id' };
@@ -118,8 +138,8 @@ export async function handleMaterials(request, env, { cors, isOwner }) {
     const json = (body, status = 200) => Response.json(body, { status, headers: cors });
     const error = (message, status) => json({ error: message }, status);
 
-    // Texture files: public, immutable (a new upload always gets a new id)
-    const file = pathname.match(/^\/files\/(materials\/[\w-]+\/\w+\.\w+)$/);
+    // Texture files: public, immutable (a new upload or a replaced map always gets a new key)
+    const file = pathname.match(/^\/files\/(materials\/[\w-]+\/[\w-]+\.\w+)$/);
     if (file) {
         const object = await env.MATERIALS.get(file[1]);
         if (!object) return new Response('Not Found', { status: 404, headers: cors });
@@ -133,10 +153,10 @@ export async function handleMaterials(request, env, { cors, isOwner }) {
         });
     }
 
-    const match = pathname.match(/^\/api\/materials(?:\/([\w-]+))?\/?$/);
+    const match = pathname.match(/^\/api\/materials(?:\/([\w-]+)(\/maps)?)?\/?$/);
     if (!match) return null;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    const [, id] = match;
+    const [, id, mapsPath] = match;
 
     if (!id && request.method === 'GET') return json(await readIndex(env));
     if (!isOwner(request)) return error('Unauthorized', 401);
@@ -147,14 +167,27 @@ export async function handleMaterials(request, env, { cors, isOwner }) {
         const list = await readIndex(env);
         if (upload.id && list.some((item) => item.id === upload.id)) return error('A material with this id already exists', 409);
         const newId = upload.id ?? crypto.randomUUID();
-        const maps = {};
-        for (const [map, blob] of Object.entries(upload.files)) {
-            maps[map] = `materials/${newId}/${map}.${FILE_TYPES[blob.type]}`;
-            await env.MATERIALS.put(maps[map], blob.stream(), { httpMetadata: { contentType: blob.type } });
-        }
+        const maps = await putMaps(env, newId, upload.files);
         const record = { id: newId, ...upload.fields, maps, createdAt: Date.now() };
         await writeIndex(env, [...list, record]);
         return json(record, 201);
+    }
+
+    if (mapsPath) {
+        if (request.method !== 'POST') return error('Method not allowed', 405);
+        const form = await request.formData().catch(() => null);
+        if (!form) return error('Expected a multipart form', 400);
+        const { files, error: badFile } = readMaps(form);
+        if (badFile) return error(badFile, 400);
+        if (Object.keys(files).length === 0) return error('No map given', 400);
+        const list = await readIndex(env);
+        const record = list.find((item) => item.id === id);
+        if (!record) return error('Material not found', 404);
+        const replaced = Object.keys(files).map((map) => record.maps[map]).filter(Boolean);
+        const updated = { ...record, maps: { ...record.maps, ...await putMaps(env, id, files) } };
+        await writeIndex(env, list.map((item) => (item.id === id ? updated : item)));
+        if (replaced.length > 0) await env.MATERIALS.delete(replaced);
+        return json(updated);
     }
 
     if (id && request.method === 'PATCH') {

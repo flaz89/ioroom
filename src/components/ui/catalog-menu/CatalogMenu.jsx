@@ -5,18 +5,21 @@ import { useModelList } from '../../../models/catalog';
 import { SHAPES, brandsOf, categoriesWith, modelsIn, searchModels, subtypesIn } from '../../../models/grouping';
 import { deleteModel, modelFileUrl } from '../../../models/modelsApi';
 import { spawnPoint } from '../../../models/spawnPoint';
+import { variantTint } from '../../../models/variants';
 import { activeLevel } from '../../../plan/planModel';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import { viewGroundPoint } from '../../scene/level/viewGroundProbe';
 import { usePanelInViewport } from '../usePanelInViewport';
 import ModelCreateModal from './ModelCreateModal';
+import CategoryIcon, { ShapeIcon } from './categoryIcons';
 import './catalog-menu.css';
 
 const canManage = Boolean(SYNC_HOST) && isAdmin;
 
 /*
 * "+" menu (plan U5, R1–R4): the furniture catalog in two levels.
-* - Level 1: grid of the categories with furniture (models/grouping.js), Basic shapes always last.
+* - Level 1: grid of the categories with furniture (models/grouping.js), each with its symbol
+*   (categoryIcons.jsx) and count, Basic shapes always last.
 * - Level 2: chips of the subtypes present, grid of the models (thumbnail, name, "Fixed" mark), back.
 * - Search (name or variant code) over the whole catalog, within the active manufacturer.
 * - Manufacturer filter: a list on the left on desktop; on phones a button switches to the manufacturers
@@ -87,6 +90,7 @@ export default function CatalogMenu({ onClose }) {
                 <div className="catalog-grid">
                     {objectsList.map((item) => (
                         <button key={item.type} className="catalog-tile is-shape" onClick={() => addShape(item.type)}>
+                            <ShapeIcon type={item.type} />
                             <span className="catalog-tile-name">{item.name}</span>
                         </button>
                     ))}
@@ -130,11 +134,10 @@ export default function CatalogMenu({ onClose }) {
                 <div className="catalog-grid">
                     {categories.map((item) => {
                         const inCategory = item.id === SHAPES ? [] : modelsIn(models, { category: item.id, brand });
-                        const cover = inCategory[0];
                         return (
                             <button key={item.id} className="catalog-tile" onClick={() => openCategory(item.id)}
                                 aria-label={item.id === SHAPES ? item.label : `${item.label}, ${inCategory.length}`}>
-                                {cover && <img className="catalog-thumb" src={modelFileUrl(cover.files.thumb)} alt="" loading="lazy" />}
+                                <CategoryIcon id={item.id} />
                                 <span className="catalog-tile-name">{item.label}</span>
                                 {item.id !== SHAPES && <span className="catalog-tile-count">{inCategory.length}</span>}
                             </button>
@@ -262,6 +265,6 @@ function Empty({ text, actions }) {
 
 // Variant swatch: its first tint, else the plain catalog color (texture variants show their name)
 function swatchStyle(variant) {
-    const tint = Object.values(variant.overrides ?? {}).find((change) => change.tint)?.tint;
+    const tint = variantTint(variant);
     return tint ? { background: tint } : undefined;
 }

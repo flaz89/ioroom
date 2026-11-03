@@ -1,3 +1,4 @@
+import { withVariantPrice } from '../../models/variants';
 
 export const objectsList = [
   { type: 'box', name: 'Cube', geometryType: 'boxGeometry', defaultScale: [1, 1, 1], color: '#ffffff' },
@@ -66,7 +67,7 @@ export const createObjectsSlice = (set) => ({
 
     // ADD FURNITURE ----------------- a catalog model (models/catalog.js) with one of its variants, real size
     // (scale 1, never scaled: plan KTD13); position = board coordinates of the center of its base.
-    // The new piece is selected.
+    // The new piece is selected; the variant's price is frozen in the project (models/variants.js).
     addModel: (model, variantId = model.variants[0]?.id, position = [0, 0, 0]) => {
         const newObject = {
             id: crypto.randomUUID(),
@@ -82,8 +83,25 @@ export const createObjectsSlice = (set) => ({
                 ...state.objects,
                 instances: [...state.objects.instances, newObject],
                 selectedId: newObject.id
-            }
+            },
+            priceSnapshots: withVariantPrice(state.priceSnapshots, model, variantId)
         }));
+    },
+
+    // CHANGE VARIANT ----------------- of a furniture piece (product card, ui/object-card/); freezes its price
+    setObjectVariant: (id, variantId) => {
+        set((state) => {
+            const object = state.objects.instances.find((obj) => obj.id === id);
+            if (!object) return {};
+            const model = state.libraryModels.find((item) => item.id === object.modelId);
+            return {
+                objects: {
+                    ...state.objects,
+                    instances: state.objects.instances.map((obj) => obj.id === id ? { ...obj, variantId } : obj)
+                },
+                priceSnapshots: withVariantPrice(state.priceSnapshots, model, variantId)
+            };
+        })
     },
 
     // SELECT ----------------------- tracks the selected object

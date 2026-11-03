@@ -17,7 +17,9 @@ import './model-create.css';
 *   material names read from it) and its thumbnail rendered here (models/thumbnail.js), shown as preview;
 * - card: name, manufacturer (suggestions from the catalog), category, subtype, Fixed (proposed from category
 *   and size, models/fixedProposal.js, until the owner changes it), manufacturer link;
-* - variants: name, code, net price per piece, VAT %, and for each material of the GLB an optional tint
+* - materials: a display name for each material of the GLB ("Leather", shown on the product card);
+* - variants: name, code, net price per piece, VAT %, optional dot color on the product card (else its
+*   tint, models/variants.js variantTint), and for each material of the GLB an optional tint
 *   (multiplies the material color) and an optional color texture replacing the GLB's own (resized to 1K,
 *   WebP: materials/imageToWebp.js).
 * Saving: the GLB + thumbnail + card first (POST), then the variant textures (POST .../textures) and the
@@ -29,7 +31,7 @@ import './model-create.css';
 * Escape or a click on the backdrop closes it (not while saving).
 */
 const firstSubtype = (category) => MODEL_CATEGORIES.find((item) => item.id === category)?.subtypes[0]?.id ?? 'other';
-const newVariant = (name = '') => ({ key: crypto.randomUUID(), name, code: '', price: '', vatRate: formatDecimal(DEFAULT_VAT), overrides: {} });
+const newVariant = (name = '') => ({ key: crypto.randomUUID(), name, code: '', price: '', vatRate: formatDecimal(DEFAULT_VAT), swatch: null, overrides: {} });
 const fromRecord = (variant) => ({
     key: variant.id,
     id: variant.id,
@@ -37,6 +39,7 @@ const fromRecord = (variant) => ({
     code: variant.code ?? '',
     price: formatDecimal(variant.price),
     vatRate: formatDecimal(variant.vatRate ?? DEFAULT_VAT),
+    swatch: variant.swatch ?? null,
     overrides: Object.fromEntries(Object.entries(variant.overrides ?? {}).map(([name, change]) => [name, { ...change }]))
 });
 
@@ -53,6 +56,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
     const [subtype, setSubtype] = useState(model ? subtypeOf(model) : firstSubtype(initialCategory));
     const [fixed, setFixed] = useState(model?.fixed ?? null); // null = follow the proposal
     const [url, setUrl] = useState(model?.url ?? '');
+    const [labels, setLabels] = useState(model?.materialLabels ?? {}); // GLB material name -> display name
     const [variants, setVariants] = useState(() => (model ? model.variants.map(fromRecord) : [newVariant('Standard')]));
     const [busy, setBusy] = useState(null); // progress text while saving
     const [error, setError] = useState(null);
@@ -109,6 +113,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         code: variant.code.trim() || null,
         price: prices[i].price,
         vatRate: prices[i].vatRate,
+        swatch: variant.swatch,
         overrides: Object.fromEntries(Object.entries(variant.overrides).flatMap(([material, change]) => {
             const tintOn = change.tintOn ?? (change.tint != null); // a saved tint counts as on
             const tint = tintOn ? change.tint ?? '#ffffff' : null;
@@ -130,7 +135,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         event.preventDefault();
         if (!canSave) return;
         setError(null);
-        const fields = { name: name.trim(), brand: brand.trim(), category, subtype, fixed: isFixed, url: url.trim() || null };
+        const fields = { name: name.trim(), brand: brand.trim(), category, subtype, fixed: isFixed, url: url.trim() || null, materialLabels: labels };
         const replace = (record) => {
             const { libraryModels, setLibraryModels } = useStore.getState();
             setLibraryModels(libraryModels.some((item) => item.id === record.id)
@@ -219,6 +224,19 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
                     <input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://…" />
                 </label>
 
+                {names.some(Boolean) && (
+                    <fieldset className="material-create-group">
+                        <legend>Materials · names shown on the product card</legend>
+                        {names.filter(Boolean).map((material) => (
+                            <label key={material}>
+                                <span>{material}</span>
+                                <input value={labels[material] ?? ''} maxLength={60} placeholder="e.g. Leather"
+                                    onChange={(event) => setLabels({ ...labels, [material]: event.target.value })} />
+                            </label>
+                        ))}
+                    </fieldset>
+                )}
+
                 <div className="model-create-variants">
                     {variants.map((variant, i) => (
                         <fieldset key={variant.key} className="material-create-group">
@@ -243,6 +261,13 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
                                     <input type="text" inputMode="decimal" value={variant.vatRate} onChange={(event) => editVariant(variant.key, { vatRate: event.target.value })} />
                                 </label>
                             </div>
+                            <label className="model-create-check">
+                                <input type="checkbox" checked={variant.swatch != null}
+                                    onChange={(event) => editVariant(variant.key, { swatch: event.target.checked ? firstTint(variant) : null })} />
+                                <span>Dot color on the card{variant.swatch == null ? ' (from the tint)' : ''}</span>
+                                <input type="color" value={variant.swatch ?? firstTint(variant)} disabled={variant.swatch == null}
+                                    onChange={(event) => editVariant(variant.key, { swatch: event.target.value })} />
+                            </label>
                             {names.map((material, m) => (
                                 <MaterialOverride key={`${m}:${material}`} material={material} change={variant.overrides[material] ?? {}}
                                     onChange={(patch) => editOverride(variant, material, patch)} />
@@ -264,6 +289,9 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         </div>
     );
 }
+
+// Proposed dot color of a form variant: its first tint switched on, else white
+const firstTint = (variant) => Object.values(variant.overrides).find((change) => (change.tintOn ?? change.tint != null) && change.tint)?.tint ?? '#ffffff';
 
 /*
 * One material of the GLB in a variant: optional tint (color picker, multiplies the material color) and

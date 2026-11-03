@@ -7,9 +7,11 @@
 *   POST   /api/models                    multipart: glb (file, Draco GLB, max 30 MB), thumb (file, image
 *                                         rendered by the browser), name, brand, category, subtype (shape
 *                                         only: the lists live in the client), size (JSON [w, h, d] meters),
-*                                         fixed ('true' | 'false'), url (optional), variants (JSON, see below)
+*                                         fixed ('true' | 'false'), url (optional), variants (JSON, see below),
+*                                         materialLabels (JSON, optional)
 *                                         -> record     owner only (Authorization: Bearer <ADMIN_TOKEN>)
-*   PATCH  /api/models/:id                JSON { name, brand, category, subtype, size, fixed, url, variants }
+*   PATCH  /api/models/:id                JSON { name, brand, category, subtype, size, fixed, url, variants,
+*                                         materialLabels }
 *                                         (any subset; variants replaces the whole list and deletes the
 *                                         variant textures no variant uses any more) -> record   owner only
 *   POST   /api/models/:id/textures       multipart: file (one or more images, max 4 MB each)
@@ -19,7 +21,9 @@
 *   GET    /files/models/:owner/:id/:file -> the file (public, immutable, cached for a year)
 *
 * Record: { id, owner, name, brand, category, subtype, size, fixed, url, files: { glb, thumb } (R2 keys),
-* variants: [{ id, name, code, price, vatRate, overrides }], createdAt }.
+* materialLabels, variants: [{ id, name, code, price, vatRate, swatch, overrides }], createdAt }.
+* materialLabels = { <GLB material name>: 'Leather' } (name shown on the product card); swatch = '#rrggbb'
+* color of the variant's dot on the card, or null.
 * A variant changes the GLB's materials by name: overrides = { <material name>: { tint?: '#rrggbb',
 * map?: <R2 key of a texture of this model> } }. price = net € per piece (VAT excluded).
 * The browser checks the GLB contract (one mesh node, at least one texture) before the upload; the server
@@ -88,6 +92,8 @@ function readVariants(raw, id) {
         variant.vatRate = optionalNumber(item.vatRate, 100);
         if (variant.price === undefined) return { error: `${variant.name}: invalid price` };
         if (variant.vatRate === undefined) return { error: `${variant.name}: invalid VAT rate` };
+        variant.swatch = item.swatch ? String(item.swatch).toLowerCase() : null;
+        if (variant.swatch != null && !TINT_PATTERN.test(variant.swatch)) return { error: `${variant.name}: invalid swatch color` };
         const overrides = item.overrides ?? {};
         if (typeof overrides !== 'object' || Object.keys(overrides).length > MAX_OVERRIDES) {
             return { error: `${variant.name}: invalid overrides` };
@@ -136,6 +142,17 @@ function readFields(raw, id, partial = false) {
     if (has('url')) {
         fields.url = text(raw.url, 500) || null;
         if (fields.url != null && !/^https?:\/\/\S+$/i.test(fields.url)) return { error: 'The link must start with http:// or https://' };
+    }
+    if (has('materialLabels')) {
+        const labels = parseJson(raw.materialLabels) ?? {};
+        if (typeof labels !== 'object' || Array.isArray(labels) || Object.keys(labels).length > MAX_OVERRIDES) {
+            return { error: 'Invalid material labels' };
+        }
+        fields.materialLabels = {};
+        for (const [material, label] of Object.entries(labels)) {
+            if (!material || material.length > 100) return { error: 'Invalid material name' };
+            if (text(label)) fields.materialLabels[material] = text(label);
+        }
     }
     if (has('variants')) {
         const { variants, error } = readVariants(parseJson(raw.variants), id);
@@ -218,7 +235,7 @@ export async function handleModels(request, env, { cors, isOwner }) {
         if (!form) return error('Expected a multipart form', 400);
         const newId = crypto.randomUUID();
         const { fields, error: invalid } = readFields(Object.fromEntries(
-            ['name', 'brand', 'category', 'subtype', 'size', 'fixed', 'url', 'variants'].map((key) => [key, form.get(key)])
+            ['name', 'brand', 'category', 'subtype', 'size', 'fixed', 'url', 'variants', 'materialLabels'].map((key) => [key, form.get(key)])
         ), newId);
         if (invalid) return error(invalid, 400);
         const glb = form.get('glb');

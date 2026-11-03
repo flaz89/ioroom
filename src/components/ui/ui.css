@@ -20,6 +20,19 @@
     pointer-events: all;
 }
 
+/* Top center column: compass, room notice, selected furniture button (stacked, no overlaps) */
+.top-center {
+    position: absolute;
+    top: 1em;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .6em;
+    pointer-events: none;
+}
+
 /* Bottom center bar (provisional position): undo / redo, workspace switch */
 .bottom-bar {
     position: absolute;

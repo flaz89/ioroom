@@ -1,9 +1,5 @@
-/* Compass bar (CompassBar.jsx): game-style heading tape at the top center, glass style */
+/* Compass bar (CompassBar.jsx): game-style heading tape, glass style; placed by .top-center (ui.css) */
 .compass {
-    position: absolute;
-    top: 1em;
-    left: 50%;
-    transform: translateX(-50%);
     pointer-events: none;
     color: white;
     font-family: "SUSE Mono", monospace;

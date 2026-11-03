@@ -13,6 +13,7 @@ import RoomNotice from './components/ui/room-notice/RoomNotice';
 import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
 import PartsMenu from './components/ui/parts-menu/PartsMenu';
+import ObjectCard from './components/ui/object-card/ObjectCard';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
 import PlanGridLegend from './components/builder/PlanGridLegend';
@@ -72,8 +73,12 @@ export default function App() {
         <div className="ui">
           <LeftToolBar/>
           <RightToolBar/>
-          <CompassBar/>
-          <RoomNotice/>
+          {/* top center, stacked downwards: compass, room notice, selected furniture (product card) */}
+          <div className="top-center">
+            <CompassBar/>
+            <RoomNotice/>
+            <ObjectCard/>
+          </div>
           <NoteModal/>
           <PartsMenu/>
           {/* bottom center (provisional), stacked upwards: performance stats (when open), grid scale of the

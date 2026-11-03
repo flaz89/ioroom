@@ -1,10 +1,6 @@
-/* Room notice (RoomNotice.jsx): glass banner at the top center, under the compass bar (compass.css) */
+/* Room notice (RoomNotice.jsx): glass banner under the compass bar (.top-center column, ui.css) */
 .room-notice {
-    position: absolute;
-    top: 4.2em;
-    left: 50%;
-    transform: translateX(-50%);
-    max-width: min(520px, calc(100% - 140px));
+    max-width: min(520px, calc(100vw - 140px));
     padding: .6em 1.1em;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 15px;
