@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useThree } from '@react-three/fiber';
-import { Vector3 } from 'three';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useXR } from '@react-three/xr';
+import { Box3, MeshStandardMaterial, Vector3 } from 'three';
 import { useStore } from '../../../store/appStore';
-import { objectsList } from '../../../store/slices/objectsSlice';
+import { SHAPE_LIFT, objectsList } from '../../../store/slices/objectsSlice';
 import { SHAPES, categoriesWith, modelsIn, subtypesIn } from '../../../models/grouping';
 import { modelFileUrl } from '../../../models/modelsApi';
+import { useModelMesh } from '../../../models/useModelMesh';
+import { shapeOf } from '../level/shapeGeometry';
 import { spawnPoint } from '../../../models/spawnPoint';
 import { activeLevel } from '../../../plan/planModel';
 import CategoryIcon, { ShapeIcon } from '../../ui/catalog-menu/categoryIcons';
@@ -25,6 +28,11 @@ import { VR_PANEL, placeInFrontOfUser } from './layout';
 * outside the walls, else the plan center); tabletop = the plan center (the board's middle).
 * Cheap like the materials panel: all the tiles of a page in ONE canvas (one draw call), redrawn only when
 * the tiles or their images change; hover = a separate ring; the pressed tile comes from the hit uv.
+* MINIATURE: the ray resting PREVIEW_MS on a model or basic shape tile makes a tiny copy pop out of it, slowly
+* turning on itself (TilePreview). Pinch / trigger on such a tile = DRAG: the store's modelDrag follows that ray
+* over the floors (Room.jsx onModelDragMove) with a full-size hologram (level/ModelDragGhost.jsx); releasing
+* (session selectend) adds it there, selected. Back over the panel = no landing point (the release is then a
+* plain click: added in front of the user as before).
 * ponytail: no manufacturers screen and no search in VR yet (few models); add them like the desktop menu.
 */
 const DISTANCE = 0.45;       // meters in front of the eyes (horizontal)
@@ -41,6 +49,11 @@ const TITLE_H = 0.04;
 const WIDTH = COLUMNS * CELL_W + PAD * 2;
 const PIXELS_PER_METER = 4000;
 const GRID_PIXELS_PER_METER = 2500;
+const PREVIEW_MS = 300;      // ray resting on a model tile -> its miniature pops out (hand rays jitter)
+const PREVIEW_SIZE = 0.07;   // meters, longest side of the miniature
+const PREVIEW_OUT = 0.045;   // meters in front of the tile
+const PREVIEW_SPIN = 0.5;    // rad/s (1.2 felt too fast on the Quest)
+const PREVIEW_POP = 12;      // 1/s, exponential growth towards its size
 
 // Symbols as canvas images (white strokes): one element per id, so loadSvgImage caches them
 const symbols = new Map();
@@ -92,6 +105,9 @@ export default function VRCatalogPanel() {
     const [subtype, setSubtype] = useState(null);
     const [page, setPage] = useState(0);
     const [hovered, setHovered] = useState(null);
+    const session = useXR((state) => state.session);
+    const drag = useStore((state) => state.modelDrag);
+    const isDragging = drag?.pointerId != null;
 
     useLayoutEffect(() => {
         placeInFrontOfUser(groupRef.current, getThree().camera, DISTANCE, BELOW_EYES);
@@ -108,10 +124,10 @@ export default function VRCatalogPanel() {
             pick: () => open(item.id)
         }));
     } else if (category === SHAPES) {
-        tiles = objectsList.map((item) => ({ key: item.type, name: item.name, symbol: symbolOf(`shape:${item.type}`, <ShapeIcon type={item.type} />), pick: () => add({ type: item.type }) }));
+        tiles = objectsList.map((item) => ({ key: item.type, name: item.name, symbol: symbolOf(`shape:${item.type}`, <ShapeIcon type={item.type} />), shape: item, pick: () => add({ type: item.type }) }));
     } else {
         tiles = modelsIn(models, { category, subtype }).map((model) => ({
-            key: model.id, name: model.name, thumb: modelFileUrl(model.files.thumb), badge: model.fixed ? 'Fixed' : null, pick: () => add({ model })
+            key: model.id, name: model.name, thumb: modelFileUrl(model.files.thumb), badge: model.fixed ? 'Fixed' : null, model, pick: () => add({ model })
         }));
     }
     const chips = category != null && category !== SHAPES ? subtypesIn(models, category) : [];
@@ -133,7 +149,7 @@ export default function VRCatalogPanel() {
         }
         const point = spawnPoint(activeLevel(state.plan), ground);
         if (model) state.addModel(model, model.variants[0]?.id, point);
-        else state.addObject(type, [point[0], point[1] + 0.5, point[2]]);
+        else state.addObject(type, [point[0], point[1] + SHAPE_LIFT, point[2]]);
         closePanel();
     }
 
@@ -186,6 +202,42 @@ export default function VRCatalogPanel() {
         const index = Math.floor((1 - uv.y) * rows) * COLUMNS + Math.min(COLUMNS - 1, Math.floor(uv.x * COLUMNS));
         return index < shown.length ? index : null;
     };
+    // Miniature of the model / shape tile the ray rests on (not while dragging)
+    const hoveredTile = !isDragging && hovered != null ? shown[hovered] : null;
+    const hoveredKey = hoveredTile?.model || hoveredTile?.shape ? hoveredTile.key : null;
+    const [preview, setPreview] = useState(null); // { tile, index }
+    useEffect(() => {
+        const timer = setTimeout(() => setPreview(hoveredKey ? { tile: hoveredTile, index: hovered } : null), hoveredKey ? PREVIEW_MS : 0);
+        return () => clearTimeout(timer);
+    }, [hoveredKey]); // eslint-disable-line react-hooks/exhaustive-deps -- the tile and index follow its key
+
+    // Drag out of a model tile: only a ray can then reach the floors
+    const startDrag = (event) => {
+        event.stopPropagation();
+        if (event.pointerType !== 'ray') return;
+        const tile = shown[tileAt(event.uv)];
+        const piece = tile?.model ? { model: tile.model, variantId: tile.model.variants[0]?.id } : tile?.shape ? { type: tile.shape.type } : null;
+        if (piece) useStore.getState().setModelDrag({ ...piece, point: null, pointerId: event.pointerId });
+    };
+    const moveOnGrid = (event) => {
+        setHovered(tileAt(event.uv));
+        const current = useStore.getState().modelDrag;
+        if (current?.point != null && current.pointerId === event.pointerId) useStore.getState().setModelDrag({ ...current, point: null }); // back on the panel
+    };
+    // Release (selectend): added where the hologram is, if anywhere; after the pointerup / click of that same release
+    useEffect(() => {
+        if (session == null || !isDragging) return undefined;
+        let timer;
+        const end = () => { timer = setTimeout(() => useStore.getState().dropModel(), 0); };
+        session.addEventListener('selectend', end);
+        return () => {
+            session.removeEventListener('selectend', end);
+            clearTimeout(timer);
+        };
+    }, [session, isDragging]);
+    // Panel closed (or session over) mid-drag: no hologram left behind
+    useEffect(() => () => useStore.getState().setModelDrag(null), []);
+
     const tileCenter = (index) => [-gridW / 2 + (index % COLUMNS + 0.5) * CELL_W, gridTop - (Math.floor(index / COLUMNS) + 0.5) * CELL_H, 0.002];
 
     return (
@@ -215,7 +267,8 @@ export default function VRCatalogPanel() {
             <mesh
                 position={[0, gridTop - gridH / 2, 0.001]}
                 pointerEventsType={acceptsPanelPointer}
-                onPointerMove={(event) => setHovered(tileAt(event.uv))}
+                onPointerDown={startDrag}
+                onPointerMove={moveOnGrid}
                 onPointerLeave={() => setHovered(null)}
                 onClick={(event) => { event.stopPropagation(); const index = tileAt(event.uv); if (index != null) shown[index].pick(); }}
             >
@@ -229,6 +282,12 @@ export default function VRCatalogPanel() {
                 </mesh>
             )}
 
+            {preview != null && shown[preview.index]?.key === preview.tile.key && (preview.tile.model
+                ? <ModelPreview key={preview.tile.key} model={preview.tile.model} position={[tileCenter(preview.index)[0], tileCenter(preview.index)[1], PREVIEW_OUT]} />
+                : <TilePreview key={preview.tile.key} geometry={shapeOf(preview.tile.shape.geometryType)} material={SHAPE_MATERIAL}
+                    stretch={preview.tile.shape.defaultScale} position={[tileCenter(preview.index)[0], tileCenter(preview.index)[1], PREVIEW_OUT]} />
+            )}
+
             {pageCount > 1 && (
                 <group position={[0, gridTop - gridH - ROW / 2, 0.001]}>
                     <VRButton label="<" size={[0.03, 0.026]} onClick={() => setPage((current - 1 + pageCount) % pageCount)} position={[-0.05, 0, 0]} />
@@ -239,5 +298,39 @@ export default function VRCatalogPanel() {
             <VRGrabBar targetRef={groupRef} y={-height / 2 - 0.022} />
         </group>
         </PointerFilterContext.Provider>
+    );
+}
+
+// Tiny copy of a catalog piece or basic shape popping out of its tile and slowly turning on itself
+const _box = new Box3();
+const _size = new Vector3();
+const _center = new Vector3();
+const SHAPE_MATERIAL = new MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 });
+
+// a catalog piece: first variant, placeholder box while it loads
+function ModelPreview({ model, position }) {
+    const { geometry, materials } = useModelMesh(model, model.variants[0]?.id);
+    return <TilePreview geometry={geometry} material={materials} position={position} />;
+}
+
+// stretch = the shape's own scale (a cylinder is taller than wide), applied before fitting PREVIEW_SIZE
+function TilePreview({ geometry, material, stretch = [1, 1, 1], position }) {
+    const groupRef = useRef();
+    const fit = useMemo(() => {
+        _box.setFromBufferAttribute(geometry.attributes.position);
+        _box.min.multiply(_size.fromArray(stretch));
+        _box.max.multiply(_size);
+        _box.getSize(_size);
+        return { scale: PREVIEW_SIZE / Math.max(_size.x, _size.y, _size.z, 1e-3), center: _box.getCenter(_center).negate().toArray() };
+    }, [geometry, stretch]);
+    useFrame((_, delta) => {
+        const group = groupRef.current;
+        group.rotation.y += delta * PREVIEW_SPIN;
+        group.scale.setScalar(group.scale.x + (fit.scale - group.scale.x) * (1 - Math.exp(-delta * PREVIEW_POP)));
+    });
+    return (
+        <group ref={groupRef} position={position} scale={0.001}>
+            <mesh geometry={geometry} material={material} position={fit.center} scale={stretch} raycast={() => null} dispose={null} />
+        </group>
     );
 }

@@ -19,6 +19,7 @@ export function loadSvgImage(svg) {
         svgImages.set(svg, new Promise((resolve) => {
             const img = new Image();
             img.onload = () => resolve(img);
+            img.onerror = () => resolve(null); // a broken logo must not hold back the others (Promise.all)
             img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`;
         }));
     }

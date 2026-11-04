@@ -12,3 +12,6 @@ export function spawnPoint(level, ground) {
     const floor = floorAt(level, point);
     return [point[0], floor ? floorElevation(floor) : 0, point[1]];
 }
+
+// A piece dragged out of the catalog (store modelDrag): lands at `ground` only where spawnPoint would keep it, else null
+export const dropPoint = (level, ground) => (ground != null && canLand(level, ground) ? spawnPoint(level, ground) : null);

@@ -4,6 +4,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { abs, dot, float, normalView, positionViewDirection, pow, uniform } from 'three/tsl';
 import { useModel } from '../../../models/catalog';
 import { useModelMesh } from '../../../models/useModelMesh';
+import { shapeOf } from './shapeGeometry';
 
 /*
 * Frozen "hologram" of a furniture object, drawn instead of SingleObject in the builder (ObjectRenderer.jsx):
@@ -66,24 +67,6 @@ function hologramGlslMaterial() {
             }`
     });
     return glslMaterial;
-}
-
-// Same shapes (default sizes) as SingleObject's renderGeometry
-const FACTORIES = {
-    boxGeometry: () => new THREE.BoxGeometry(),
-    planeGeometry: () => new THREE.PlaneGeometry(),
-    sphereGeometry: () => new THREE.SphereGeometry(),
-    capsuleGeometry: () => new THREE.CapsuleGeometry(),
-    cylinderGeometry: () => new THREE.CylinderGeometry(),
-    circleGeometry: () => new THREE.CircleGeometry(),
-    donutGeometry: () => new THREE.TorusGeometry(),
-    knotGeometry: () => new THREE.TorusKnotGeometry()
-};
-const shapes = new Map(); // geometry type -> geometry
-function shapeOf(type) {
-    const key = FACTORIES[type] ? type : 'boxGeometry';
-    if (!shapes.has(key)) shapes.set(key, FACTORIES[key]());
-    return shapes.get(key);
 }
 
 export default function ObjectGhost({ data }) {

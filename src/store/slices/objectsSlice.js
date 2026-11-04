@@ -10,6 +10,7 @@ export const objectsList = [
   { type: 'donut', name: 'Donut', geometryType: 'donutGeometry', defaultScale: [.36, .36, .36], color: '#ffffff' },
   { type: 'knot', name: 'Knot', geometryType: 'knotGeometry', defaultScale: [.28, .28, .28], color: '#ffffff' }
 ];
+export const SHAPE_LIFT = 0.5; // basic shapes are centered: their center goes this high above the floor
 
 
 export const createObjectsSlice = (set) => ({

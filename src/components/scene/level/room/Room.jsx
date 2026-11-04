@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
+import { dropPoint } from '../../../../models/spawnPoint';
 import { useXR } from '@react-three/xr';
 import { aoAtlas } from './aoAtlas';
 import { bakeRoomAo } from './aoBaker';
@@ -42,6 +44,20 @@ const dropTargetOf = (event) => event.object.userData.openingId ?? faceOf(event)
 function onDragMove(event) {
     const drag = vrDragOf(event);
     if (drag != null) useStore.getState().setMaterialDrag({ ...drag, surfaceId: dropTargetOf(event) });
+}
+/*
+* VR catalog drag (xr-ui/VRCatalogPanel.jsx, store modelDrag with the ray's pointerId): the ray on a FLOOR
+* face (normal up) moves the landing point (board space: the room group's local space); walls, ceilings and
+* objects in the way keep the last one. The drop itself is the panel's (session selectend).
+*/
+const _local = new THREE.Vector3();
+function onModelDragMove(event, room) {
+    const state = useStore.getState();
+    const drag = state.modelDrag;
+    if (drag?.pointerId == null || drag.pointerId !== event.pointerId || room == null || !(event.face?.normal.y > 0.7)) return;
+    const local = room.worldToLocal(_local.copy(event.point));
+    const point = dropPoint(activeLevel(state.plan), [local.x, local.z]);
+    if (point != null) state.setModelDrag({ ...drag, point });
 }
 function onDragLeave(event) {
     const drag = vrDragOf(event);
@@ -95,6 +111,7 @@ const ROOM_USER_DATA = { isRoom: true };
 * hundred vertices, cheap.
 */
 export default function Room() {
+    const roomRef = useRef();
     // the plan's level, or a 3D builder gesture's local preview (workspaceSlice levelPreview)
     const level = useStore((state) => state.levelPreview ?? activeLevel(state.plan));
 
@@ -174,6 +191,7 @@ export default function Room() {
     // Mouse over the room: which wall (null over a floor); VR material drags keep their own handler
     const onPointerMove = (event) => {
         onDragMove(event);
+        onModelDragMove(event, roomRef.current);
         if (!isBuilder || event.nativeEvent?.pointerType !== 'mouse') return; // pmndrs pointerType is its own pointer kind: read the DOM one
         const surfaceId = faceOf(event);
         setHoverWallId(surfaceId?.includes(':') ? surfaceId.split(':')[0] : null);
@@ -205,7 +223,7 @@ export default function Room() {
     useEffect(() => () => batches.forEach((batch) => batch.geometry.dispose()), [batches]);
 
     return (
-        <group userData={ROOM_USER_DATA} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerUp={onDragDrop} onPointerDown={onBuilderPress} onClick={onBuilderClick}>
+        <group ref={roomRef} userData={ROOM_USER_DATA} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerUp={onDragDrop} onPointerDown={onBuilderPress} onClick={onBuilderClick}>
             {/* ------------- FLOOR + WALLS: one mesh per material batch ------------------ */}
             {batches.map((batch) => (
                 <SurfaceMesh

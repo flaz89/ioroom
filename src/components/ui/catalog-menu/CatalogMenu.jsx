@@ -4,17 +4,19 @@ import { objectsList } from '../../../store/slices/objectsSlice';
 import { useModelList } from '../../../models/catalog';
 import { SHAPES, brandsOf, categoriesWith, modelsIn, searchModels, subtypesIn } from '../../../models/grouping';
 import { deleteModel, modelFileUrl } from '../../../models/modelsApi';
-import { spawnPoint } from '../../../models/spawnPoint';
+import { dropPoint, spawnPoint } from '../../../models/spawnPoint';
 import { variantTint } from '../../../models/variants';
 import { activeLevel } from '../../../plan/planModel';
 import { SYNC_HOST, isAdmin } from '../../../sync/roomSync';
 import { viewGroundPoint } from '../../scene/level/viewGroundProbe';
+import { setCursorGrabbing } from '../../scene/sceneCursor';
 import { usePanelInViewport } from '../usePanelInViewport';
 import ModelCreateModal from './ModelCreateModal';
 import CategoryIcon, { ShapeIcon } from './categoryIcons';
 import './catalog-menu.css';
 
 const canManage = Boolean(SYNC_HOST) && isAdmin;
+const DRAG_START_PX = 6; // a press moving less than this stays a click (pick the model)
 
 /*
 * "+" menu (plan U5, R1–R4): the furniture catalog in two levels.
@@ -26,6 +28,10 @@ const canManage = Boolean(SYNC_HOST) && isAdmin;
 *   screen and back (css). The active one stays as a chip with × until removed.
 * - A click on a model shows its variants (first one picked) and "Add": the piece goes on the floor at the
 *   center of the view, inside the plan (models/spawnPoint.js), selected; the menu closes.
+* - DRAG a model or basic shape tile into the scene (mouse, pen, touch; starts after DRAG_START_PX): a full-size hologram
+*   follows the pointer on the floor (store modelDrag, level/ModelDragGhost.jsx), the thumbnail follows it
+*   where it cannot land (panels, walls, outside); releasing on the floor adds it there with the picked
+*   variant (or the first), selected, and the menu closes. Basic shapes: same gesture, their symbol follows.
 * - Basic shapes add the primitives as before (no variant).
 * Catalog loading / failed (Retry) / empty results are shown in place of the grid.
 * OWNER (admin token): "+" next to the search uploads a new piece (ModelCreateModal.jsx), "✎" on a model
@@ -74,13 +80,44 @@ export default function CatalogMenu({ onClose }) {
         onClose();
     };
 
+    // Drag of a model tile into the scene: window listeners from the press until the release
+    const drag = useStore((state) => state.modelDrag);
+    // piece: a model record, or { type } of a basic shape
+    const startPress = (event, piece) => {
+        if (event.button !== 0) return;
+        const dragged = piece.type != null ? { type: piece.type }
+            : { model: piece, variantId: picked?.model.id === piece.id ? picked.variantId : piece.variants[0]?.id };
+        const startX = event.clientX, startY = event.clientY;
+        let dragging = false;
+        const move = (moved) => {
+            if (!dragging && Math.hypot(moved.clientX - startX, moved.clientY - startY) < DRAG_START_PX) return;
+            dragging = true;
+            setCursorGrabbing('model-drag', true);
+            const { plan, setModelDrag } = useStore.getState();
+            const point = dropPoint(activeLevel(plan), viewGroundPoint(moved.clientX, moved.clientY));
+            setModelDrag({ ...dragged, point, x: moved.clientX, y: moved.clientY });
+        };
+        const end = (ended) => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            window.removeEventListener('pointercancel', end);
+            if (!dragging) return;
+            setCursorGrabbing('model-drag', false);
+            if (ended.type === 'pointerup') useStore.getState().dropModel();
+            else useStore.getState().setModelDrag(null);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        window.addEventListener('pointercancel', end);
+    };
+
     let body;
     if (brandsOpen) {
         body = <BrandList brands={brands} brand={brand} onPick={pickBrand} />;
     } else if (searching) {
         const results = searchModels(models, query, brand);
         body = results.length > 0
-            ? <ModelGrid models={results} picked={picked} onPick={setPicked} manage={manage} />
+            ? <ModelGrid models={results} picked={picked} onPick={setPicked} onPress={startPress} manage={manage} />
             : <Empty text={brand ? `No results for "${query.trim()}" from ${brand}` : `No results for "${query.trim()}"`}
                 actions={[brand && ['Clear manufacturer', () => setBrand(null)], ['Clear search', () => setQuery('')]]} />;
     } else if (category === SHAPES) {
@@ -89,7 +126,8 @@ export default function CatalogMenu({ onClose }) {
                 <BackRow title="Basic shapes" onBack={() => openCategory(null)} />
                 <div className="catalog-grid">
                     {objectsList.map((item) => (
-                        <button key={item.type} className="catalog-tile is-shape" onClick={() => addShape(item.type)}>
+                        <button key={item.type} className="catalog-tile is-shape" onClick={() => addShape(item.type)}
+                            onPointerDown={(event) => startPress(event, { type: item.type })}>
                             <ShapeIcon type={item.type} />
                             <span className="catalog-tile-name">{item.name}</span>
                         </button>
@@ -113,7 +151,7 @@ export default function CatalogMenu({ onClose }) {
                     </div>
                 )}
                 {shown.length > 0
-                    ? <ModelGrid models={shown} picked={picked} onPick={setPicked} manage={manage} />
+                    ? <ModelGrid models={shown} picked={picked} onPick={setPicked} onPress={startPress} manage={manage} />
                     : <Empty text={`No ${label.toLowerCase()} from ${brand}`} actions={[['Clear manufacturer', () => setBrand(null)]]} />}
             </>
         );
@@ -194,6 +232,12 @@ export default function CatalogMenu({ onClose }) {
                 )}
             </div>
         </div>
+        {/* outside the panel (its transform would become the containing block of anything fixed): the dragged
+            piece's thumbnail, where it cannot land */}
+        {drag?.x != null && drag.point == null && (drag.type != null
+            ? <span className="catalog-drag-ghost is-shape" style={{ left: drag.x, top: drag.y }}><ShapeIcon type={drag.type} /></span>
+            : <img className="catalog-drag-ghost" src={modelFileUrl(drag.model.files.thumb)} alt="" style={{ left: drag.x, top: drag.y }} />
+        )}
         {/* outside the panel: its transform would become the containing block of the fixed backdrop */}
         {modal != null && (
             <ModelCreateModal model={modal.model} onClose={() => setModal(null)}
@@ -204,13 +248,15 @@ export default function CatalogMenu({ onClose }) {
 }
 
 // manage (owner): { confirmDelete, onEdit(model), onDelete(model) } -> ✎ and × on every tile
-function ModelGrid({ models, picked, onPick, manage }) {
+function ModelGrid({ models, picked, onPick, onPress, manage }) {
     return (
         <div className="catalog-grid">
             {models.map((model) => (
                 <button key={model.id} className={picked?.model.id === model.id ? 'catalog-tile is-picked' : 'catalog-tile'}
                     aria-pressed={picked?.model.id === model.id}
                     aria-label={`${model.name}, ${model.brand}${model.fixed ? ', fixed' : ''}`}
+                    onPointerDown={(event) => onPress(event, model)}
+                    onDragStart={(event) => event.preventDefault()}
                     onClick={() => onPick({ model, variantId: model.variants[0]?.id })}>
                     <img className="catalog-thumb" src={modelFileUrl(model.files.thumb)} alt="" loading="lazy" />
                     <span className="catalog-tile-name">{model.name}</span>

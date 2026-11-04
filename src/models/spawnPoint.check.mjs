@@ -1,6 +1,6 @@
 // Check for spawnPoint.js: node src/models/spawnPoint.check.mjs
 import assert from 'node:assert/strict';
-import { spawnPoint } from './spawnPoint.js';
+import { dropPoint, spawnPoint } from './spawnPoint.js';
 
 // 6 x 6 room (walls on x = ±3 and z = -3, 15 cm thick, outside), one floor raised 10 cm
 const level = {
@@ -19,4 +19,9 @@ assert.ok(Math.abs(center[0]) < 0.1 && Math.abs(center[2]) < 0.1 && center[1] ==
 assert.deepEqual(spawnPoint(level, null), center);
 // inside a wall: the center
 assert.deepEqual(spawnPoint(level, [-3.05, 0]), center);
+// dragged from the catalog: on the floor = there, inside a wall / outside / nothing = no drop
+assert.deepEqual(dropPoint(level, [1, 2]), [1, 0.1, 2]);
+assert.equal(dropPoint(level, [-3.05, 0]), null);
+assert.equal(dropPoint(level, [10, 10]), null);
+assert.equal(dropPoint(level, null), null);
 console.log('spawnPoint: ok');

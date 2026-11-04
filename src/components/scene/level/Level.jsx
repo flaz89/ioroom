@@ -23,6 +23,7 @@ import BoardNotes from "../notes/Notes";
 import BoardMeasures from "../measure/Measures";
 import MaterialDropTarget from "./room/MaterialDropTarget";
 import ViewGround from "./ViewGround";
+import ModelDragGhost from "./ModelDragGhost";
 
 export default function Level() {
 
@@ -61,6 +62,8 @@ export default function Level() {
                 {!isXR && <MaterialDropTarget />}
                 {/* desktop/mobile: where the "+" menu puts new furniture (center of the view on the floor) */}
                 {!isXR && <ViewGround />}
+                {/* a piece dragged out of the catalog (desktop menu or VR panel): its hologram where it would land */}
+                <ModelDragGhost />
                 {/* shared rooms: other people's pointers (and this device's, published) */}
                 <RemotePointers />
                 {/* shared rooms: headset users (and this headset, published) */}

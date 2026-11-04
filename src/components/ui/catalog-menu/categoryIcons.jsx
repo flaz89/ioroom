@@ -2,7 +2,7 @@
 * Line symbols of the "+" menu (CatalogMenu.jsx): catalog categories by id (models/grouping.js) and basic
 * shapes by type (objectsList in objectsSlice.js). 48×48, stroke in currentColor; an id without its own
 * symbol gets a box. `color` / `width` / `height`: for the VR panel, which draws them as images
-* (xr-ui/buttonFace.js loadSvgImage passes them).
+* (xr-ui/buttonFace.js loadSvgImage passes them; xmlns is required there: an svg data URL without it never loads).
 */
 const paths = {
     // chair from the front: framed backrest with a rail, seat, front legs long and back legs short
@@ -51,7 +51,7 @@ export default function CategoryIcon({ id, ...size }) {
 
 function Icon({ children, color, width, height }) {
     return (
-        <svg className="catalog-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2"
+        <svg xmlns="http://www.w3.org/2000/svg" className="catalog-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" color={color} width={width} height={height}>
             {children ?? <rect x="10" y="10" width="28" height="28" rx="2" />}
         </svg>
