@@ -4,7 +4,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 /*
 * Catalog thumbnail of an uploaded model (plan U4, KTD8), rendered in the browser: a one-off WebGL renderer
 * (its own small context, disposed at once), studio light (RoomEnvironment) + a key light, a three-quarter
-* view from the front that frames the whole piece, transparent background (the menu puts it on white).
+* view from the front that frames the whole piece, transparent background (shown on the menu's dark glass).
 * mesh: { geometry, materials } (models/inspectGlb.js). Resolves with a WebP Blob (PNG where the browser
 * cannot encode WebP, e.g. Safari; the server takes both).
 */
@@ -12,17 +12,23 @@ const SIZE = 256;          // px of the thumbnail
 const SUPERSAMPLE = 2;     // rendered at 2x, then downscaled: smooth edges
 const VIEW = new THREE.Vector3(1, 0.75, 1.6).normalize(); // camera direction from the piece (front, right, above)
 const FOV = 30;
+const EXPOSURE = 0.8;
+const KEY_LIGHT = 1;
+const ENVIRONMENT = 0.5; // studio light: at 1 light pieces still looked much paler than in the room
 
 export async function renderThumbnail({ geometry, materials }) {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     try {
         renderer.setPixelRatio(SUPERSAMPLE);
         renderer.setSize(SIZE, SIZE, false);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        // Neutral + lower exposure: ACES at 1 with a 1.5 key burned light textures (travertine) to plain white
+        renderer.toneMapping = THREE.NeutralToneMapping;
+        renderer.toneMappingExposure = EXPOSURE;
         const scene = new THREE.Scene();
         const pmrem = new THREE.PMREMGenerator(renderer);
         scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-        const key = new THREE.DirectionalLight('#ffffff', 1.5);
+        scene.environmentIntensity = ENVIRONMENT;
+        const key = new THREE.DirectionalLight('#ffffff', KEY_LIGHT);
         key.position.set(2, 4, 3);
         scene.add(key, new THREE.Mesh(geometry, materials));
 

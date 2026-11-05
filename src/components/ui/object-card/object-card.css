@@ -40,6 +40,7 @@
 .object-card-link { color: #ffb733; text-decoration: none; }
 .object-card-link:hover { text-decoration: underline; }
 .object-card-variant-label { margin-top: .3em; }
+.object-card-variant-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* one dot per variant (its swatch color, neutral gradient without one) */
 .object-card-variants { display: flex; flex-wrap: wrap; gap: .5em; }
 .object-card-variants button {

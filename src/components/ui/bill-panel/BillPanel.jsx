@@ -16,8 +16,8 @@ const formatNumber = (value) => value.toLocaleString('it-IT', { minimumFractionD
 * surfaces and furniture, visible to everyone in the room (permissions later). Materials: one row per
 * material in use (Plain is not billed): the faces it covers, area, waste, quantity to buy, net price €/m²
 * and net amount. Furniture: one row per catalog model + variant (primitives are not billed): pieces, net
-* price per piece and net amount. Then the net total, VAT and total of both. Prices are those frozen in the project (materials/billOfQuantities.js);
-* a material priced only in the current list is marked "list price". "Print" uses the browser's print
+* price per piece and net amount. Then the net total, VAT and total of both. Prices follow the library / catalog
+* (materials/billOfQuantities.js). "Print" uses the browser's print
 * dialog (also "Save as PDF"): see printBill below.
 */
 
@@ -128,7 +128,6 @@ export default function BillPanel() {
                                                 <td className="num">{formatNumber(row.quantity)}</td>
                                                 <td className="num">
                                                     {row.price == null ? <span className="bill-meta">no price</span> : formatEuro(row.price)}
-                                                    {row.price != null && !row.frozen && <span className="bill-faces">list price</span>}
                                                 </td>
                                                 <td className="num">{row.net == null ? '–' : formatEuro(row.net)}</td>
                                             </tr>
@@ -161,7 +160,6 @@ export default function BillPanel() {
                                                 <td className="num">{row.quantity}</td>
                                                 <td className="num">
                                                     {row.price == null ? <span className="bill-meta">no price</span> : formatEuro(row.price)}
-                                                    {row.price != null && !row.frozen && <span className="bill-faces">list price</span>}
                                                 </td>
                                                 <td className="num">{row.net == null ? '–' : formatEuro(row.net)}</td>
                                             </tr>
@@ -181,7 +179,7 @@ export default function BillPanel() {
                         {unpriced > 0 && (
                             <span className="bill-meta bill-note">{unpriced} item{unpriced > 1 ? 's' : ''} without a price: not in the totals.</span>
                         )}
-                        <span className="bill-meta bill-note">Prices frozen when each material or furniture variant was first used in this project. Areas of the room surfaces (doors and windows not subtracted yet).</span>
+                        <span className="bill-meta bill-note">Prices from the current price list. Areas of the room surfaces (doors and windows not subtracted yet).</span>
                         </div>
                     </div>
                 </div>

@@ -63,16 +63,12 @@ const symbolOf = (key, element) => {
 };
 
 // One tile: image (symbol or thumbnail on a light card), name below, optional badge top right
-function drawTile(ctx, x, y, w, h, { image, isThumb, name, badge }) {
+function drawTile(ctx, x, y, w, h, { image, name, badge }) {
     ctx.save();
     ctx.translate(x, y);
     drawPanel(ctx, w * 0.94, h * 0.94, 'rgba(0, 0, 0, 0.25)');
     const size = w * 0.62;
     const ix = (w * 0.94 - size) / 2, iy = h * 0.08;
-    if (isThumb) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-        ctx.fillRect(ix, iy, size, size);
-    }
     if (image) ctx.drawImage(image, ix, iy, size, size);
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
@@ -193,7 +189,7 @@ export default function VRCatalogPanel() {
         const cell = w / COLUMNS;
         const cellH = cell * (CELL_H / CELL_W);
         shown.forEach((tile, index) => drawTile(ctx, (index % COLUMNS) * cell + cell * 0.03, Math.floor(index / COLUMNS) * cellH + cellH * 0.03, cell, cellH, {
-            image: images[tile.key], isThumb: tile.thumb != null, name: tile.name, badge: tile.badge
+            image: images[tile.key], name: tile.name, badge: tile.badge
         }));
     }, [tilesKey, images, rows]);
 

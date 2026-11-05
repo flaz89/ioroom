@@ -97,9 +97,11 @@ const _livePosition = new THREE.Vector3();
 const _liveQuaternion = new THREE.Quaternion();
 const _liveScale = new THREE.Vector3();
 const _liveMatrix = new THREE.Matrix4();
-const HOVER_TINT = 0.35;               // strength of the hover tint (emissive intensity)
-// furniture: the glow goes through the color texture (useModelMesh.js tintedMaterials), so 1 = twice as bright
-const MODEL_HOVER_TINT = 3;
+const HOVER_TINT = 0.15;               // strength of the hover tint (emissive intensity)
+// furniture: the glow goes through the color texture (useModelMesh.js tintedMaterials), so 1 = twice as bright.
+// Lowered 05/11 (Flavio): the emissive is a light source for the desktop SSGI, at 3 (and 0.35 above) it painted
+// the walls and chairs around in the user's color. Calibration knobs.
+const MODEL_HOVER_TINT = .3;
 const HOVER_FALLBACK_COLOR = '#ffffff'; // hover tint without a shared room
 // XR: a ray resting this long on a furniture piece selects it and opens its product card (xr-ui/VRObjectPanel.jsx)
 const CARD_DWELL_MS = 1500;

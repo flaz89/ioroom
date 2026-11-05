@@ -52,6 +52,17 @@ const eye = new Vector3(0, 1.6, 3);
     hold(drag, target, body, eye, aim.clone().add(new Vector3(0.01, 0, 0)), 600);
     near(target.position.y, 0.5, 'still on the floor'); near(target.position.z, 0, 'not snapped to the wall', 0.05);
 }
+// A still press on a piece turned past 90° (gizmo: euler becomes (180°, 180° - yaw, 180°)) keeps its heading
+{
+    const { target, body } = makeBoard();
+    target.quaternion.setFromAxisAngle(new Vector3(0, 1, 0), 2.6); // ~149°
+    target.updateMatrixWorld(true);
+    assert.ok(Math.abs(target.rotation.y - 2.6) > 0.5, 'euler y is not the heading');
+    const aim = new Vector3(0, 0.9, 0);
+    const drag = grab(target, body, eye, aim);
+    hold(drag, target, body, eye, aim, 300);
+    near(2 * Math.atan2(target.quaternion.y, target.quaternion.w), 2.6, 'heading kept');
+}
 // Slide on the floor following the pointer
 {
     const { target, body } = makeBoard();

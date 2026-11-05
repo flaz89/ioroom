@@ -14,8 +14,8 @@ import { isLockedByOther } from '../../../sync/presence';
 * shown next to the label; click = setObjectVariant (synced, undoable like any object change).
 * Bound to the selection, outside the one-panel rule (panelSlice.js), under the compass (.top-center in
 * ui.css): a button with the piece's name, a click expands / collapses the card (kept between selections).
-* Price = the one frozen in the project for that variant (priceSnapshots, models/variants.js), else the
-* current price list. A model deleted from the catalog shows only what its snapshot remembers.
+* Price = the current catalog. A model deleted from the catalog shows only what its snapshot remembers
+* (priceSnapshots, models/variants.js).
 */
 export default function ObjectCard() {
     const object = useStore((state) => state.objects.instances.find((obj) => obj.id === state.objects.selectedId && obj.type === 'model'));
@@ -47,8 +47,7 @@ export default function ObjectCard() {
     }
 
     const variant = variantOf(model, object.variantId);
-    const card = snapshot ?? variant;
-    const amounts = card?.price != null ? priceBreakdown(1, card.price, card.vatRate) : null;
+    const amounts = variant.price != null ? priceBreakdown(1, variant.price, variant.vatRate) : null;
     const locked = isLockedByOther(object.id);
     return (
         <div className="object-card is-open">
@@ -59,10 +58,10 @@ export default function ObjectCard() {
                 <span className="object-card-meta">
                     {model.size.map((meters) => Math.round(meters * 100)).join(' × ')} cm{model.fixed ? ' · Fixed' : ''}
                 </span>
-                <span className="object-card-variant-label">
-                    {variantsLabel(model)} <span className="object-card-meta">· {(hovered ?? variant).name}</span>
-                </span>
-                {model.variants.length > 1 && (
+                <span className="object-card-variant-label">{variantsLabel(model)}</span>
+                {/* own line, never wraps: a long name must not move the dots below */}
+                <span className="object-card-meta object-card-variant-name" title={(hovered ?? variant).name}>{(hovered ?? variant).name}</span>
+                {model.variants.length > 0 && (
                     <div className="object-card-variants" role="radiogroup" aria-label={variantsLabel(model)} onPointerLeave={() => setHovered(null)}>
                         {model.variants.map((item) => (
                             <button key={item.id} role="radio" aria-checked={item.id === variant.id} aria-label={item.name}
@@ -76,8 +75,8 @@ export default function ObjectCard() {
                 {variant.code && <span className="object-card-meta">Code {variant.code}</span>}
                 {amounts ? (
                     <div className="object-card-price">
-                        <span><b>{formatEuro(amounts.net)}</b> + VAT {card.vatRate ?? DEFAULT_VAT}%</span>
-                        <span className="object-card-meta">{formatEuro(amounts.total)} VAT incl.{snapshot ? '' : ' · list price'}</span>
+                        <span><b>{formatEuro(amounts.net)}</b> + VAT {variant.vatRate ?? DEFAULT_VAT}%</span>
+                        <span className="object-card-meta">{formatEuro(amounts.total)} VAT incl.</span>
                     </div>
                 ) : (
                     <span className="object-card-meta">Price not available</span>

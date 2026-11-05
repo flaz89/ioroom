@@ -17,7 +17,7 @@ import { VR_PANEL, placeInFrontOfUser } from './layout';
 * counterpart: ui/object-card/ObjectCard.jsx). Opened by a ray resting 1.5 s on a piece (SingleObject.jsx
 * CARD_DWELL_MS), in first person and in tabletop. Placed once in front of the user, grab bar below.
 * Rows: manufacturer + name, X · info text (size, Fixed, variant label · variant under the pointer or the
-* current one, code, price net + VAT: the price frozen in the project, else the list) · one dot per variant
+* current one, code, price net + VAT: from the current catalog) · one dot per variant
 * (press = setObjectVariant, synced and undoable) · Website (the manufacturer page, only when the model has a
 * link: a new browser tab behind the scene, xrStore.js openOutsideXR; the button then says how to see it,
 * "Open Meta Menu", and does nothing more until the card is opened again) · Close. Deleting stays the
@@ -79,18 +79,17 @@ function ObjectCardPanel({ object }) {
     }, [getThree]);
 
     const variant = model ? variantOf(model, object.variantId) : null;
-    const card = snapshot ?? variant;
-    const amounts = card?.price != null ? priceBreakdown(1, card.price, card.vatRate) : null;
+    const amounts = variant?.price != null ? priceBreakdown(1, variant.price, variant.vatRate) : null;
     const name = model?.name ?? snapshot?.name ?? 'Unknown piece';
     const lines = model ? [
         `${model.size.map((meters) => Math.round(meters * 100)).join(' × ')} cm${model.fixed ? ' · Fixed' : ''}`,
         `${variantsLabel(model)} · ${(hovered ?? variant)?.name ?? ''}`,
         variant?.code ? `Code ${variant.code}` : '',
-        amounts ? `${formatEuro(amounts.net)} + VAT ${card.vatRate ?? DEFAULT_VAT}%${snapshot ? '' : ' · list price'}` : 'Price not available'
+        amounts ? `${formatEuro(amounts.net)} + VAT ${variant.vatRate ?? DEFAULT_VAT}%` : 'Price not available'
     ] : [snapshot?.variant ?? '', 'No longer in the catalog'];
 
     const variants = model?.variants ?? [];
-    const dotRows = variants.length > 1 ? Math.ceil(variants.length / DOTS_PER_ROW) : 0;
+    const dotRows = variants.length > 0 ? Math.ceil(variants.length / DOTS_PER_ROW) : 0;
     const height = HEADER_H + INFO_H + dotRows * DOT_STEP + BUTTONS_H + PAD;
     const top = height / 2;
 

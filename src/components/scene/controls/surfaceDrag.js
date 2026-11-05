@@ -2,6 +2,13 @@ import { Box3, FrontSide, Matrix4, Plane, Quaternion, Ray, Raycaster, Vector3 } 
 import { getPointerRay } from './pointerRay.js';
 
 /*
+* Heading of an upright object (rotation around +Y), from its quaternion. NOT `rotation.y`: past ±90° three's
+* XYZ euler becomes (180°, 180° - yaw, 180°), and a drag that wrote rotation.y back turned the piece around on a
+* simple click (after a gizmo rotation, 05/11).
+*/
+export const yawOf = (target) => 2 * Math.atan2(target.quaternion.y, target.quaternion.w);
+
+/*
 * Surface-aware ray drag (mouse, controller ray, hand-ray pinch) — "The Sims" style.
 *
 * 1. SUPPORT: at grab time the surface the object rests on is detected (floor, wall, ceiling,
@@ -285,8 +292,7 @@ function snapPose(target, normal, gridStep, yawStep) {
         if (Math.abs(normal.z) < 0.5) target.position.z = Math.round(target.position.z / gridStep) * gridStep;
     }
     if (yawStep > 0 && Math.abs(normal.y) > HORIZONTAL_NORMAL_Y) {
-        const yaw = 2 * Math.atan2(target.quaternion.y, target.quaternion.w);
-        target.quaternion.setFromAxisAngle(_up, Math.round(yaw / yawStep) * yawStep);
+        target.quaternion.setFromAxisAngle(_up, Math.round(yawOf(target) / yawStep) * yawStep);
     }
 }
 
@@ -319,7 +325,7 @@ function setSupport(drag, target, normal, supportPoint, anchorPoint, event) {
     drag.offset.copy(target.position).sub(anchorPoint);
     drag.grabAnchor.copy(anchorPoint);
     drag.grabDistance = Math.max(_localRay.origin.distanceTo(anchorPoint), 1e-3);
-    drag.yaw = target.rotation.y;
+    drag.yaw = yawOf(target);
     drag.twistReference.copy(event.pointerQuaternion).invert();
     drag.pullOrigin.copy(_worldRay.origin);
 }
@@ -342,7 +348,7 @@ export function startSurfaceDrag(event, target, body = target, { gridStep = 0, y
         yawStep,           // rotation snap step (radians), 0 = off
         blocked: false,    // the pointer asks for a place outside the surfaces (room bounds hold the object)
         twistReference: new Quaternion(),
-        yaw: target.rotation.y,
+        yaw: yawOf(target),
         supportNormal: new Vector3(0, 1, 0),
         supportPlane: new Plane(),
         anchorPlane: new Plane(),
@@ -478,7 +484,7 @@ export function updateSurfaceDrag(drag, event, target, body = target, now = even
             if (drag.pending?.key !== key) drag.pending = { key, since: now };
             const dwell = nearSnap || pullOff ? SNAP_DWELL_MS : FAR_SNAP_DWELL_MS;
             if (now - drag.pending.since >= dwell) {
-                const yaw = hit.isWall ? Math.atan2(hit.normal.x, hit.normal.z) : target.rotation.y;
+                const yaw = hit.isWall ? Math.atan2(hit.normal.x, hit.normal.z) : yawOf(target);
                 placeOn(target, body, hit.point, hit.normal, yaw);
                 setSupport(drag, target, hit.normal, hit.point, hit.point, event);
                 drag.pending = null;
@@ -502,7 +508,7 @@ export function updateSurfaceDrag(drag, event, target, body = target, now = even
             _worldRay.direction.copy(_up).negate().transformDirection(parent.matrixWorld);
             const below = castSurface(parent, target, _worldRay);
             if (below != null) {
-                placeOn(target, body, below.point, _up, target.rotation.y);
+                placeOn(target, body, below.point, _up, yawOf(target));
                 localRay(event, parent); // restore the pointer ray (and _worldRay) for setSupport
                 setSupport(drag, target, _up, below.point, _point, event);
                 drag.pending = null;
