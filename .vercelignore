@@ -6,3 +6,6 @@ scripts/.textures
 dist
 # Sync server: deployed to Cloudflare separately (npm run sync:deploy), with local Wrangler data and secrets
 server
+# Blender sources and local test models / plans (heavy, private, not needed by the build)
+blender
+test
