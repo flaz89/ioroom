@@ -29,3 +29,6 @@ scripts/.textures
 
 # Local test files (DXF / plans tried before uploading to R2)
 /test
+
+# Blender sources of the catalog models (heavy, kept out of git; Claude runs Blender headless on them)
+blender/

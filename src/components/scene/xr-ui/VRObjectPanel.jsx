@@ -21,13 +21,14 @@ import { VR_PANEL, placeInFrontOfUser } from './layout';
 * (press = setObjectVariant, synced and undoable) · Website (the manufacturer page, only when the model has a
 * link: a new browser tab behind the scene, xrStore.js openOutsideXR; the button then says how to see it,
 * "Open Meta Menu", and does nothing more until the card is opened again) · Close. Deleting stays the
-* VR delete gesture (FistDeleteGesture.jsx). A piece held by another device: its variant does not change. Closes itself when the selection goes.
+* VR delete gesture (FistDeleteGesture.jsx). Mirror (catalog pieces): left/right version, setObjectMirrored. A piece held by another device: its variant does not change. Closes itself when the selection goes.
 * Calibration knobs in meters: tune on the headset.
 */
 const DISTANCE = 0.45;
 const BELOW_EYES = 0.15;
 const WIDTH = 0.3;
 const PAD = 0.015;
+const MIRROR_H = 0.042; // row of the Mirror button, under the dots
 const HEADER_H = 0.045;
 const INFO_H = 0.085;
 const DOT = 0.03;           // variant buttons (square)
@@ -70,7 +71,7 @@ function ObjectCardPanel({ object }) {
     const getThree = useThree((state) => state.get);
     const model = useModel(object.modelId);
     const snapshot = useStore((state) => state.priceSnapshots[variantPriceKey(object.modelId, object.variantId)]);
-    const { closePanel, setObjectVariant } = useStore.getState(); // actions never change
+    const { closePanel, setObjectVariant, setObjectMirrored } = useStore.getState(); // actions never change
     const [hovered, setHovered] = useState(null);
     const [siteOpened, setSiteOpened] = useState(false);
 
@@ -90,7 +91,8 @@ function ObjectCardPanel({ object }) {
 
     const variants = model?.variants ?? [];
     const dotRows = variants.length > 0 ? Math.ceil(variants.length / DOTS_PER_ROW) : 0;
-    const height = HEADER_H + INFO_H + dotRows * DOT_STEP + BUTTONS_H + PAD;
+    const mirrorRow = model ? MIRROR_H : 0;
+    const height = HEADER_H + INFO_H + dotRows * DOT_STEP + mirrorRow + BUTTONS_H + PAD;
     const top = height / 2;
 
     const background = useCanvasTexture(Math.round(WIDTH * 2000), Math.round(height * 2000), (ctx, w, h) => drawPanel(ctx, w, h), [height]);
@@ -146,6 +148,11 @@ function ObjectCardPanel({ object }) {
                     position={[-WIDTH / 2 + PAD + DOT / 2 + (index % DOTS_PER_ROW) * DOT_STEP, dotsTop - DOT_STEP / 2 - Math.floor(index / DOTS_PER_ROW) * DOT_STEP, 0.001]} />
             ))}
 
+            {model && (
+                <VRButton label="Mirror" size={[0.09, 0.032]} active={!!object.mirrored}
+                    onClick={() => { if (!locked) setObjectMirrored(object.id, !object.mirrored); }}
+                    position={[-WIDTH / 2 + PAD + 0.045, dotsTop - dotRows * DOT_STEP - MIRROR_H / 2, 0.001]} />
+            )}
             {model?.url && (
                 // one tab per card opening: once pressed it only says where the page is (no 10 tabs from 10 presses)
                 <VRButton label={siteOpened ? 'Open Meta Menu' : 'Website'} size={[siteOpened ? 0.15 : 0.09, 0.032]} active={siteOpened}

@@ -108,6 +108,7 @@ const CARD_DWELL_MS = 1500;
 // first-person XR, press on a FIXED piece (refused grab): grey outline for this long (not orange = selected, red = delete)
 const FIXED_FLASH_COLOR = '#9aa0a6';
 const FIXED_FLASH_MS = 500;
+const PART_SPEED = 8; // 1/s: easing of a moving part (backrest, armrest) towards rest / moved
 const REMOTE_FOLLOW_RATE = 20; // 1/s: how fast an object follows another device's drag (higher = snappier)
 const _twist = new THREE.Quaternion();
 
@@ -135,6 +136,51 @@ function nearGrabYaw(grab, pointerQuaternion) {
 * shared by every copy (models/useModelMesh.js), a placeholder box while it loads; real size, so the gizmo
 * never scales it (plan KTD13).
 */
+/*
+* A MOVING PART of a catalog piece (sliding backrest, armrest: models/loadModel.js), child of the piece's
+* mesh: same geometry space, so it follows every drag and the piece's bounds include it. Eases to rest or
+* to rest + slide (`moved`, instance field). A click moves it only if the piece was ALREADY selected when
+* pressed (the first click selects the sofa, the next ones move parts: selecting from the backrest never
+* slides it), never after a drag of the piece, never in the Builder, with the ruler / post-it tools, or
+* while another device holds it. Presses bubble to the piece's mesh, so grabbing a part grabs the piece.
+* Notes and ruler anchors skip parts (no userData.objectId): they go to the body or the room behind.
+*/
+function MovingPart({ part, moved, objectId, targetRef, material, outline }) {
+    const meshRef = useRef();
+    const progress = useRef(moved ? 1 : 0); // first seen: already in place, no animation on load
+    const placed = useRef(false);            // position written for this part (then only while moving)
+    useEffect(() => { placed.current = false; }, [part]); // mirrored: the slide flipped
+    const press = useRef(null);
+    const setObjectPart = useStore((state) => state.setObjectPart);
+    useFrame((_state, delta) => {
+        const goal = moved ? 1 : 0;
+        if (progress.current === goal && placed.current) return;
+        progress.current += (goal - progress.current) * (1 - Math.exp(-delta * PART_SPEED));
+        if (Math.abs(goal - progress.current) < 1e-4) progress.current = goal;
+        meshRef.current.position.fromArray(part.slide).multiplyScalar(progress.current);
+        placed.current = true;
+    });
+    const onPointerDown = () => {
+        press.current = { selected: useStore.getState().objects.selectedId === objectId, at: targetRef.current.position.clone() };
+    };
+    const onClick = (event) => {
+        const state = useStore.getState();
+        const wasSelected = press.current?.selected;
+        const dragged = press.current == null || press.current.at.distanceTo(targetRef.current.position) > 1e-3;
+        press.current = null;
+        if (!wasSelected || dragged || state.workspace === 'builder' || state.notes.placing || state.measures.active || isLockedByOther(objectId)) return;
+        event.stopPropagation();
+        setObjectPart(objectId, part.name, !moved);
+    };
+    return (
+        <mesh ref={meshRef} geometry={part.geometry} material={material} dispose={null}
+            raycast={acceleratedRaycast} spherecast={meshSpherecast} castShadow receiveShadow
+            onPointerDown={onPointerDown} onClick={onClick}>
+            {outline && <SelectionOutline key={`${outline.key}${part.geometry.uuid}`} color={outline.color} thickness={outline.thickness} />}
+        </mesh>
+    );
+}
+
 export default function SingleObject({ data, notes, showPivot, pointerRotation, nearGrabFootprint }) {
 
     const targetRef = useRef();
@@ -158,7 +204,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     const hoverColor = useSelfColor() ?? HOVER_FALLBACK_COLOR;
     // catalog furniture: shared geometry and variant materials (placeholder box while loading / unknown)
     const isModel = data.modelId != null;
-    const modelMesh = useModelMesh(useModel(data.modelId), data.variantId);
+    const modelMesh = useModelMesh(useModel(data.modelId), data.variantId, data.mirrored);
     // true while a grab started on a locked object (or lost the tie): the grab does nothing until released
     const blockedGrabRef = useRef(false);
     // first-person XR ('free'): a FIXED piece is never grabbed; trying flashes a grey outline (FIXED_FLASH_MS)
@@ -459,6 +505,12 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     // Identity delta for the gizmo; PivotControls mutates it in place while dragging
     const pivotMatrix = useMemo(() => new THREE.Matrix4(), []);
 
+    // locked by another device: its color; else selected: orange, red = VR delete gesture armed.
+    // Keyed by the geometry (in the JSX): the outline follows the furniture's placeholder -> GLB swap
+    const outline = lockColor != null ? { key: 'lock', color: lockColor, thickness: 3 }
+        : fixedFlash ? { key: 'fixed', color: FIXED_FLASH_COLOR, thickness: 3 }
+        : isSelected ? { key: 'selected', color: isDeleteArmed ? 'red' : 'orange', thickness: 2 }
+        : null;
     const showHover = isHovered && !isSelected && isGrabbing === false && !isGizmoDragging && lockColor == null;
     // furniture: shared geometry / materials as props, never disposed by React (tinted copies while hovered);
     // raycasts walk the geometry's BVH (loadModel.js; the placeholder box has none: plain three.js raycast)
@@ -506,12 +558,12 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
                         emissive={showHover ? hoverColor : '#000000'}
                         emissiveIntensity={HOVER_TINT}
                     />}
-                    {/* locked by another device: its color; else selected: orange, red = VR delete gesture armed.
-                        Keyed by the geometry: the outline follows the furniture's placeholder -> GLB swap */}
-                    {lockColor != null
-                        ? <SelectionOutline key={modelMesh.geometry.uuid} color={lockColor} thickness={3} />
-                        : fixedFlash ? <SelectionOutline key={`fixed${modelMesh.geometry.uuid}`} color={FIXED_FLASH_COLOR} thickness={3} />
-                        : isSelected && <SelectionOutline key={modelMesh.geometry.uuid} color={isDeleteArmed ? "red" : "orange"} thickness={2} />}
+                    {outline && <SelectionOutline key={`${outline.key}${modelMesh.geometry.uuid}`} color={outline.color} thickness={outline.thickness} />}
+                    {isModel && modelMesh.parts.map((part) => (
+                        <MovingPart key={part.name} part={part} moved={data.moved?.[part.name] === true} objectId={data.id}
+                            targetRef={targetRef} outline={outline}
+                            material={showHover ? tintedMaterials(part.materials, hoverColor, MODEL_HOVER_TINT) : part.materials} />
+                    ))}
                 </mesh>
                 {notes.map((note) => <NotePin key={note.id} note={note} objectScale={data.scale} />)}
             </PivotControls>

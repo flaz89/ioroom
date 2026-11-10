@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -29,14 +30,67 @@ function gltfLoader() {
 }
 
 /*
+* MOVING PARTS (sliding backrests, armrests): a node named `move_<name>` with a `slide` custom property
+* (Blender: Object Properties > Custom Properties, Float Array of 3, meters in BLENDER axes; exported as
+* glTF extras, which GLTFLoader puts in userData) is kept apart from the body: { name, slide, geometry,
+* materials }, slide converted to three.js axes (Blender x, y, z -> x, z, -y). The file holds the part's
+* REST position; `slide` is where it goes when moved. A `move_` node without a valid slide is body.
+*/
+export const MOVE_PREFIX = 'move_';
+const moverOf = (object) => {
+    for (let node = object; node; node = node.parent) {
+        if (node.name.startsWith(MOVE_PREFIX)) return validSlide(node.userData.slide) ? node : null;
+    }
+    return null;
+};
+export const validSlide = (slide) => Array.isArray(slide) && slide.length === 3 && slide.every(Number.isFinite);
+
+/*
 * Every mesh under `root` as one geometry with a group per part and the parts' materials, centered on its
-* base. Attributes missing from some part are dropped (merging needs the same set everywhere).
+* base (body and moving parts at rest together, all shifted the same). Attributes missing from some part
+* are dropped (merging needs the same set everywhere).
 */
 export function mergeParts(root) {
     root.updateMatrixWorld(true);
-    const parts = [];
-    root.traverse((object) => { if (object.isMesh) parts.push(object); });
-    if (parts.length === 0) throw new Error('The GLB has no mesh');
+    const body = [];
+    const movers = new Map(); // move_ node -> its meshes
+    root.traverse((object) => {
+        if (!object.isMesh) return;
+        const mover = moverOf(object);
+        if (mover == null) body.push(object);
+        else movers.set(mover, [...(movers.get(mover) ?? []), object]);
+    });
+    if (body.length === 0) throw new Error('The GLB has no mesh');
+    const all = [{ meshes: body }, ...[...movers].map(([node, meshes]) => ({ node, meshes }))]
+        .map((entry) => ({ ...entry, geometry: mergeMeshes(entry.meshes) }));
+    const box = new THREE.Box3();
+    for (const { geometry } of all) {
+        geometry.computeBoundingBox();
+        box.union(geometry.boundingBox);
+    }
+    for (const { geometry } of all) {
+        geometry.translate(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
+        geometry.boundsTree = new MeshBVH(geometry, { indirect: true });
+    }
+    const materials = (meshes) => meshes.map((mesh) => mesh.material);
+    const [main, ...parts] = all;
+    return {
+        geometry: main.geometry,
+        materials: materials(main.meshes),
+        parts: parts.map(({ node, meshes, geometry }) => {
+            const [x, y, z] = node.userData.slide;
+            return { name: node.name, slide: [x, z, -y], geometry, materials: materials(meshes) };
+        })
+    };
+}
+
+// Material names of a merged model, body then moving parts, once each (variants change materials by name)
+export const modelMaterialNames = (mesh) => [...new Set([mesh.materials, ...mesh.parts.map((part) => part.materials)].flat().map((material) => material.name))];
+
+// The meshes as one geometry in root space, a group per mesh (= per material)
+function mergeMeshes(parts) {
     let geometries = parts.map((part) => {
         const geometry = part.geometry.clone().applyMatrix4(part.matrixWorld);
         geometry.morphAttributes = {};
@@ -49,21 +103,39 @@ export function mergeParts(root) {
     if (geometries.some((geometry) => geometry.index == null)) {
         geometries = geometries.map((geometry) => (geometry.index ? geometry.toNonIndexed() : geometry));
     }
-    const geometry = mergeGeometries(geometries, true);
-    geometry.computeBoundingBox();
-    const { min, max } = geometry.boundingBox;
-    geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
-    geometry.boundsTree = new MeshBVH(geometry, { indirect: true });
-    return { geometry, materials: parts.map((part) => part.material) };
+    return mergeGeometries(geometries, true);
+}
+
+/*
+* The left/right mirror of a merged geometry (modular sofas: one GLB for both sides), cached per geometry.
+* Mirrored in the geometry, not with a negative scale on the mesh: notes, ruler anchors and the BVH stay in
+* plain mesh space and the object's transform (drags, yawOf) never sees a mirror. X flipped (origin is the
+* base center, so the footprint stays put), triangle winding swapped to keep the faces outward.
+*/
+const mirrors = new WeakMap();
+export function mirroredGeometry(geometry) {
+    if (!mirrors.has(geometry)) {
+        const mirror = geometry.clone().applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1));
+        if (mirror.index == null) mirror.setIndex([...Array(mirror.attributes.position.count).keys()]);
+        const index = mirror.index;
+        for (let i = 0; i < index.count; i += 3) {
+            const b = index.getX(i + 1);
+            index.setX(i + 1, index.getX(i + 2));
+            index.setX(i + 2, b);
+        }
+        mirror.computeBoundingBox();
+        mirror.computeBoundingSphere();
+        mirror.boundsTree = new MeshBVH(mirror, { indirect: true });
+        mirrors.set(geometry, mirror);
+    }
+    return mirrors.get(geometry);
 }
 
 // A GLB file's content (ArrayBuffer) -> the loader's gltf (upload checks: models/inspectGlb.js)
 export const parseGlb = (buffer) => gltfLoader().parseAsync(buffer, '');
 
 const pending = new Map(); // GLB url -> Promise
-const loaded = new Map();  // GLB url -> { geometry, materials }
+const loaded = new Map();  // GLB url -> { geometry, materials, parts }
 
 // The merged mesh of the GLB at `url` if already loaded (synchronous: a new copy of a loaded model never flickers)
 export const peekModel = (url) => loaded.get(url);

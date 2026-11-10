@@ -17,6 +17,11 @@
 *   POST   /api/models/:id/textures       multipart: file (one or more images, max 4 MB each)
 *                                         -> { keys }   owner only: variant textures, then referenced by
 *                                         `overrides[material].map` with a PATCH
+*   POST   /api/models/:id/files          multipart: thumb (image, required), glb (optional: replaces the model)
+*                                         + size (JSON, required with glb) -> record   owner only. New files get
+*                                         NEW keys (files are cached as immutable), the old ones are deleted.
+*                                         Thumb alone = re-rendered thumbnail. Variant overrides keep their
+*                                         material names: the client drops those the new GLB lacks.
 *   DELETE /api/models/:id                -> 204        owner only: removes the record and every file of its prefix
 *   GET    /files/models/:owner/:id/:file -> the file (public, immutable, cached for a year)
 *
@@ -222,10 +227,10 @@ export async function handleModels(request, env, { cors, isOwner }) {
         });
     }
 
-    const match = pathname.match(/^\/api\/models(?:\/([\w-]+)(\/textures)?)?\/?$/);
+    const match = pathname.match(/^\/api\/models(?:\/([\w-]+)(?:\/(textures|files))?)?\/?$/);
     if (!match) return null;
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    const [, id, textures] = match;
+    const [, id, sub] = match;
 
     if (!id && request.method === 'GET') return json(await readIndex(env));
     if (!isOwner(request)) return error('Unauthorized', 401);
@@ -261,7 +266,37 @@ export async function handleModels(request, env, { cors, isOwner }) {
     const record = list.find((item) => item.id === id);
     if (!record) return error('Model not found', 404);
 
-    if (textures) {
+    if (sub === 'files') {
+        if (request.method !== 'POST') return error('Method not allowed', 405);
+        const form = await request.formData().catch(() => null);
+        if (!form) return error('Expected a multipart form', 400);
+        const thumb = readImage(form.get('thumb'), 'Thumbnail');
+        if (thumb.error) return error(thumb.error, 400);
+        const glb = form.get('glb');
+        const hasGlb = glb != null && typeof glb !== 'string' && glb.size > 0;
+        let size = record.size;
+        if (hasGlb) {
+            if (glb.size > MAX_GLB_BYTES) return error('GLB too large (max 30 MB)', 400);
+            if (!(await isGlb(glb))) return error('The file is not a GLB (binary glTF)', 400);
+            const read = readFields({ size: form.get('size') }, id, true);
+            if (read.error) return error(read.error, 400);
+            size = read.fields.size;
+        }
+        const tag = crypto.randomUUID().slice(0, 8);
+        const files = {
+            glb: hasGlb ? `${prefixOf(id)}model-${tag}.glb` : record.files.glb,
+            thumb: `${prefixOf(id)}thumb-${tag}.${IMAGE_TYPES[thumb.file.type]}`
+        };
+        if (hasGlb) await env.MATERIALS.put(files.glb, glb.stream(), { httpMetadata: { contentType: GLB_TYPE } });
+        await env.MATERIALS.put(files.thumb, thumb.file.stream(), { httpMetadata: { contentType: thumb.file.type } });
+        const updated = { ...record, size, files };
+        await writeIndex(env, list.map((item) => (item.id === id ? updated : item)));
+        const old = Object.values(record.files).filter((key) => !Object.values(files).includes(key)); // after the index: never a dangling record
+        if (old.length) await env.MATERIALS.delete(old);
+        return json(updated);
+    }
+
+    if (sub === 'textures') {
         if (request.method !== 'POST') return error('Method not allowed', 405);
         const form = await request.formData().catch(() => null);
         const images = form?.getAll('file') ?? [];

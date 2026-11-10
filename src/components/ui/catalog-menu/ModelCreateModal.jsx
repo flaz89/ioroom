@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
 import { MODEL_CATEGORIES, brandsOf, subtypeOf } from '../../../models/grouping';
-import { createModel, modelFileUrl, updateModel, uploadModelTextures } from '../../../models/modelsApi';
+import { createModel, modelFileUrl, replaceModelFiles, updateModel, uploadModelTextures } from '../../../models/modelsApi';
 import { inspectGlb } from '../../../models/inspectGlb';
-import { loadModel } from '../../../models/loadModel';
+import { loadModel, modelMaterialNames } from '../../../models/loadModel';
 import { fixedProposal } from '../../../models/fixedProposal';
 import { renderThumbnail } from '../../../models/thumbnail';
 import { DEFAULT_VAT, formatDecimal, parseDecimal } from '../../../materials/pricing';
@@ -25,9 +25,11 @@ import './model-create.css';
 * Saving: the GLB + thumbnail + card first (POST), then the variant textures (POST .../textures) and the
 *   variants that use them (PATCH). A texture failing after the GLB leaves the model saved: the error says
 *   so and ✎ retries it.
-* EDIT mode (`model` given, the ✎ of the menu): same form without the GLB (it never changes; to replace it,
-*   upload a new model); material names read from the loaded model. A PATCH of the variants deletes the
-*   textures they no longer use (server).
+* EDIT mode (`model` given, the ✎ of the menu): same form; material names read from the loaded model. A PATCH
+*   of the variants deletes the textures they no longer use (server). Optional: REPLACE the GLB (same checks,
+*   new thumbnail and size; variant tints / textures and labels of materials the new GLB lacks are dropped) or
+*   just RE-RENDER the thumbnail (e.g. after a change of models/thumbnail.js): POST .../files first, then the
+*   PATCH. Scenes keep the piece (same id and variant ids) and load the new file.
 * Escape or a click on the backdrop closes it (not while saving).
 */
 const firstSubtype = (category) => MODEL_CATEGORIES.find((item) => item.id === category)?.subtypes[0]?.id ?? 'other';
@@ -50,6 +52,8 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
     const [checking, setChecking] = useState(false);
     const [glbError, setGlbError] = useState(null);
     const [materialNames, setMaterialNames] = useState(null); // edit: read from the loaded GLB
+    const [loadedMesh, setLoadedMesh] = useState(null);       // edit: the current GLB (thumbnail re-render)
+    const [rethumb, setRethumb] = useState(null);             // edit: re-rendered thumbnail (Blob)
     const [name, setName] = useState(model?.name ?? '');
     const [brand, setBrand] = useState(model?.brand ?? '');
     const [category, setCategory] = useState(model?.category ?? initialCategory);
@@ -64,15 +68,20 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
     useEffect(() => {
         if (!isEdit) return;
         loadModel(modelFileUrl(model.files.glb))
-            .then((mesh) => setMaterialNames(mesh.materials.map((material) => material.name)))
+            .then((mesh) => {
+                setLoadedMesh(mesh);
+                setMaterialNames(modelMaterialNames(mesh));
+            })
             .catch(() => setMaterialNames([]));
     }, [isEdit, model]);
 
-    const names = isEdit ? materialNames ?? [] : glb?.materialNames ?? [];
-    const size = isEdit ? model.size : glb?.size;
+    const names = glb?.materialNames ?? (isEdit ? materialNames ?? [] : []);
+    const size = glb?.size ?? model?.size;
+    const dropped = glb ? (materialNames ?? []).filter((material) => material && !glb.materialNames.includes(material)) : [];
     const isFixed = fixed ?? (size ? fixedProposal(category, size) : false);
     const subtypes = MODEL_CATEGORIES.find((item) => item.id === category)?.subtypes ?? [];
-    const preview = useMemo(() => (glb?.thumb ? URL.createObjectURL(glb.thumb) : null), [glb]);
+    const newThumb = glb?.thumb ?? rethumb;
+    const preview = useMemo(() => (newThumb ? URL.createObjectURL(newThumb) : null), [newThumb]);
     useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
     const pickGlb = async (file) => {
@@ -115,6 +124,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         vatRate: prices[i].vatRate,
         swatch: variant.swatch,
         overrides: Object.fromEntries(Object.entries(variant.overrides).flatMap(([material, change]) => {
+            if (glb && !names.includes(material)) return []; // replaced GLB without this material
             const tintOn = change.tintOn ?? (change.tint != null); // a saved tint counts as on
             const tint = tintOn ? change.tint ?? '#ffffff' : null;
             const map = change.file ? keys.get(change.file) : change.map ?? null;
@@ -135,7 +145,8 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         event.preventDefault();
         if (!canSave) return;
         setError(null);
-        const fields = { name: name.trim(), brand: brand.trim(), category, subtype, fixed: isFixed, url: url.trim() || null, materialLabels: labels };
+        const materialLabels = glb ? Object.fromEntries(Object.entries(labels).filter(([material]) => names.includes(material))) : labels;
+        const fields = { name: name.trim(), brand: brand.trim(), category, subtype, fixed: isFixed, url: url.trim() || null, materialLabels };
         const replace = (record) => {
             const { libraryModels, setLibraryModels } = useStore.getState();
             setLibraryModels(libraryModels.some((item) => item.id === record.id)
@@ -145,6 +156,10 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         let saved = null;
         try {
             if (isEdit) {
+                if (newThumb) {
+                    setBusy(glb ? 'Uploading the model…' : 'Saving the thumbnail…');
+                    replace(await replaceModelFiles(model.id, { thumb: newThumb, glb: glb?.file, size: glb?.size }));
+                }
                 const keys = await uploadTextures(model.id);
                 setBusy('Saving…');
                 replace(await updateModel(model.id, { ...fields, variants: variantsPayload(keys) }));
@@ -178,13 +193,20 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
                     )}
                 </div>
 
-                {!isEdit && (
-                    <label className="material-create-file">
-                        <span>Model (GLB: one mesh, Draco, textures, meters)</span>
-                        <input type="file" accept=".glb,model/gltf-binary" autoFocus onChange={(event) => pickGlb(event.target.files[0] ?? null)} />
-                    </label>
+                <label className="material-create-file">
+                    <span>{isEdit ? 'Replace the model · optional (GLB: one mesh + move_ parts, Draco, textures, meters)' : 'Model (GLB: one mesh + move_ parts, Draco, textures, meters)'}</span>
+                    <input type="file" accept=".glb,model/gltf-binary" autoFocus={!isEdit} onChange={(event) => pickGlb(event.target.files[0] ?? null)} />
+                </label>
+                {isEdit && !glb && (
+                    <button type="button" className="model-create-link" disabled={loadedMesh == null || rethumb != null}
+                        onClick={async () => setRethumb(await renderThumbnail(loadedMesh))}>
+                        {rethumb ? 'New thumbnail ready: Save to keep it' : 'Re-render the thumbnail'}
+                    </button>
                 )}
                 {checking && <span className="material-create-help">Checking the model…</span>}
+                {isEdit && glb && dropped.length > 0 && (
+                    <span className="material-create-help">Not in the new model: {dropped.join(', ')} · their tints, textures and names will be removed</span>
+                )}
                 {glbError && <span className="material-create-error" role="alert">{glbError}</span>}
                 {size && (
                     <span className="material-create-help">

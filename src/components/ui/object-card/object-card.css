@@ -36,6 +36,21 @@
 .object-card-thumb { width: 100%; aspect-ratio: 1; max-height: 160px; object-fit: contain; }
 .object-card-body { padding: .7em .8em .8em; display: flex; flex-direction: column; gap: .35em; }
 .object-card-meta { opacity: .7; }
+.object-card-thumb.is-mirrored { transform: scaleX(-1); }
+.object-card-size { display: flex; align-items: center; justify-content: space-between; gap: .5em; }
+.object-card-mirror {
+    flex: none;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    line-height: 1;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+.object-card-mirror:hover { border-color: rgba(255, 255, 255, 0.7); }
+.object-card-mirror.is-active { border-color: rgba(255, 154, 26, 0.9); background: rgba(255, 154, 26, 0.25); }
+.object-card-mirror:disabled { cursor: not-allowed; opacity: .5; }
 .object-card-price { display: flex; flex-direction: column; gap: .15em; }
 .object-card-link { color: #ffb733; text-decoration: none; }
 .object-card-link:hover { text-decoration: underline; }

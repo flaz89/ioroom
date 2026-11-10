@@ -72,11 +72,17 @@ function hologramGlslMaterial() {
 export default function ObjectGhost({ data }) {
     const isWebGPU = useThree((state) => state.gl.isWebGPURenderer === true);
     // catalog furniture: its shared GLB geometry (one material over all its groups), or the placeholder box
-    const modelGeometry = useModelMesh(useModel(data.modelId), data.variantId).geometry;
-    const body = data.modelId != null ? modelGeometry : shapeOf(data.geometryType);
+    const modelMesh = useModelMesh(useModel(data.modelId), data.variantId, data.mirrored);
+    const body = data.modelId != null ? modelMesh.geometry : shapeOf(data.geometryType);
+    const material = isWebGPU ? hologramNodeMaterial() : hologramGlslMaterial();
     return (
         <group position={data.position} rotation={data.rotation} scale={data.scale} pointerEvents="none">
-            <mesh geometry={body} material={isWebGPU ? hologramNodeMaterial() : hologramGlslMaterial()} dispose={null} />
+            <mesh geometry={body} material={material} dispose={null} />
+            {/* moving parts where the piece has them (rest or moved) */}
+            {data.modelId != null && modelMesh.parts.map((part) => (
+                <mesh key={part.name} geometry={part.geometry} material={material} dispose={null}
+                    position={data.moved?.[part.name] ? part.slide : undefined} />
+            ))}
         </group>
     );
 }

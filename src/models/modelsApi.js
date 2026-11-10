@@ -3,7 +3,7 @@ import { API_ORIGIN, adminToken } from '../sync/roomSync';
 /*
 * Client of the furniture catalog API of the server (server/src/models.js, Cloudflare R2).
 * - listModels(): public, every viewer loads it (furniture placed in a room must render for guests);
-* - createModel / updateModel / uploadModelTextures / deleteModel: owner only (admin token kept by
+* - createModel / updateModel / uploadModelTextures / replaceModelFiles / deleteModel: owner only (admin token kept by
 *   roomSync.js), used by the upload modal (ui/catalog-menu/ModelCreateModal.jsx).
 * Records keep the R2 keys of their files (files.glb / files.thumb, variant overrides[material].map): the
 * owner's edits send them back unchanged; modelFileUrl(key) gives the URL to load.
@@ -51,6 +51,17 @@ export async function uploadModelTextures(id, blobs) {
     const form = new FormData();
     for (const blob of blobs) form.append('file', blob, `texture.${blob.type.split('/')[1]}`);
     return (await (await check(await fetch(`${API}/${id}/textures`, { method: 'POST', headers: auth(), body: form }))).json()).keys;
+}
+
+// Replaces the files of a model: thumb (Blob, required), glb (Blob, optional) + its size; new keys, old files deleted
+export async function replaceModelFiles(id, { thumb, glb = null, size = null }) {
+    const form = new FormData();
+    form.append('thumb', thumb, `thumb.${thumb.type.split('/')[1]}`);
+    if (glb) {
+        form.append('glb', glb, 'model.glb');
+        form.append('size', JSON.stringify(size));
+    }
+    return (await check(await fetch(`${API}/${id}/files`, { method: 'POST', headers: auth(), body: form }))).json();
 }
 
 export async function deleteModel(id) {

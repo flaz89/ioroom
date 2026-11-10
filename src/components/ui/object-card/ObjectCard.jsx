@@ -16,6 +16,7 @@ import { isLockedByOther } from '../../../sync/presence';
 * ui.css): a button with the piece's name, a click expands / collapses the card (kept between selections).
 * Price = the current catalog. A model deleted from the catalog shows only what its snapshot remembers
 * (priceSnapshots, models/variants.js).
+* Mirror: left/right version of the piece (setObjectMirrored; the thumbnail flips with it).
 */
 export default function ObjectCard() {
     const object = useStore((state) => state.objects.instances.find((obj) => obj.id === state.objects.selectedId && obj.type === 'model'));
@@ -25,6 +26,7 @@ export default function ObjectCard() {
     const model = useModel(object?.modelId);
     const snapshot = useStore((state) => object ? state.priceSnapshots[variantPriceKey(object.modelId, object.variantId)] : null);
     const setObjectVariant = useStore((state) => state.setObjectVariant);
+    const setObjectMirrored = useStore((state) => state.setObjectMirrored);
     if (!object || hidden) return null;
 
     const name = model?.name ?? snapshot?.name ?? 'Unknown piece';
@@ -52,12 +54,16 @@ export default function ObjectCard() {
     return (
         <div className="object-card is-open">
             {toggle}
-            <img className="object-card-thumb" src={modelFileUrl(model.files.thumb)} alt="" />
+            <img className={`object-card-thumb${object.mirrored ? ' is-mirrored' : ''}`} src={modelFileUrl(model.files.thumb)} alt="" />
             <div className="object-card-body">
                 <span className="object-card-meta">{model.brand}</span>
-                <span className="object-card-meta">
-                    {model.size.map((meters) => Math.round(meters * 100)).join(' × ')} cm{model.fixed ? ' · Fixed' : ''}
-                </span>
+                <div className="object-card-size">
+                    <span className="object-card-meta">
+                        {model.size.map((meters) => Math.round(meters * 100)).join(' × ')} cm{model.fixed ? ' · Fixed' : ''}
+                    </span>
+                    <button className={`object-card-mirror${object.mirrored ? ' is-active' : ''}`} aria-pressed={!!object.mirrored}
+                        aria-label="Mirror" title="Mirror" disabled={locked} onClick={() => setObjectMirrored(object.id, !object.mirrored)}>⇋</button>
+                </div>
                 <span className="object-card-variant-label">{variantsLabel(model)}</span>
                 {/* own line, never wraps: a long name must not move the dots below */}
                 <span className="object-card-meta object-card-variant-name" title={(hovered ?? variant).name}>{(hovered ?? variant).name}</span>

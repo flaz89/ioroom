@@ -5,7 +5,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 * Catalog thumbnail of an uploaded model (plan U4, KTD8), rendered in the browser: a one-off WebGL renderer
 * (its own small context, disposed at once), studio light (RoomEnvironment) + a key light, a three-quarter
 * view from the front that frames the whole piece, transparent background (shown on the menu's dark glass).
-* mesh: { geometry, materials } (models/inspectGlb.js). Resolves with a WebP Blob (PNG where the browser
+* mesh: { geometry, materials, parts } (loadModel.mergeParts; moving parts drawn at rest). Resolves with a WebP Blob (PNG where the browser
 * cannot encode WebP, e.g. Safari; the server takes both).
 */
 const SIZE = 256;          // px of the thumbnail
@@ -16,7 +16,7 @@ const EXPOSURE = 0.8;
 const KEY_LIGHT = 1;
 const ENVIRONMENT = 0.5; // studio light: at 1 light pieces still looked much paler than in the room
 
-export async function renderThumbnail({ geometry, materials }) {
+export async function renderThumbnail({ geometry, materials, parts = [] }) {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     try {
         renderer.setPixelRatio(SUPERSAMPLE);
@@ -30,9 +30,9 @@ export async function renderThumbnail({ geometry, materials }) {
         scene.environmentIntensity = ENVIRONMENT;
         const key = new THREE.DirectionalLight('#ffffff', KEY_LIGHT);
         key.position.set(2, 4, 3);
-        scene.add(key, new THREE.Mesh(geometry, materials));
+        scene.add(key, new THREE.Mesh(geometry, materials), ...parts.map((part) => new THREE.Mesh(part.geometry, part.materials)));
 
-        const sphere = geometry.boundingSphere;
+        const sphere = parts.reduce((box, part) => box.union(part.geometry.boundingBox), geometry.boundingBox.clone()).getBoundingSphere(new THREE.Sphere());
         const camera = new THREE.PerspectiveCamera(FOV, 1, 0.01, 100);
         const distance = (sphere.radius / Math.sin(THREE.MathUtils.degToRad(FOV / 2))) * 1.05;
         camera.position.copy(sphere.center).addScaledVector(VIEW, distance);

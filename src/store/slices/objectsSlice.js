@@ -105,6 +105,42 @@ export const createObjectsSlice = (set) => ({
         })
     },
 
+    // MIRROR ------------------------ left/right version of a furniture piece (modular sofas). The geometry
+    // is mirrored (loadModel.mirroredGeometry), so notes and ruler ends stuck on the piece flip with it
+    setObjectMirrored: (id, mirrored) => {
+        set((state) => {
+            const flip = ([x, y, z]) => [-x, y, z];
+            const flipEnd = (end) => (end.objectId === id && end.local ? { ...end, local: flip(end.local) } : end);
+            const flipMeasure = (measure) => ({ ...measure, a: flipEnd(measure.a), b: flipEnd(measure.b) });
+            return {
+                objects: {
+                    ...state.objects,
+                    instances: state.objects.instances.map((obj) => (obj.id === id ? { ...obj, mirrored } : obj))
+                },
+                notes: {
+                    ...state.notes,
+                    items: state.notes.items.map((note) => (note.objectId === id ? { ...note, p: flip(note.p), n: flip(note.n) } : note))
+                },
+                measures: { ...state.measures, local: state.measures.local.map(flipMeasure), items: state.measures.items.map(flipMeasure) }
+            };
+        });
+    },
+
+    // MOVING PART ------------------- a sliding part of a furniture piece (models/loadModel.js) at rest or moved:
+    // instance field `moved` { <part name>: true }, synced and undoable like any object change
+    setObjectPart: (id, part, moved) => {
+        set((state) => ({
+            objects: {
+                ...state.objects,
+                instances: state.objects.instances.map((obj) => {
+                    if (obj.id !== id) return obj;
+                    const { [part]: _wasMoved, ...rest } = obj.moved ?? {};
+                    return { ...obj, moved: moved ? { ...rest, [part]: true } : rest };
+                })
+            }
+        }));
+    },
+
     // SELECT ----------------------- tracks the selected object
     selectObject: (id) => {
         set((state) => ({
