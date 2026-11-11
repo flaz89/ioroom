@@ -94,7 +94,9 @@ function mergeMeshes(parts) {
     let geometries = parts.map((part) => {
         const geometry = part.geometry.clone().applyMatrix4(part.matrixWorld);
         geometry.morphAttributes = {};
-        return geometry;
+        // a mirroring node (negative scale, e.g. a seat exported as the mirror of another) reverses the
+        // triangles once baked: flip them back, or the part shows its inside
+        return part.matrixWorld.determinant() < 0 ? flipWinding(geometry) : geometry;
     });
     const common = Object.keys(geometries[0].attributes).filter((name) => geometries.every((g) => g.attributes[name]));
     for (const geometry of geometries) {
@@ -106,6 +108,18 @@ function mergeMeshes(parts) {
     return mergeGeometries(geometries, true);
 }
 
+// Reverses every triangle (b <-> c), in place; non-indexed geometry gets an index first
+function flipWinding(geometry) {
+    if (geometry.index == null) geometry.setIndex([...Array(geometry.attributes.position.count).keys()]);
+    const index = geometry.index;
+    for (let i = 0; i < index.count; i += 3) {
+        const b = index.getX(i + 1);
+        index.setX(i + 1, index.getX(i + 2));
+        index.setX(i + 2, b);
+    }
+    return geometry;
+}
+
 /*
 * The left/right mirror of a merged geometry (modular sofas: one GLB for both sides), cached per geometry.
 * Mirrored in the geometry, not with a negative scale on the mesh: notes, ruler anchors and the BVH stay in
@@ -115,14 +129,7 @@ function mergeMeshes(parts) {
 const mirrors = new WeakMap();
 export function mirroredGeometry(geometry) {
     if (!mirrors.has(geometry)) {
-        const mirror = geometry.clone().applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1));
-        if (mirror.index == null) mirror.setIndex([...Array(mirror.attributes.position.count).keys()]);
-        const index = mirror.index;
-        for (let i = 0; i < index.count; i += 3) {
-            const b = index.getX(i + 1);
-            index.setX(i + 1, index.getX(i + 2));
-            index.setX(i + 2, b);
-        }
+        const mirror = flipWinding(geometry.clone().applyMatrix4(new THREE.Matrix4().makeScale(-1, 1, 1)));
         mirror.computeBoundingBox();
         mirror.computeBoundingSphere();
         mirror.boundsTree = new MeshBVH(mirror, { indirect: true });

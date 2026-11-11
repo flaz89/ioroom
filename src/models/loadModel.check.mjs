@@ -79,4 +79,22 @@ for (let i = 0; i < mirror.index.count; i += 3) {
     assert.ok(Math.abs(part.geometry.boundingBox.min.z + 0.5) < 1e-6);
     assert.ok(part.geometry.boundsTree);
 }
+// NEGATIVE SCALE node (a mirrored part): baked with its triangles flipped back, faces still outward
+{
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), new THREE.MeshStandardMaterial());
+    box.scale.set(-1, -1, -1);
+    const scene = new THREE.Group();
+    scene.add(box);
+    const { geometry: flipped } = mergeParts(scene);
+    const [a, b, c, n] = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+    const pos = flipped.attributes.position, nor = flipped.attributes.normal, idx = flipped.index;
+    for (let i = 0; i < idx.count; i += 3) {
+        a.fromBufferAttribute(pos, idx.getX(i)); b.fromBufferAttribute(pos, idx.getX(i + 1)); c.fromBufferAttribute(pos, idx.getX(i + 2));
+        const face = c.clone().sub(b).cross(a.clone().sub(b));
+        n.fromBufferAttribute(nor, idx.getX(i));
+        assert.ok(face.dot(n) > 0, 'winding agrees with the (transformed) normals');
+        const center = a.clone().add(b).add(c).divideScalar(3).sub(new THREE.Vector3(0, 0.5, 0));
+        assert.ok(face.dot(center) > 0, 'faces point outward');
+    }
+}
 console.log('loadModel: ok');
