@@ -104,7 +104,7 @@
         left: 84px;
         right: 84px;
         top: auto;
-        bottom: 84px;
+        bottom: calc(84px + var(--bottom-switches, 0px));
         width: auto;
         max-height: 42vh;
         overflow-y: auto;

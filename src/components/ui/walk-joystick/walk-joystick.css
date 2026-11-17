@@ -1,4 +1,4 @@
-/* Virtual joystick of the first-person tour (WalkJoystick.jsx): glass disc, orange knob */
+/* Virtual joystick of the tour (WalkJoystick.jsx): faint ring, see-through orange knob */
 .walk-joystick {
     position: fixed;
     left: 84px;
@@ -7,11 +7,10 @@
     height: 120px;
     display: grid;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    /* as transparent as possible: the room shows through (a faint ring, no blur nor shadow) */
+    border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 50%;
-    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    background: rgba(255, 255, 255, 0.04);
     pointer-events: all;
     touch-action: none;
     z-index: 5;
@@ -21,17 +20,16 @@
     width: 50px;
     height: 50px;
     border-radius: 50%;
-    background: linear-gradient(35deg, rgba(255, 183, 51, 1) 0%, rgba(255, 140, 0, 1) 70%);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    background: rgba(255, 154, 26, 0.35);
+    border: 1px solid rgba(255, 183, 51, 0.6);
     pointer-events: none;
 }
 
-/* phones: in the tour only the mode switch stays at the bottom (ui.css .is-tour): centered just above it */
+/* phones: bottom left (provisional), over the hidden left toolbar's place, above the mode switch's row
+   (bottom bar, ui.css: 10px + 41px) so the two never touch on narrow screens */
 @media (max-width: 767px) {
     .walk-joystick {
-        left: 0;
-        right: 0;
-        margin: 0 auto;
-        bottom: 200px;
+        left: 20px;
+        bottom: 66px;
     }
 }

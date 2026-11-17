@@ -27,7 +27,7 @@ import LoadingScreen from './components/ui/loading-screen/LoadingScreen';
 */
 
 export default function App() {
-  const isTour = useStore((state) => state.workspace === 'tour');
+  const workspace = useStore((state) => state.workspace);
 
   // Material library (textures stored in R2, server/src/materials.js): loaded once for everyone, rooms
   // may use any of them. Without the sync server only the plain material exists.
@@ -72,8 +72,9 @@ export default function App() {
   return (
     <>
       <div className="ui-container">
-        {/* is-tour: phones show only the mode switch, the tour views and the joystick (ui.css) */}
-        <div className={isTour ? 'ui is-tour' : 'ui'}>
+        {/* is-<mode>: phones lay out the bottom by mode (ui.css: is-tour shows only the mode switch, the tour
+            views and the joystick; is-builder makes room for two stacked switches) */}
+        <div className={`ui is-${workspace}`}>
           <LeftToolBar/>
           <RightToolBar/>
           {/* top center, stacked downwards: compass, room notice, selected furniture (product card) */}

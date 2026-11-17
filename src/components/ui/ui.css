@@ -116,9 +116,14 @@
     /* Right toolbar: the snap pill goes to the bottom, level with the left toolbar */
     .right-toolbar { justify-content: flex-end; }
 
+    /* The mode switch (bottom bar) is the lowest thing at the bottom center; the "< + >" row sits right above
+       it. --bottom-switches = room taken by the switches: one pill (41px) + the bar padding + a gap; two in the builder (its 2D /
+       3D views are stacked over the mode switch). Calibration knobs. */
+    .ui { --bottom-switches: 61px; }
+    .ui.is-builder { --bottom-switches: 110px; }
+
     /* "+" at the bottom center of the screen (the objects menu opens as a centered card, below).
-       Fixed to the viewport: bottom = .ui-container padding (app.css) + toolbar padding + pill padding,
-       so it sits level with the bottom buttons of the two toolbars. */
+       Fixed to the viewport: right above the mode switch (--bottom-switches). */
     .ui .objects-selection {
         position: fixed;
         left: 0;
@@ -126,7 +131,7 @@
         width: fit-content;
         margin: 0 auto; /* centered WITHOUT transform: a transform would become the containing block of
                            the fixed objects menu inside it, which then opened off screen */
-        bottom: calc(10px + 1em + .5em + 2px);
+        bottom: calc(10px + var(--bottom-switches));
         flex-direction: row;
     }
     /* Delete (shown with a selection) ABOVE "+", without moving "+" off center (provisional) */
@@ -145,7 +150,7 @@
         right: 0;
         width: fit-content;
         margin: 0 auto;
-        bottom: calc(10px + 1em + .5em + 2px);
+        bottom: calc(10px + var(--bottom-switches));
         gap: calc(20px + 1em + 2px + 24px);
         padding: 0;
         border: none;
@@ -153,7 +158,7 @@
         box-shadow: none;
     }
 
-    /* The rest of the bottom bar (admin workspace switch) goes above that row and the delete button.
+    /* The rest of the bottom bar (mode switch, builder views) at the very bottom, under the "< + >" row.
        Centered with auto margins, not a transform: a transform would become the containing block of the
        fixed undo / redo inside it. */
     .ui .bottom-bar {
@@ -162,7 +167,7 @@
         width: fit-content;
         margin: 0 auto;
         transform: none;
-        bottom: calc(10px + 1em + .5em + 2px + 2 * (20px + 1em + 2px + 12px));
+        bottom: 10px;
     }
 
     /* TOUR on phones: only the mode switch at the bottom, the tour views at the top (under the compass) and
