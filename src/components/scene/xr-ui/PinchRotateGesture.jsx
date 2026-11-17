@@ -52,7 +52,7 @@ export default function PinchRotateGesture() {
         const pinching = distance < (rotationRef.current ? PINCH_END : PINCH_START);
         // fixed pieces never rotate in first person (tabletop: they do)
         const fixed = useStore.getState().view.mode !== 'tabletop' && isFixedPiece(useStore.getState(), objects.selectedId);
-        if (!pinching || objects.selectedId == null || objects.grabbedId != null || isLockedByOther(objects.selectedId) || fixed) {
+        if (!pinching || useStore.getState().workspace !== 'designer' || objects.selectedId == null || objects.grabbedId != null || isLockedByOther(objects.selectedId) || fixed) {
             rotationRef.current = null;
             return;
         }

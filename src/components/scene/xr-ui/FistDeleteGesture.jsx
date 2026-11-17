@@ -79,7 +79,8 @@ export default function FistDeleteGesture() {
         // and never during / right after a teleport pinch
         const now = performance.now();
         if (isPinching(frame, hand, referenceSpace)) lastPinchAt.current = now;
-        const canArm = objects.selectedId != null && objects.grabbedId == null && !isLockedByOther(objects.selectedId)
+        // tour (workspaceSlice.js): nothing is deleted
+        const canArm = useStore.getState().workspace === 'designer' && objects.selectedId != null && objects.grabbedId == null && !isLockedByOther(objects.selectedId)
             && inPose.current && !view.handMenuVisible && now - lastPinchAt.current > AFTER_PINCH_MS;
         const result = gesture(now, openness, canArm);
 

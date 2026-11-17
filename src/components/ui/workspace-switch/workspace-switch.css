@@ -29,3 +29,10 @@
     background: linear-gradient(35deg, rgba(255, 183, 51, 1) 0%, rgba(255, 140, 0, 1) 70%);
     font-weight: 600;
 }
+
+/* icon buttons (tour views): square-ish, the svg centered */
+.workspace-switch button.has-icon {
+    display: grid;
+    place-items: center;
+    padding: .35em .75em;
+}

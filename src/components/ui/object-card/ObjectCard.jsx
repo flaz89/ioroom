@@ -8,7 +8,7 @@ import { DEFAULT_VAT, formatEuro, priceBreakdown } from '../../../materials/pric
 import { isLockedByOther } from '../../../sync/presence';
 
 /*
-* Product card of the selected furniture piece (plan U8), Designer only: manufacturer, name, size, "Fixed",
+* Product card of the selected furniture piece (plan U8), Designer and Tour: manufacturer, name, size, "Fixed",
 * variants, code, price, link. Variants = what they change ("Leather", models/variants.js variantsLabel)
 * followed by one colored dot each; the name of the variant under the pointer (else the current one) is
 * shown next to the label; click = setObjectVariant (synced, undoable like any object change).
@@ -16,11 +16,13 @@ import { isLockedByOther } from '../../../sync/presence';
 * ui.css): a button with the piece's name, a click expands / collapses the card (kept between selections).
 * Price = the current catalog. A model deleted from the catalog shows only what its snapshot remembers
 * (priceSnapshots, models/variants.js).
-* Mirror: left/right version of the piece (setObjectMirrored; the thumbnail flips with it).
+* Mirror: left/right version of the piece (setObjectMirrored; the thumbnail flips with it). Not in the tour
+* (a visit changes the variant, never the piece).
 */
 export default function ObjectCard() {
     const object = useStore((state) => state.objects.instances.find((obj) => obj.id === state.objects.selectedId && obj.type === 'model'));
-    const hidden = useStore((state) => state.workspace !== 'designer');
+    const hidden = useStore((state) => state.workspace === 'builder');
+    const isTour = useStore((state) => state.workspace === 'tour');
     const [open, setOpen] = useState(false);
     const [hovered, setHovered] = useState(null); // variant under the pointer
     const model = useModel(object?.modelId);
@@ -61,8 +63,8 @@ export default function ObjectCard() {
                     <span className="object-card-meta">
                         {model.size.map((meters) => Math.round(meters * 100)).join(' × ')} cm{model.fixed ? ' · Fixed' : ''}
                     </span>
-                    <button className={`object-card-mirror${object.mirrored ? ' is-active' : ''}`} aria-pressed={!!object.mirrored}
-                        aria-label="Mirror" title="Mirror" disabled={locked} onClick={() => setObjectMirrored(object.id, !object.mirrored)}>⇋</button>
+                    {!isTour && <button className={`object-card-mirror${object.mirrored ? ' is-active' : ''}`} aria-pressed={!!object.mirrored}
+                        aria-label="Mirror" title="Mirror" disabled={locked} onClick={() => setObjectMirrored(object.id, !object.mirrored)}>⇋</button>}
                 </div>
                 <span className="object-card-variant-label">{variantsLabel(model)}</span>
                 {/* own line, never wraps: a long name must not move the dots below */}

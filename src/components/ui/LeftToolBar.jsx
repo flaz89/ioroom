@@ -77,6 +77,8 @@ export default function LeftToolBar() {
 
     // Environment tools (sun, materials, bill) belong to the designer mode (store/slices/workspaceSlice.js)
     const isDesigner = useStore((state) => state.workspace === 'designer');
+    // tour: sun (shared) and bill (read only), no materials
+    const isTour = useStore((state) => state.workspace === 'tour');
     // Plan tools: builder mode, 2D view only (components/builder/PlanView2D.jsx)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const isBuilder = useStore((state) => state.workspace === 'builder');
@@ -150,11 +152,11 @@ export default function LeftToolBar() {
                     <CeilingControl />
                 </div>}
 
-                {isDesigner && <div className="scene-settings">
+                {(isDesigner || isTour) && <div className="scene-settings">
                     {/* not last: its panel is centered on the button and needs room below it */}
                     <SunPanel />
                     {/* room surface materials (floor, walls) */}
-                    <MaterialsPanel />
+                    {isDesigner && <MaterialsPanel />}
                     {/* bill of quantities of the materials in use (everyone, for now) */}
                     <BillPanel />
                 </div>}

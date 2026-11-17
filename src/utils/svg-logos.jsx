@@ -117,6 +117,20 @@ export const svg = {
         <path d="M6 8a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6"/>
     </svg>,
 
+    // tour views (WorkspaceSwitch.jsx): orbit = a path around a point; third person = a figure; first person = eye
+    orbitView: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="10" cy="10" rx="8" ry="3.6" stroke="currentColor" strokeWidth="1.6"/>
+        <circle cx="10" cy="10" r="2" fill="currentColor"/>
+        <path d="M14.2 4.9l2.6 1.4-1.6 2.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>,
+    thirdPerson: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="10" cy="5.5" r="2.8" stroke="currentColor" strokeWidth="1.6"/>
+        <path d="M4.5 17.5c0-3.4 2.5-6 5.5-6s5.5 2.6 5.5 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>,
+    firstPerson: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <circle cx="10" cy="10" r="2.6" stroke="currentColor" strokeWidth="1.6"/>
+    </svg>,
     // eye / crossed eye: shown / hidden (ceiling visibility)
     eye: <svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M1.5 10S4.5 4.5 10 4.5 18.5 10 18.5 10 15.5 15.5 10 15.5 1.5 10 1.5 10z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>

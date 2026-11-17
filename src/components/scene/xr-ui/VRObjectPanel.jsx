@@ -76,6 +76,7 @@ function ObjectCardPanel({ object }) {
     const { closePanel, setObjectVariant, setObjectMirrored } = useStore.getState(); // actions never change
     const [hovered, setHovered] = useState(null);
     const [siteOpened, setSiteOpened] = useState(false);
+    const isTour = useStore((state) => state.workspace === 'tour'); // a visit never mirrors the piece
 
     useLayoutEffect(() => {
         placeInFrontOfUser(groupRef.current, getThree().camera, DISTANCE, BELOW_EYES);
@@ -150,7 +151,7 @@ function ObjectCardPanel({ object }) {
                     position={[-WIDTH / 2 + PAD + DOT / 2 + (index % DOTS_PER_ROW) * DOT_STEP, dotsTop - DOT_STEP / 2 - Math.floor(index / DOTS_PER_ROW) * DOT_STEP, 0.001]} />
             ))}
 
-            {model && (
+            {model && !isTour && (
                 <VRButton label="Mirror" size={[0.09, 0.032]} active={!!object.mirrored}
                     onClick={() => { if (!locked) setObjectMirrored(object.id, !object.mirrored); }}
                     position={[-WIDTH / 2 + PAD + 0.045, dotsTop - dotRows * DOT_STEP - MIRROR_H / 2, 0.001]} />

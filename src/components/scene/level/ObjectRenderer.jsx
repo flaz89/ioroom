@@ -17,6 +17,9 @@ export default function ObjectRenderer({ isTabletop }) {
     // builder (flatscreen only, admin): furniture frozen as holograms (ObjectGhost.jsx), not editable
     const isBuilder = useStore((state) => state.workspace === 'builder') && isFlatscreen;
 
+    // tour: selectable for the product card, never moved (no gizmo; grabs refused in SingleObject.jsx)
+    const isTour = useStore((state) => state.workspace === 'tour');
+
     if (isBuilder) return instances.map((obj) => <ObjectGhost key={obj.id} data={obj} />);
 
     return(
@@ -27,7 +30,7 @@ export default function ObjectRenderer({ isTabletop }) {
                 data={obj}
                 // post-it notes stuck on this object (they move with it)
                 notes={notes.filter((note) => note.objectId === obj.id)}
-                showPivot={isFlatscreen}
+                showPivot={isFlatscreen && !isTour}
                 // flatscreen: no rotation from a mouse ray; tabletop: pieces stay upright (yaw only)
                 pointerRotation={isFlatscreen ? 'none' : isTabletop ? 'yaw' : 'free'}
                 // dotted drag footprint on NEAR grabs too (hand/grip touching the object): flatscreen and

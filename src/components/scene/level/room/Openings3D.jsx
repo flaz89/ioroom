@@ -183,7 +183,7 @@ const DOOR_USER_DATA = (id, part) => ({ surfaceId: `${id}:${part}`, openingId: i
 // (Room.jsx); not after an orbit drag, not under the ruler / post-its
 function onDoorClick(event, doorId) {
     const state = useStore.getState();
-    if (state.workspace !== 'designer' || state.measures.active || state.notes.placing || !isStillClick(event)) return;
+    if (state.workspace === 'builder' || state.measures.active || state.notes.placing || !isStillClick(event)) return;
     event.stopPropagation();
     state.setDoorOpen(doorId, !state.openDoors[doorId]);
     if (state.objects.selectedId != null) state.deselectObject();

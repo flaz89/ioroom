@@ -1,0 +1,27 @@
+/* Virtual joystick of the first-person tour (WalkJoystick.jsx): glass disc, orange knob */
+.walk-joystick {
+    position: fixed;
+    left: 84px;
+    bottom: 110px;
+    width: 120px;
+    height: 120px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    background: linear-gradient(35deg, rgba(255, 255, 255, .2) 0%, rgba(255, 255, 255, 0.05) 80%);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
+    pointer-events: all;
+    touch-action: none;
+    z-index: 5;
+}
+
+.walk-joystick-knob {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(35deg, rgba(255, 183, 51, 1) 0%, rgba(255, 140, 0, 1) 70%);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+}

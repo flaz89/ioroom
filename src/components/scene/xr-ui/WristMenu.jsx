@@ -47,6 +47,9 @@ function tabletopIcon(ctx, x, y, s) {
 }
 
 
+// wrist buttons that edit the environment: hidden in the tour
+const TOUR_HIDDEN = new Set(['materials', 'add', 'gridSnap', 'gridStep', 'rotationSnap', 'rotationStep']);
+
 export default function WristMenu() {
     const controller = useXRInputSourceState('controller', 'left');
     const hand = useXRInputSourceState('hand', 'left');
@@ -89,6 +92,8 @@ export default function WristMenu() {
     const setGridSnapStep = useStore((state) => state.setGridSnapStep);
     const toggleRotationSnap = useStore((state) => state.toggleRotationSnap);
     const setRotationSnapStep = useStore((state) => state.setRotationSnapStep);
+    // tour (workspaceSlice.js): no catalog, materials nor snaps (they edit the environment)
+    const isTour = useStore((state) => state.workspace === 'tour');
     // Main page: [col, row] cells, rows stacked along the menu's local +Y (the palm becomes the control board)
     const buttons = [
         { id: 'perf', col: 0, row: 0, svg: svg.performance, active: isPerfVisible, onClick: togglePerf },
@@ -113,7 +118,7 @@ export default function WristMenu() {
         { id: 'wire', col: 2, row: 4, label: 'Wire', active: isWireframe, onClick: toggleWireframe },
         // foveation: 1 (fastest) -> 0.75 -> 0.5 (sharper edges); highlighted when not the default
         { id: 'fov', col: 3, row: 4, label: `Fov ${xrFoveation}`, active: xrFoveation !== 1, onClick: cycleXrFoveation }
-    ];
+    ].filter((button) => !isTour || !TOUR_HIDDEN.has(button.id));
 
     if (gripSpace == null) return null;
 

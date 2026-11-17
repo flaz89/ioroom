@@ -14,6 +14,7 @@ import PostEffects from './PostEffects';
 import SceneGrid from './helpers/SceneGrid';
 import SkyDome from './sun/SkyDome';
 import OrbitAtCursor from './controls/OrbitAtCursor';
+import WalkControls from './controls/WalkControls';
 import { activeLevel, sceneBounds } from '../../plan/planModel';
 import { XR, PointerEvents, noEvents } from "@react-three/xr";
 import { useStore } from '../../store/appStore';
@@ -63,6 +64,9 @@ export default function Scene({xrStore}) {
     // builder mode, 2D view: the plan is drawn over the canvas (store/slices/workspaceSlice.js)
     const isPlanView = useStore((state) => state.workspace === 'builder' && state.builderView === '2d');
     const isBuilder = useStore((state) => state.workspace === 'builder');
+    // tour in first / third person: WalkControls instead of CameraControls (workspaceSlice.js tourView)
+    const walkView = useStore((state) => (state.workspace === 'tour' && state.tourView !== 'orbit' ? state.tourView : null));
+    const isWalking = walkView != null;
     // FRAME LOOP: in XR the headset drives every frame ('always'); under the 2D plan the 3D is hidden ('never':
     // nothing drawn at all); otherwise 'demand': frames only while something changes (perf/FrameDriver.jsx)
     const isXR = useSyncExternalStore(xrStore.subscribe, () => xrStore.getState().mode != null);
@@ -132,7 +136,8 @@ export default function Scene({xrStore}) {
                     NOT in XR: its update (every frame, before every other useFrame) rewrites the camera's pose with
                     the orbit's, so in XR whoever read the camera got the old desktop view, not the headset (the
                     wrist menu's "facing the eyes" test showed it only with the hand edgewise) */}
-                {!isXR && <CameraControls
+                {!isXR && isWalking && <WalkControls view={walkView} />}
+                {!isXR && !isWalking && <CameraControls
                     makeDefault
                     smoothTime={ 0.2 }
                     // smoothing WHILE dragging (default 0.125 s): the orbit point is often close (the spot under the

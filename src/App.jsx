@@ -15,6 +15,7 @@ import NoteModal from './components/ui/note-modal/NoteModal';
 import PartsMenu from './components/ui/parts-menu/PartsMenu';
 import ObjectCard from './components/ui/object-card/ObjectCard';
 import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
+import WalkJoystick from './components/ui/walk-joystick/WalkJoystick';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
 import PlanGridLegend from './components/builder/PlanGridLegend';
 import LoadingScreen from './components/ui/loading-screen/LoadingScreen';
@@ -81,6 +82,7 @@ export default function App() {
           </div>
           <NoteModal/>
           <PartsMenu/>
+          <WalkJoystick/>
           {/* bottom center (provisional), stacked upwards: performance stats (when open), grid scale of the
               2D plan (builder), then undo / redo for everyone and the workspace switch for the admin */}
           <div className="bottom-bar">

@@ -168,7 +168,8 @@ function MovingPart({ part, moved, objectId, targetRef, material, outline }) {
         const wasSelected = press.current?.selected;
         const dragged = press.current == null || press.current.at.distanceTo(targetRef.current.position) > 1e-3;
         press.current = null;
-        if (!wasSelected || dragged || state.workspace === 'builder' || state.notes.placing || state.measures.active || isLockedByOther(objectId)) return;
+        // tour: nothing to select first, the click moves the part (workspaceSlice.js)
+        if ((!wasSelected && state.workspace !== 'tour') || dragged || state.workspace === 'builder' || state.notes.placing || state.measures.active || isLockedByOther(objectId)) return;
         event.stopPropagation();
         setObjectPart(objectId, part.name, !moved);
     };
@@ -281,7 +282,7 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
             dwell = setTimeout(() => {
                 const state = useStore.getState();
                 if (state.objects.selectedId !== dwellRef.current.id) return;
-                if (state.objects.grabbedId != null || state.workspace !== 'designer' || state.notes.placing || state.measures.active) return;
+                if (state.objects.grabbedId != null || state.workspace === 'builder' || state.notes.placing || state.measures.active) return;
                 state.showPanel('object');
             }, CARD_DWELL_MS);
         };
@@ -337,10 +338,10 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
     useHandle(targetRef, {
         handle: meshRef,
         // post-it placing mode (scene/notes/Notes.jsx): the press sticks a note, it never grabs
-        // builder mode (workspaceSlice.js): furniture is locked while the environment is being built
+        // builder / tour modes (workspaceSlice.js): furniture is locked (only the designer moves it)
         // fixed pieces in first-person XR: refused (selection still works: handleClick)
         filter: () => !useStore.getState().notes.placing && !useStore.getState().measures.active
-            && useStore.getState().workspace !== 'builder' && !refuseFixedGrab(),
+            && useStore.getState().workspace === 'designer' && !refuseFixedGrab(),
         translate: true,
         rotate: HANDLE_ROTATE[pointerRotation],
         scale: false,

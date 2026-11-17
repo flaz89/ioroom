@@ -32,6 +32,8 @@ export default function RightToolBar() {
     const setRotationSnapStep = useStore(state => state.setRotationSnapStep);
     // Furniture and post-its belong to the designer mode (store/slices/workspaceSlice.js)
     const isDesigner = useStore(state => state.workspace === 'designer');
+    // tour: notes and ruler only (no furniture, no snaps: they only serve moving pieces)
+    const isTour = useStore(state => state.workspace === 'tour');
     // VR/AR buttons enabled only when the browser can actually start that session (headset browser, or a
     // PC with a headset connected via Link/SteamVR)
     const isVRSupported = useXRModeSupported('immersive-vr');
@@ -65,7 +67,7 @@ export default function RightToolBar() {
                 {/* Grid and, under it, the snap controls (position grid, rotation) */}
                 <div className="grid-tools">
                     <CircleButton svg={svg.grid} onClick={toggleGrid} title={"Grid"}/>
-                    <SnapControl
+                    {!isTour && <SnapControl
                         icon={svg.gridSnap}
                         label="Grid snap"
                         unit=" cm"
@@ -74,8 +76,8 @@ export default function RightToolBar() {
                         steps={GRID_SNAP_STEPS}
                         onToggle={toggleGridSnap}
                         onPick={setGridSnapStep}
-                    />
-                    <SnapControl
+                    />}
+                    {!isTour && <SnapControl
                         icon={svg.rotationSnap}
                         label="Rotation snap"
                         unit="°"
@@ -84,9 +86,9 @@ export default function RightToolBar() {
                         steps={ROTATION_SNAP_STEPS}
                         onToggle={toggleRotationSnap}
                         onPick={setRotationSnapStep}
-                    />
+                    />}
                     <CircleButton svg={svg.ruler} onClick={() => setMeasuring(!isMeasuring)} isActive={isMeasuring} title={isMeasuring ? "Click two points to measure (Esc to stop)" : "Measure"}/>
-                    {isDesigner && <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>}
+                    {(isDesigner || isTour) && <CircleButton svg={svg.note} onClick={() => setPlacingNote(!isPlacingNote)} isActive={isPlacingNote} title={isPlacingNote ? "Click a wall or an object to stick the note (Esc to cancel)" : "Add a note"}/>}
                 </div>
 
                 {isDesigner && <div className='objects-selection'>

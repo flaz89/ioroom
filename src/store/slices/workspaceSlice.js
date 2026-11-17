@@ -2,6 +2,10 @@
 * Workspace mode of the UI (per device, never synced):
 * - 'designer': furnishing the environment — materials, furniture, notes, sun, bill of quantities.
 * - 'builder':  building the environment — floor plan tools, 2D / perspective view (admin only).
+* - 'tour':     visiting the environment (docs/plans/2026-11-17-feat-tour-mode-plan.md): nothing is moved, added,
+*               deleted or restyled; doors, moving parts, product card (variants), notes, ruler and sun still work.
+* tourView: how the tour is seen on a flat screen: 'orbit' (CameraControls) | 'third' | 'first' (third / first
+*   person, scene/controls/WalkControls.jsx). Per device, kept between tours.
 * Guests are always in 'designer' (the switch is shown to the admin only, WorkspaceSwitch.jsx).
 * builderView: how the builder shows the environment — '2d' (top view plan, components/builder/PlanView2D.jsx)
 *   or '3d' (the perspective 3D scene). Kept when leaving and re-entering the builder.
@@ -37,10 +41,14 @@
 
 // Toolbar panels that belong to the designer tools: closed when entering the builder
 const DESIGNER_PANELS = ['sun', 'materials', 'bill', 'objects'];
+// ...and the ones that edit the environment: closed when entering the tour
+const EDIT_PANELS = ['materials', 'objects'];
 
 export const createWorkspaceSlice = (set, get) => ({
     workspace: 'designer',
     builderView: '2d',
+    tourView: 'orbit',
+    setTourView: (tourView) => set({ tourView }),
 
     setBuilderView: (builderView) => set({ builderView }),
 
@@ -130,7 +138,8 @@ export const createWorkspaceSlice = (set, get) => ({
             if (state.notes.placing) state.setPlacingNote(false);
             if (DESIGNER_PANELS.includes(state.openPanel)) state.closePanel();
         }
-        if (workspace === 'designer' && get().openPanel === 'underlay') get().closePanel(); // builder-only panel
+        if (workspace === 'tour' && EDIT_PANELS.includes(get().openPanel)) get().closePanel();
+        if (workspace !== 'builder' && get().openPanel === 'underlay') get().closePanel(); // builder-only panel
         set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null, partsMenu: null });
     }
 });
