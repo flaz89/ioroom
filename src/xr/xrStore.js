@@ -103,7 +103,10 @@ xrStore.subscribe((state, previousState) => {
 * browser's user-activation window started by the button click.
 */
 export async function enterXR(mode) {
-    const { setBackend, restoreBackend } = useStore.getState();
+    const { setBackend, restoreBackend, closePanel } = useStore.getState();
+    // a flatscreen panel left open (e.g. the "+" menu) must not follow into VR: its VR twin would be placed
+    // before the headset pose exists (out of sight) and, being open, block the teleport
+    closePanel();
     setBackend('webgl');
     await waitForReadyBackend('webgl');
     try {

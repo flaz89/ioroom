@@ -270,32 +270,39 @@ export default function SingleObject({ data, notes, showPivot, pointerRotation, 
         const lock = () => setOrbitEnabled(false);
         const unlock = () => setOrbitEnabled(true);
         // ray pointers only (mouse, controller/hand ray): a hand or controller touching the object never tints it
-        // XR (not the mouse): a ray resting CARD_DWELL_MS on a catalog piece opens its card; a press, leaving
-        // or a grab in the meantime cancels it
+        // XR (not the mouse): a ray resting CARD_DWELL_MS on the SELECTED catalog piece opens its card (an
+        // unselected piece never does); a press, leaving or a grab in the meantime cancels it, the release
+        // starts it again (select with a click, keep pointing = card)
         let dwell;
         const cancelDwell = () => clearTimeout(dwell);
-        const enter = (event) => {
-            if (!isRayPointer(event)) return;
-            setIsHovered(true);
+        const startDwell = () => {
             cancelDwell();
             if (dwellRef.current.pointerRotation === 'none' || !dwellRef.current.isModel) return;
             dwell = setTimeout(() => {
                 const state = useStore.getState();
+                if (state.objects.selectedId !== dwellRef.current.id) return;
                 if (state.objects.grabbedId != null || state.workspace !== 'designer' || state.notes.placing || state.measures.active) return;
-                state.selectObject(dwellRef.current.id);
                 state.showPanel('object');
             }, CARD_DWELL_MS);
         };
+        const enter = (event) => {
+            if (!isRayPointer(event)) return;
+            setIsHovered(true);
+            startDwell();
+        };
+        const rearm = (event) => { if (isRayPointer(event)) startDwell(); };
         const leave = (event) => { if (isRayPointer(event)) { setIsHovered(false); cancelDwell(); } };
         mesh.addEventListener('pointerdown', cancelDwell);
         mesh.addEventListener('pointerdown', lock);
         mesh.addEventListener('pointerup', unlock);
+        mesh.addEventListener('pointerup', rearm);
         mesh.addEventListener('pointercancel', unlock);
         mesh.addEventListener('pointerenter', enter);
         mesh.addEventListener('pointerleave', leave);
         return () => {
             mesh.removeEventListener('pointerdown', lock);
             mesh.removeEventListener('pointerup', unlock);
+            mesh.removeEventListener('pointerup', rearm);
             mesh.removeEventListener('pointercancel', unlock);
             mesh.removeEventListener('pointerenter', enter);
             mesh.removeEventListener('pointerleave', leave);

@@ -59,9 +59,11 @@ function dotIcon(color) {
 export default function VRObjectPanel() {
     const object = useStore((state) => state.objects.instances.find((obj) => obj.id === state.objects.selectedId && obj.type === 'model'));
     const closePanel = useStore((state) => state.closePanel);
-    // selection gone (deselected, deleted, a primitive selected): close, so the teleport works again
-    useEffect(() => { if (object == null) closePanel(); }, [object, closePanel]);
-    if (object == null) return null;
+    // selection gone (deselected, deleted, a primitive selected) or another piece selected: close (the card
+    // belongs to the piece it was opened for; the teleport works again)
+    const [openedFor] = useState(object?.id);
+    useEffect(() => { if (object?.id !== openedFor) closePanel(); }, [object, openedFor, closePanel]);
+    if (object == null || object.id !== openedFor) return null;
     // keyed: placed again in front of the user for every piece
     return <ObjectCardPanel key={object.id} object={object} />;
 }
