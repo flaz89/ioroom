@@ -23,8 +23,8 @@ const MODES = [
 ];
 
 /*
-* Builder | Designer | Tour segmented switch (store/slices/workspaceSlice.js). Admin only: guests always stay in
-* the designer. Provisional position (bottom center, the top center is taken by the compass).
+* Builder | Designer | Tour segmented switch (store/slices/workspaceSlice.js). Guests get Designer | Tour (the
+* builder is the admin's). Provisional position (bottom center, the top center is taken by the compass).
 * In the builder, a second switch picks the view: 2D plan or 3D perspective.
 */
 export default function WorkspaceSwitch() {
@@ -32,27 +32,35 @@ export default function WorkspaceSwitch() {
     const setWorkspace = useStore((state) => state.setWorkspace);
     const builderView = useStore((state) => state.builderView);
     const setBuilderView = useStore((state) => state.setBuilderView);
-    const tourView = useStore((state) => state.tourView);
-    const setTourView = useStore((state) => state.setTourView);
-    if (!isAdmin) return null;
+    const modes = isAdmin ? MODES : MODES.filter((mode) => mode.id !== 'builder');
 
     return (
         <>
-            <Segmented label="Workspace mode" options={MODES} value={workspace} onPick={setWorkspace} />
+            <Segmented label="Workspace mode" options={modes} value={workspace} onPick={setWorkspace} />
             {workspace === 'builder' && (
                 <Segmented label="Builder view" options={BUILDER_VIEWS} value={builderView} onPick={setBuilderView} />
             )}
-            {workspace === 'tour' && (
-                <Segmented label="Tour view" options={TOUR_VIEWS} value={tourView} onPick={setTourView} />
-            )}
+            {workspace === 'tour' && <TourViewSwitch className="tour-view-bottom" />}
         </>
     );
 }
 
+/*
+* Orbit / third / first person icons of the tour (store tourView). Rendered twice: here in the bottom bar
+* (desktop) and at the top center (phones, App.jsx); ui.css shows one of the two.
+*/
+export function TourViewSwitch({ className }) {
+    const isTour = useStore((state) => state.workspace === 'tour');
+    const tourView = useStore((state) => state.tourView);
+    const setTourView = useStore((state) => state.setTourView);
+    if (!isTour) return null;
+    return <Segmented label="Tour view" options={TOUR_VIEWS} value={tourView} onPick={setTourView} className={className} />;
+}
+
 // Glass pill of mutually exclusive buttons (radio group): the current one is orange
-function Segmented({ label, options, value, onPick }) {
+function Segmented({ label, options, value, onPick, className }) {
     return (
-        <div className="workspace-switch" role="radiogroup" aria-label={label}>
+        <div className={className ? `workspace-switch ${className}` : 'workspace-switch'} role="radiogroup" aria-label={label}>
             {options.map((option) => (
                 <button
                     key={option.id}

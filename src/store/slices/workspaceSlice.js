@@ -6,7 +6,7 @@
 *               deleted or restyled; doors, moving parts, product card (variants), notes, ruler and sun still work.
 * tourView: how the tour is seen on a flat screen: 'orbit' (CameraControls) | 'third' | 'first' (third / first
 *   person, scene/controls/WalkControls.jsx). Per device, kept between tours.
-* Guests are always in 'designer' (the switch is shown to the admin only, WorkspaceSwitch.jsx).
+* Guests switch between 'designer' and 'tour' only (the builder is the admin's, WorkspaceSwitch.jsx).
 * builderView: how the builder shows the environment — '2d' (top view plan, components/builder/PlanView2D.jsx)
 *   or '3d' (the perspective 3D scene). Kept when leaving and re-entering the builder.
 * selectedWallIds: walls selected in the builder (2D plan or 3D scene), shared by both views; their panel is

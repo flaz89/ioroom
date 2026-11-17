@@ -14,7 +14,7 @@ import CompassBar from './components/ui/compass/CompassBar';
 import NoteModal from './components/ui/note-modal/NoteModal';
 import PartsMenu from './components/ui/parts-menu/PartsMenu';
 import ObjectCard from './components/ui/object-card/ObjectCard';
-import WorkspaceSwitch from './components/ui/workspace-switch/WorkspaceSwitch';
+import WorkspaceSwitch, { TourViewSwitch } from './components/ui/workspace-switch/WorkspaceSwitch';
 import WalkJoystick from './components/ui/walk-joystick/WalkJoystick';
 import UndoRedo from './components/ui/undo-redo/UndoRedo';
 import PlanGridLegend from './components/builder/PlanGridLegend';
@@ -27,6 +27,7 @@ import LoadingScreen from './components/ui/loading-screen/LoadingScreen';
 */
 
 export default function App() {
+  const isTour = useStore((state) => state.workspace === 'tour');
 
   // Material library (textures stored in R2, server/src/materials.js): loaded once for everyone, rooms
   // may use any of them. Without the sync server only the plain material exists.
@@ -71,12 +72,14 @@ export default function App() {
   return (
     <>
       <div className="ui-container">
-        <div className="ui">
+        {/* is-tour: phones show only the mode switch, the tour views and the joystick (ui.css) */}
+        <div className={isTour ? 'ui is-tour' : 'ui'}>
           <LeftToolBar/>
           <RightToolBar/>
           {/* top center, stacked downwards: compass, room notice, selected furniture (product card) */}
           <div className="top-center">
             <CompassBar/>
+            <TourViewSwitch className="tour-view-top"/>
             <RoomNotice/>
             <ObjectCard/>
           </div>

@@ -33,6 +33,9 @@
     pointer-events: none;
 }
 
+/* Tour views: in the bottom bar on desktop, at the top center on phones (media query below) */
+.ui .tour-view-top { display: none; }
+
 /* Bottom center bar (provisional position): undo / redo, workspace switch */
 .bottom-bar {
     position: absolute;
@@ -160,6 +163,21 @@
         margin: 0 auto;
         transform: none;
         bottom: calc(10px + 1em + .5em + 2px + 2 * (20px + 1em + 2px + 12px));
+    }
+
+    /* TOUR on phones: only the mode switch at the bottom, the tour views at the top (under the compass) and
+       the joystick; the toolbars and undo / redo are hidden (a visit needs the screen) */
+    .ui.is-tour .left-toolbar,
+    .ui.is-tour .right-toolbar,
+    .ui.is-tour .undo-redo,
+    .ui .tour-view-bottom { display: none; }
+    .ui .tour-view-top { display: flex; }
+
+    /* two switches (workspace + builder / tour view) do not fit side by side between the toolbars: stacked,
+       the workspace one at the bottom */
+    .ui .bottom-bar-row {
+        flex-direction: column-reverse;
+        gap: .5em;
     }
 
     /* Every toolbar menu opens as a card centered on the screen (portrait phones), like the performance

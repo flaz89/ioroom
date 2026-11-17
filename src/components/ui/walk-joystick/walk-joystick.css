@@ -25,3 +25,13 @@
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
     pointer-events: none;
 }
+
+/* phones: in the tour only the mode switch stays at the bottom (ui.css .is-tour): centered just above it */
+@media (max-width: 767px) {
+    .walk-joystick {
+        left: 0;
+        right: 0;
+        margin: 0 auto;
+        bottom: 200px;
+    }
+}
