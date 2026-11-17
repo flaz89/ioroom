@@ -8,10 +8,10 @@
 *                                         rendered by the browser), name, brand, category, subtype (shape
 *                                         only: the lists live in the client), size (JSON [w, h, d] meters),
 *                                         fixed ('true' | 'false'), url (optional), variants (JSON, see below),
-*                                         materialLabels (JSON, optional)
+*                                         materialLabels (JSON, optional), family (optional)
 *                                         -> record     owner only (Authorization: Bearer <ADMIN_TOKEN>)
-*   PATCH  /api/models/:id                JSON { name, brand, category, subtype, size, fixed, url, variants,
-*                                         materialLabels }
+*   PATCH  /api/models/:id                JSON { name, brand, family, category, subtype, size, fixed, url,
+*                                         variants, materialLabels }
 *                                         (any subset; variants replaces the whole list and deletes the
 *                                         variant textures no variant uses any more) -> record   owner only
 *   POST   /api/models/:id/textures       multipart: file (one or more images, max 4 MB each)
@@ -25,10 +25,11 @@
 *   DELETE /api/models/:id                -> 204        owner only: removes the record and every file of its prefix
 *   GET    /files/models/:owner/:id/:file -> the file (public, immutable, cached for a year)
 *
-* Record: { id, owner, name, brand, category, subtype, size, fixed, url, files: { glb, thumb } (R2 keys),
+* Record: { id, owner, name, brand, family, category, subtype, size, fixed, url, files: { glb, thumb } (R2 keys),
 * materialLabels, variants: [{ id, name, code, price, vatRate, swatch, overrides }], createdAt }.
 * materialLabels = { <GLB material name>: 'Leather' } (name shown on the product card); swatch = '#rrggbb'
-* color of the variant's dot on the card, or null.
+* color of the variant's dot on the card, or null. family = name of the product the model is a module of
+* (sofa modules...), or null: the catalog shows a family as one tile.
 * A variant changes the GLB's materials by name: overrides = { <material name>: { tint?: '#rrggbb',
 * map?: <R2 key of a texture of this model> } }. price = net € per piece (VAT excluded).
 * The browser checks the GLB contract (one mesh node, at least one texture) before the upload; the server
@@ -143,6 +144,7 @@ function readFields(raw, id, partial = false) {
         }
         fields.size = size.map(Number);
     }
+    if (has('family')) fields.family = text(raw.family) || null; // modules of one product, one tile in the catalog
     if (has('fixed')) fields.fixed = raw.fixed === true || raw.fixed === 'true';
     if (has('url')) {
         fields.url = text(raw.url, 500) || null;
@@ -240,7 +242,7 @@ export async function handleModels(request, env, { cors, isOwner }) {
         if (!form) return error('Expected a multipart form', 400);
         const newId = crypto.randomUUID();
         const { fields, error: invalid } = readFields(Object.fromEntries(
-            ['name', 'brand', 'category', 'subtype', 'size', 'fixed', 'url', 'variants', 'materialLabels'].map((key) => [key, form.get(key)])
+            ['name', 'brand', 'family', 'category', 'subtype', 'size', 'fixed', 'url', 'variants', 'materialLabels'].map((key) => [key, form.get(key)])
         ), newId);
         if (invalid) return error(invalid, 400);
         const glb = form.get('glb');

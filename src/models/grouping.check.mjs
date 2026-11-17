@@ -1,6 +1,6 @@
 // Check for grouping.js: node src/models/grouping.check.mjs
 import assert from 'node:assert/strict';
-import { brandsOf, categoriesWith, modelsIn, searchModels, subtypesIn } from './grouping.js';
+import { brandsOf, categoriesWith, familyName, groupFamilies, modelsIn, searchModels, subtypesIn } from './grouping.js';
 
 const model = (id, brand, category, subtype, codes = []) => ({ id, name: id, brand, category, subtype, variants: codes.map((code) => ({ code })) });
 const list = [
@@ -29,4 +29,19 @@ assert.deepEqual(ids(searchModels(list, 'ar-7')), ['Milano Sofa']);
 assert.deepEqual(ids(searchModels(list, 'mystery')), ['Mystery']);
 assert.deepEqual(ids(searchModels(list, 'o', 'arredo')), ['Milano Sofa', 'Big Wardrobe']);
 assert.deepEqual(searchModels(list, '  '), []);
+
+// families: one item per brand + family with 2+ modules, at its first module's place; single = the model
+const mod = (id, brand, family) => ({ ...model(id, brand, 'seating', 'sofa'), family });
+const sofas = [mod('Spacer triple', 'Dondi', 'Spacer'), mod('Bellini', 'Heller', null), mod('Spacer chaise', 'Dondi', 'Spacer'),
+    mod('Lone', 'Dondi', 'Solo'), mod('Spacer other', 'Acme', 'Spacer')];
+const grid = groupFamilies(sofas);
+assert.equal(grid.length, 4);
+assert.deepEqual(ids(grid[0].models), ['Spacer triple', 'Spacer chaise']);
+assert.deepEqual(ids(grid.slice(1)), ['Bellini', 'Lone', 'Spacer other']);
+assert.deepEqual(ids(searchModels(sofas, 'spacer', 'Dondi')), ['Spacer triple', 'Spacer chaise']);
+// name of a family made by dropping a tile on another
+assert.equal(familyName({ name: 'Spacer double_seat' }, { name: 'Spacer triple_seat' }), 'Spacer');
+assert.equal(familyName({ name: 'A' }, { name: 'B' }), 'B');
+assert.equal(familyName({ name: 'A', family: 'X' }, { name: 'B' }), 'X');
+assert.equal(familyName({ name: 'A', family: 'X' }, { name: 'B', family: 'Y' }), 'Y');
 console.log('grouping: ok');

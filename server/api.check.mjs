@@ -122,6 +122,8 @@ const editedModel = await (await patchModel({ name: 'Armchair', fixed: true, var
 assert.equal(editedModel.name, 'Armchair'); assert.equal(editedModel.fixed, true); assert.equal(editedModel.brand, 'Acme');
 assert.equal(editedModel.variants[0].id, model.variants[0].id); assert.equal(editedModel.variants[1].overrides.fabric.map, keys[0]);
 assert.deepEqual(editedModel.files, model.files);
+assert.equal((await (await patchModel({ family: ' Spacer ' })).json()).family, 'Spacer');
+assert.equal((await (await patchModel({ family: '' })).json()).family, null);
 // variant textures nobody uses are deleted by the next PATCH of the variants: the dropped one and a stray upload
 const stray = (await (await fetch(`${MO}/${model.id}/textures`, { method: 'POST', headers: ownerOnly, body: texForm })).json()).keys[0];
 assert.equal((await patchModel({ name: 'Armchair 2' })).status, 200); // no variants in the edit: textures untouched

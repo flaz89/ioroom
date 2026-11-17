@@ -2,8 +2,8 @@ import { useRef, useState } from 'react';
 import { useStore } from '../../../store/appStore';
 import { objectsList } from '../../../store/slices/objectsSlice';
 import { useModelList } from '../../../models/catalog';
-import { SHAPES, brandsOf, categoriesWith, modelsIn, searchModels, subtypesIn } from '../../../models/grouping';
-import { deleteModel, modelFileUrl } from '../../../models/modelsApi';
+import { SHAPES, brandsOf, categoriesWith, familyName, groupFamilies, modelsIn, sameFamily, searchModels, subtypesIn } from '../../../models/grouping';
+import { deleteModel, modelFileUrl, updateModel } from '../../../models/modelsApi';
 import { dropPoint, spawnPoint } from '../../../models/spawnPoint';
 import { variantTint } from '../../../models/variants';
 import { activeLevel } from '../../../plan/planModel';
@@ -33,10 +33,14 @@ const DRAG_START_PX = 6; // a press moving less than this stays a click (pick th
 *   where it cannot land (panels, walls, outside); releasing on the floor adds it there with the picked
 *   variant (or the first), selected, and the menu closes. Basic shapes: same gesture, their symbol follows.
 * - Basic shapes add the primitives as before (no variant).
+* - FAMILIES (modules of one product, grouping.js): one tile with the first module's thumbnail and the count;
+*   a click opens its modules (back = the category).
 * Catalog loading / failed (Retry) / empty results are shown in place of the grid.
 * OWNER (admin token): "+" next to the search uploads a new piece (ModelCreateModal.jsx), "✎" on a model
 * edits its card and variants (same modal), "×" deletes it from the catalog (second press confirms). Furniture
-* already placed from a deleted model shows a placeholder box.
+* already placed from a deleted model shows a placeholder box. OWNER, families like iPhone folders: drag a model tile
+* onto another = both in one family (familyName), onto a family tile = joins it, onto the back button of an open
+* family = leaves it. Pieces of different manufacturers are never grouped.
 */
 export default function CatalogMenu({ onClose }) {
     const panelRef = useRef();
@@ -48,14 +52,16 @@ export default function CatalogMenu({ onClose }) {
     const [brand, setBrand] = useState(null);
     const [query, setQuery] = useState('');
     const [brandsOpen, setBrandsOpen] = useState(false); // phones: the manufacturers screen
+    const [railOpen, setRailOpen] = useState(false); // desktop: side column expanded on the manufacturers
     const [picked, setPicked] = useState(null); // { model, variantId }
+    const [family, setFamily] = useState(null); // open family: { brand, family }
     const brands = brandsOf(models);
     const searching = query.trim() !== '';
 
     // owner: the upload / edit modal ({ model } = edit, {} = new) and the delete waiting for its confirming press
     const [modal, setModal] = useState(null);
     const [confirmDelete, setConfirmDelete] = useState(null);
-    const [deleteError, setDeleteError] = useState(null);
+    const [deleteError, setDeleteError] = useState(null); // also the family gesture's errors
     const remove = async (model) => {
         if (confirmDelete !== model.id) return setConfirmDelete(model.id);
         setConfirmDelete(null);
@@ -71,8 +77,33 @@ export default function CatalogMenu({ onClose }) {
     };
     const manage = canManage ? { confirmDelete, onEdit: (model) => setModal({ model }), onDelete: remove } : null;
 
-    const openCategory = (id) => { setCategory(id); setSubtype(null); setPicked(null); };
-    const pickBrand = (name) => { setBrand(name); setBrandsOpen(false); setSubtype(null); setPicked(null); };
+    const openCategory = (id) => { setCategory(id); setSubtype(null); setFamily(null); setPicked(null); };
+    const pickBrand = (name) => { setBrand(name); setBrandsOpen(false); setSubtype(null); setFamily(null); setPicked(null); };
+
+    // Owner: move `members` into family `name` (null = out of any family)
+    const setFamilyOf = async (members, name) => {
+        setDeleteError(null);
+        try {
+            for (const member of members.filter((item) => (item.family ?? null) !== name)) {
+                const record = await updateModel(member.id, { family: name });
+                const { libraryModels, setLibraryModels } = useStore.getState();
+                setLibraryModels(libraryModels.map((item) => (item.id === record.id ? record : item)));
+            }
+        } catch (error) {
+            setDeleteError(error.message);
+        }
+    };
+    // Owner: a model tile released on another tile, a family tile or the back button of the open family
+    const dropOnTile = (dragged, element) => {
+        if (element.dataset.unfamily != null) return setFamilyOf([dragged], null);
+        const target = element.dataset.modelId != null
+            ? models.find((item) => item.id === element.dataset.modelId)
+            : { brand: element.dataset.brand, family: element.dataset.family };
+        if (!target) return;
+        if (target.brand !== dragged.brand) return setDeleteError('Only pieces of the same manufacturer can be grouped');
+        const name = target.name ? familyName(dragged, target) : target.family;
+        setFamilyOf(target.name ? [dragged, target] : [dragged], name);
+    };
     const addShape = (type) => { useStore.getState().addObject(type); onClose(); };
     const addPicked = () => {
         const { plan, addModel } = useStore.getState();
@@ -88,10 +119,19 @@ export default function CatalogMenu({ onClose }) {
         const dragged = piece.type != null ? { type: piece.type }
             : { model: piece, variantId: picked?.model.id === piece.id ? picked.variantId : piece.variants[0]?.id };
         const startX = event.clientX, startY = event.clientY;
+        const own = event.currentTarget;
         let dragging = false;
+        let tile = null; // owner: the tile under the pointer that would group the dragged model
+        const tileAt = (at) => {
+            if (!canManage || piece.type != null) return null;
+            const element = document.elementFromPoint(at.clientX, at.clientY)?.closest('[data-model-id],[data-family],[data-unfamily]');
+            return element && element !== own ? element : null;
+        };
         const move = (moved) => {
             if (!dragging && Math.hypot(moved.clientX - startX, moved.clientY - startY) < DRAG_START_PX) return;
             dragging = true;
+            const next = tileAt(moved);
+            if (next !== tile) { tile?.classList.remove('is-drop-target'); next?.classList.add('is-drop-target'); tile = next; }
             setCursorGrabbing('model-drag', true);
             const { plan, setModelDrag } = useStore.getState();
             const point = dropPoint(activeLevel(plan), viewGroundPoint(moved.clientX, moved.clientY));
@@ -103,7 +143,9 @@ export default function CatalogMenu({ onClose }) {
             window.removeEventListener('pointercancel', end);
             if (!dragging) return;
             setCursorGrabbing('model-drag', false);
-            if (ended.type === 'pointerup') useStore.getState().dropModel();
+            tile?.classList.remove('is-drop-target');
+            if (ended.type === 'pointerup' && tile) { useStore.getState().setModelDrag(null); dropOnTile(piece, tile); }
+            else if (ended.type === 'pointerup') useStore.getState().dropModel();
             else useStore.getState().setModelDrag(null);
         };
         window.addEventListener('pointermove', move);
@@ -135,6 +177,14 @@ export default function CatalogMenu({ onClose }) {
                 </div>
             </>
         );
+    } else if (category != null && family != null) {
+        const modules = modelsIn(models, { category, brand }).filter((model) => sameFamily(model, family));
+        body = (
+            <>
+                <BackRow title={family.family} onBack={() => { setFamily(null); setPicked(null); }} dropOut={canManage} />
+                <ModelGrid models={modules} picked={picked} onPick={setPicked} onPress={startPress} manage={manage} />
+            </>
+        );
     } else if (category != null) {
         const chips = subtypesIn(models, category, brand);
         const shown = modelsIn(models, { category, subtype, brand });
@@ -151,7 +201,8 @@ export default function CatalogMenu({ onClose }) {
                     </div>
                 )}
                 {shown.length > 0
-                    ? <ModelGrid models={shown} picked={picked} onPick={setPicked} onPress={startPress} manage={manage} />
+                    ? <ModelGrid models={groupFamilies(shown)} picked={picked} onPick={setPicked} onPress={startPress} manage={manage}
+                        onOpenFamily={(item) => { setFamily({ brand: item.brand, family: item.family }); setPicked(null); }} />
                     : <Empty text={`No ${label.toLowerCase()} from ${brand}`} actions={[['Clear manufacturer', () => setBrand(null)]]} />}
             </>
         );
@@ -171,7 +222,8 @@ export default function CatalogMenu({ onClose }) {
                 )}
                 <div className="catalog-grid">
                     {categories.map((item) => {
-                        const inCategory = item.id === SHAPES ? [] : modelsIn(models, { category: item.id, brand });
+                        // tiles of the category: a family counts as one
+                        const inCategory = item.id === SHAPES ? [] : groupFamilies(modelsIn(models, { category: item.id, brand }));
                         return (
                             <button key={item.id} className="catalog-tile" onClick={() => openCategory(item.id)}
                                 aria-label={item.id === SHAPES ? item.label : `${item.label}, ${inCategory.length}`}>
@@ -190,8 +242,13 @@ export default function CatalogMenu({ onClose }) {
         <>
         <div className="catalog-menu" ref={panelRef} role="dialog" aria-label="Add">
             {brands.length > 0 && (
-                <aside className="catalog-brands" aria-label="Manufacturers">
-                    <BrandList brands={brands} brand={brand} onPick={pickBrand} />
+                <aside className={railOpen ? 'catalog-brands is-open' : 'catalog-brands'} aria-label="Manufacturers">
+                    <button className={railOpen || brand != null ? 'catalog-rail-button is-active' : 'catalog-rail-button'}
+                        aria-expanded={railOpen} onClick={() => setRailOpen(!railOpen)}
+                        title={railOpen ? 'Hide the manufacturers' : 'Manufacturers'}>
+                        <BrandsIcon />
+                    </button>
+                    {railOpen && <BrandList brands={brands} brand={brand} onPick={pickBrand} />}
                 </aside>
             )}
             <div className="catalog-main">
@@ -247,12 +304,20 @@ export default function CatalogMenu({ onClose }) {
     );
 }
 
-// manage (owner): { confirmDelete, onEdit(model), onDelete(model) } -> ✎ and × on every tile
-function ModelGrid({ models, picked, onPick, onPress, manage }) {
+// manage (owner): { confirmDelete, onEdit(model), onDelete(model) } -> ✎ and × on every tile.
+// models: records, or families { family, brand, models } (groupFamilies) opened with onOpenFamily
+function ModelGrid({ models, picked, onPick, onPress, manage, onOpenFamily }) {
     return (
         <div className="catalog-grid">
-            {models.map((model) => (
-                <button key={model.id} className={picked?.model.id === model.id ? 'catalog-tile is-picked' : 'catalog-tile'}
+            {models.map((model) => (model.models ? (
+                <button key={`${model.brand}/${model.family}`} className="catalog-tile is-family" data-brand={model.brand} data-family={model.family}
+                    aria-label={`${model.family}, ${model.brand}, ${model.models.length} modules`} onClick={() => onOpenFamily(model)}>
+                    <img className="catalog-thumb" src={modelFileUrl(model.models[0].files.thumb)} alt="" loading="lazy" />
+                    <span className="catalog-tile-name">{model.family}</span>
+                    <span className="catalog-tile-count">{model.models.length}</span>
+                </button>
+            ) : (
+                <button key={model.id} data-model-id={model.id} className={picked?.model.id === model.id ? 'catalog-tile is-picked' : 'catalog-tile'}
                     aria-pressed={picked?.model.id === model.id}
                     aria-label={`${model.name}, ${model.brand}${model.fixed ? ', fixed' : ''}`}
                     onPointerDown={(event) => onPress(event, model)}
@@ -275,7 +340,7 @@ function ModelGrid({ models, picked, onPick, onPress, manage }) {
                         </span>
                     </>)}
                 </button>
-            ))}
+            )))}
         </div>
     );
 }
@@ -291,10 +356,22 @@ function BrandList({ brands, brand, onPick }) {
     );
 }
 
-function BackRow({ title, onBack }) {
+// Manufacturers section of the side column: a price tag
+function BrandsIcon() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12.6V4a1 1 0 0 1 1-1h8.6l8.1 8.1a1.4 1.4 0 0 1 0 2l-7.6 7.6a1.4 1.4 0 0 1-2 0z" />
+            <circle cx="7.6" cy="7.6" r="1.5" />
+        </svg>
+    );
+}
+
+// dropOut (owner, open family): a model tile dropped on the back button leaves the family
+function BackRow({ title, onBack, dropOut = false }) {
     return (
         <div className="catalog-back">
-            <button onClick={onBack} aria-label="Back to the categories">‹</button>
+            <button onClick={onBack} aria-label="Back" data-unfamily={dropOut ? '' : undefined}
+                title={dropOut ? 'Drop a module here to take it out of the family' : undefined}>‹</button>
             <span>{title}</span>
         </div>
     );

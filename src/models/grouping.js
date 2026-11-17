@@ -5,6 +5,8 @@
 * The lists live only here (the server only checks the shape of the ids): add a category or subtype = add
 * a line. A subtype not listed under its category shows under "Other"; a model whose category is not listed
 * is found only by the search.
+* FAMILIES (record `family`, per manufacturer): the modules of one product (sofa modules...) show as ONE tile
+* in a grid (groupFamilies), opened to see its modules; a family with a single model shows as that model.
 * "Basic shapes" (SHAPES) is a special category, always shown: the primitives of objectsList (objectsSlice.js).
 */
 export const SHAPES = 'shapes';
@@ -61,5 +63,45 @@ export function searchModels(models, text, brand = null) {
     const query = text.trim().toLowerCase();
     if (!query) return [];
     const matches = (value) => value?.toLowerCase().includes(query);
-    return ofBrand(models, brand).filter((model) => matches(model.name) || model.variants.some((variant) => matches(variant.code)));
+    return ofBrand(models, brand).filter((model) => matches(model.name) || matches(model.family) || model.variants.some((variant) => matches(variant.code)));
+}
+
+// Distinct family names, alphabetical (suggestions in the admin modal)
+export const familiesOf = (models) => [...new Set(models.map((model) => model.family).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+
+export const sameFamily = (model, { brand, family }) => model.brand === brand && model.family === family;
+
+/*
+* Grid items: models, with the models of one family (same brand + family, at least two) replaced by ONE
+* { family, brand, models } at the place of its first module.
+*/
+export function groupFamilies(models) {
+    const groups = new Map();
+    for (const model of models) {
+        if (!model.family) continue;
+        const key = `${model.brand}\u0000${model.family}`;
+        groups.set(key, [...(groups.get(key) ?? []), model]);
+    }
+    const items = [];
+    for (const model of models) {
+        const group = model.family && groups.get(`${model.brand}\u0000${model.family}`);
+        if (!group || group.length < 2) items.push(model);
+        else if (group[0] === model) items.push({ family: model.family, brand: model.brand, models: group });
+    }
+    return items;
+}
+
+/*
+* Family name when the owner drops model `dragged` on model `target` (catalog gesture): the family one of them
+* already has, else the words their names start with ("Spacer triple_seat" + "Spacer double_seat" -> "Spacer"),
+* else the target's name.
+*/
+export function familyName(dragged, target) {
+    if (target.family) return target.family;
+    if (dragged.family) return dragged.family;
+    const a = dragged.name.split(/\s+/), b = target.name.split(/\s+/);
+    let n = 0;
+    while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++;
+    return n > 0 ? b.slice(0, n).join(' ') : target.name;
 }

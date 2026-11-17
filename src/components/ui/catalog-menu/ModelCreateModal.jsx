@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../../store/appStore';
-import { MODEL_CATEGORIES, brandsOf, subtypeOf } from '../../../models/grouping';
+import { MODEL_CATEGORIES, brandsOf, familiesOf, subtypeOf } from '../../../models/grouping';
 import { createModel, modelFileUrl, replaceModelFiles, updateModel, uploadModelTextures } from '../../../models/modelsApi';
 import { inspectGlb } from '../../../models/inspectGlb';
 import { loadModel, modelMaterialNames } from '../../../models/loadModel';
@@ -56,6 +56,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
     const [rethumb, setRethumb] = useState(null);             // edit: re-rendered thumbnail (Blob)
     const [name, setName] = useState(model?.name ?? '');
     const [brand, setBrand] = useState(model?.brand ?? '');
+    const [family, setFamily] = useState(model?.family ?? '');
     const [category, setCategory] = useState(model?.category ?? initialCategory);
     const [subtype, setSubtype] = useState(model ? subtypeOf(model) : firstSubtype(initialCategory));
     const [fixed, setFixed] = useState(model?.fixed ?? null); // null = follow the proposal
@@ -146,7 +147,7 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
         if (!canSave) return;
         setError(null);
         const materialLabels = glb ? Object.fromEntries(Object.entries(labels).filter(([material]) => names.includes(material))) : labels;
-        const fields = { name: name.trim(), brand: brand.trim(), category, subtype, fixed: isFixed, url: url.trim() || null, materialLabels };
+        const fields = { name: name.trim(), brand: brand.trim(), family: family.trim() || null, category, subtype, fixed: isFixed, url: url.trim() || null, materialLabels };
         const replace = (record) => {
             const { libraryModels, setLibraryModels } = useStore.getState();
             setLibraryModels(libraryModels.some((item) => item.id === record.id)
@@ -222,6 +223,11 @@ export default function ModelCreateModal({ model = null, initialCategory = 'seat
                     <span>Manufacturer</span>
                     <input value={brand} maxLength={60} list="model-brands" onChange={(event) => setBrand(event.target.value)} />
                     <datalist id="model-brands">{brandsOf(models).map((item) => <option key={item} value={item} />)}</datalist>
+                </label>
+                <label>
+                    <span>Family · optional (modules of one product: one tile in the catalog)</span>
+                    <input value={family} maxLength={60} list="model-families" onChange={(event) => setFamily(event.target.value)} placeholder="e.g. Spacer" />
+                    <datalist id="model-families">{familiesOf(models).map((item) => <option key={item} value={item} />)}</datalist>
                 </label>
                 <div className="material-create-row">
                     <label>
