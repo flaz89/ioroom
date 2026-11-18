@@ -3,6 +3,7 @@ import { drawPanel, useCanvasTexture } from './useCanvasTexture';
 
 const WIDTH_M = 0.16;  // panel size in meters
 const HEIGHT_M = 0.1 * 452 / 320; // keeps the canvas aspect (7 rows + the menu-hidden line)
+export const STATS_HEIGHT_M = HEIGHT_M;
 
 /*
 * In-VR version of the performance panel: draws the same stats published by <PerfSampler>

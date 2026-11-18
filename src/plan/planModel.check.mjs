@@ -1,6 +1,6 @@
 // Check for planModel.js: node src/plan/planModel.check.mjs
 import assert from 'node:assert/strict';
-import { DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, openingClearances, pocketConflicts, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
+import { setPlayerStart, DEFAULT_PLAN, sceneBounds, addFloor, moveFloorVertex, removeFloor, floorAt, addOpening, openingFloors, openingLeaves, openingOperation, updateOpening, resizeOpening, openingClearances, pocketConflicts, nominalMetersPerPixel, calibrateUnderlay, alignUnderlay, moveUnderlay, openingRects, removeOpening, addWall, closedLoops, fillRoom, flipWall, removeWall, splitWall, nearestVertex, activeLevel, levelBounds, levelVertices, moveVertex, polygonArea, setWallLength, updateWall, wallFootprint, wallFrame, withActiveLevel, setWallJustify, faceOffsets } from './planModel.js';
 
 const level = activeLevel(DEFAULT_PLAN);
 const [left, back, right] = level.walls;
@@ -312,6 +312,16 @@ assert.equal(openingOperation({ type: 'window', operation: 'slide' }), 'slide');
     // at most 2 leaves, parting
     assert.equal(openingLeaves({ type: 'door', operation: 'pocket', leaves: 4 }, 0, 2).length, 2);
     assert.equal(openingLeaves({ type: 'door', operation: 'slide', leaves: 4 }, 0, 2).length, 4);
+}
+
+// player start: set, replaced, removed; not numbers = refused
+{
+    const level = activeLevel(DEFAULT_PLAN);
+    const placed = setPlayerStart(level, { p: [1, -2], yaw: 0.5 });
+    assert.deepEqual(placed.playerStart, { p: [1, -2], yaw: 0.5 });
+    assert.equal(level.playerStart, undefined, 'the level is not changed in place');
+    assert.equal('playerStart' in setPlayerStart(placed, null), false);
+    assert.equal(setPlayerStart(level, { p: [NaN, 0], yaw: 0 }), null);
 }
 
 console.log('planModel: ok');

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Vector3 } from 'three';
+import { clearAvatar, publishAvatar } from '../../../sync/presence';
+import { Euler, Quaternion, Vector3 } from 'three';
 import { useStore } from '../../../store/appStore';
 import { activeLevel, levelBounds } from '../../../plan/planModel';
 import { useSelfColor } from '../../../sync/presence';
 import { wakeRender } from '../perf/renderWake';
-import { EYE_HEIGHT, boomLength, ceilingAt, eyeHeight, standingPoint, walkInput, walkStep } from './walk';
+import { EYE_HEIGHT, boomLength, ceilingAt, eyeHeight, standingPoint, walkInput, walkPose, walkStep } from './walk';
 import { groundHeight } from '../xr-ui/teleport';
 
 // Calibration knobs
@@ -14,6 +15,7 @@ const RUN_FACTOR = 2.2;
 const ACCELERATION = 10;    // 1/s: how fast the speed follows the input (smooth start / stop)
 const LOOK_SPEED = 0.004;   // rad per pixel dragged (mouse)
 const TOUCH_LOOK_SPEED = 0.006;
+const CLICK_SLOP = 4;       // px: a press that moves less is a click (doors, parts, card), not a look drag
 const PITCH = { first: [-1.45, 1.45], third: [-0.5, 1.2] }; // rad, [up, down]: positive pitch looks DOWN here
 const LOOK_EASE = 12;       // 1/s (~80 ms; higher = snappier, less filtered): the view follows the dragged direction (pointer events and frames do not
                             // come in step: turning straight from the events jerked, mostly while walking)
@@ -33,6 +35,8 @@ const KEYS = {
 const isTyping = (target) => target instanceof HTMLElement
     && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 const noRaycast = () => null;
+const _look = new Quaternion();
+const _euler = new Euler();
 
 /*
 * WALK (Tour, flatscreen; Scene.jsx mounts it instead of CameraControls when tourView is 'first' or 'third',
@@ -43,13 +47,18 @@ const noRaycast = () => null;
 * view 'first': the camera is the eyes. 'third': a simple avatar (capsule + head, this device's presence color)
 *   stands there and the camera sits BOOM behind its head along the view, pulled in by the walls behind
 *   and the ceiling / roof unless hidden on this device (walk.js boomLength; closer than AVATAR_HIDE_BOOM the avatar hides). Switching between the two keeps the place.
-* Start: where the orbit camera stands if that is walkable, else the floor point at the center of the view,
-*   else the middle of the plan; then the closest place to stand (walk.js standingPoint), looking the same way.
+* Start: the plan's player start (planModel level.playerStart, placed in the Designer: PlayerStart.jsx) facing
+*   its way; without one, where the orbit camera stands if that is walkable, else the floor point at the center
+*   of the view, else the middle of the plan, looking the same way; then the closest place to stand
+*   (walk.js standingPoint).
 *   The orbit view comes back as it was (CameraMemory saved it when CameraControls unmounted).
 * Clicks still reach the scene (doors, moving parts, product card, notes, ruler): a drag never clicks.
-* ponytail: the placeable player start (plan step 3) will decide the start.
+* Shared rooms: the walker's head is published like a headset user's (presence.js publishAvatar, no hands):
+*   the others see it in the scene (RemoteAvatars.jsx) and on their minimaps.
+* onStart / onChange / onEnd: like CameraControls' (Scene.jsx): press, each look change, release; while the look
+*   is dragged the scene takes no pointer events (no hover on furniture under a sweeping view).
 */
-export default function WalkControls({ view }) {
+export default function WalkControls({ view, onStart, onChange, onEnd }) {
     const getThree = useThree((state) => state.get); // the camera is three's object, changed in place
     const gl = useThree((state) => state.gl);
     const invalidate = useThree((state) => state.invalidate);
@@ -69,13 +78,17 @@ export default function WalkControls({ view }) {
         // where the view meets the floor (y = 0), when it looks down
         const hit = direction.y < -0.05 ? camera.position.clone().addScaledVector(direction, -camera.position.y / direction.y) : null;
         const candidates = [[camera.position.x, camera.position.z], hit && [hit.x, hit.z], levelBounds(level).center].filter(Boolean);
-        const near = candidates.find((point) => standingPoint(level, point, openDoors) === point) ?? standingPoint(level, candidates.at(-1), openDoors);
-        pose.current = { x: near[0], z: near[1], y: eyeHeight(level, near), yaw: Math.atan2(-direction.x, -direction.z), pitch: 0, boom: BOOM };
+        // the plan's player start (Designer, PlayerStart.jsx) wins: there, looking its way
+        const start = level.playerStart;
+        const near = start ? standingPoint(level, start.p, openDoors)
+            : candidates.find((point) => standingPoint(level, point, openDoors) === point) ?? standingPoint(level, candidates.at(-1), openDoors);
+        const yaw = start ? start.yaw : Math.atan2(-direction.x, -direction.z);
+        pose.current = { x: near[0], z: near[1], y: eyeHeight(level, near), yaw, pitch: 0, boom: BOOM };
         pose.current.yawGoal = pose.current.yaw;
         pose.current.pitchGoal = 0;
         camera.rotation.order = 'YXZ';
         invalidate();
-        return () => { camera.rotation.order = 'XYZ'; };
+        return () => { camera.rotation.order = 'XYZ'; walkPose.active = false; clearAvatar(); };
     }, [getThree, invalidate]);
 
     // keyboard
@@ -103,12 +116,15 @@ export default function WalkControls({ view }) {
     }, []);
 
     // look: left button (or one finger) held on the canvas and dragged
+    const callbacks = useRef({});
+    useEffect(() => { callbacks.current = { onStart, onChange, onEnd }; });
     useEffect(() => {
         const canvas = gl.domElement;
-        let dragging = null; // { id, x, y, k }
+        let dragging = null; // { id, x, y, x0, y0, k, turned }
         const start = (event) => {
             if (dragging != null || (event.pointerType === 'mouse' && event.button !== 0)) return;
-            dragging = { id: event.pointerId, x: event.clientX, y: event.clientY, k: event.pointerType === 'mouse' ? LOOK_SPEED : TOUCH_LOOK_SPEED };
+            dragging = { id: event.pointerId, x: event.clientX, y: event.clientY, x0: event.clientX, y0: event.clientY, k: event.pointerType === 'mouse' ? LOOK_SPEED : TOUCH_LOOK_SPEED, turned: false };
+            callbacks.current.onStart?.();
         };
         const move = (event) => {
             if (dragging?.id !== event.pointerId || pose.current == null) return;
@@ -116,14 +132,24 @@ export default function WalkControls({ view }) {
             pose.current.pitchGoal += (event.clientY - dragging.y) * dragging.k; // drag down = look down
             dragging.x = event.clientX;
             dragging.y = event.clientY;
+            // a real drag (not the jitter of a click): the scene stops taking pointer events until the release
+            if (!dragging.turned && Math.hypot(event.clientX - dragging.x0, event.clientY - dragging.y0) > CLICK_SLOP) {
+                dragging.turned = true;
+                callbacks.current.onChange?.();
+            }
             invalidate();
         };
-        const end = (event) => { if (dragging?.id === event.pointerId) dragging = null; };
+        const end = (event) => {
+            if (dragging?.id !== event.pointerId) return;
+            dragging = null;
+            callbacks.current.onEnd?.();
+        };
         canvas.addEventListener('pointerdown', start);
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', end);
         window.addEventListener('pointercancel', end);
         return () => {
+            if (dragging != null) callbacks.current.onEnd?.(); // unmounted mid-drag: give the scene its events back
             canvas.removeEventListener('pointerdown', start);
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', end);
@@ -191,6 +217,11 @@ export default function WalkControls({ view }) {
             if (avatarRef.current) avatarRef.current.visible = p.boom > AVATAR_HIDE_BOOM;
         }
         camera.updateMatrixWorld();
+        Object.assign(walkPose, { x: p.x, z: p.z, yaw: p.yaw, active: true }); // the minimap's player
+        // shared rooms: the others see this walker like a headset user (a head where the eyes are, no hands) and
+        // on their minimap (presence.js throttles and skips still poses; the board is the identity on screen)
+        _look.setFromEuler(_euler.set(-p.pitch, p.yaw, 0, 'YXZ'));
+        publishAvatar([p.x, p.y, p.z, _look.x, _look.y, _look.z, _look.w], null, null, 1);
         // on-demand rendering (FrameDriver.jsx): keep frames coming while walking or settling
         if (moving || length > 0 || settling || turning) wakeRender();
     });

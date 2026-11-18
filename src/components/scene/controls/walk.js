@@ -151,3 +151,7 @@ export function boomLength(level, head, back, max, openDoors = {}, ceilings = tr
     }
     return max;
 }
+
+// Where the walker is (WalkControls.jsx writes it every frame; ui/minimap/Minimap.jsx reads it): plan [x, z]
+// and yaw, active while the first / third person view is mounted. Shared module state: one walker.
+export const walkPose = { x: 0, z: 0, yaw: 0, active: false };

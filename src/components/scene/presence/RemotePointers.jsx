@@ -3,12 +3,13 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useXR } from '@react-three/xr';
 import { clearPointer, publishPointer, remotePointers, useRoomUsers } from '../../../sync/presence';
+import { useStore } from '../../../store/appStore';
 import NameLabel from './NameLabel';
 
 /*
 * Shared-room pointers (see sync/presence.js), rendered INSIDE the Board (board space: they follow the
 * tabletop model like the objects do):
-* - this device (desktop/mobile, not in XR): where its mouse/touch points in the scene is published;
+* - this device (desktop/mobile, not in XR nor walking in the tour): where its mouse/touch points in the scene is published;
 * - every other device that shares a pointer: a 3D arrow in its color, tip on the pointed surface and
 *   standing out along its normal (readable from any angle), plus a name label above it, easing towards
 *   each received position.
@@ -33,10 +34,13 @@ export default function RemotePointers() {
     const users = useRoomUsers();
     const others = users.filter((user) => !user.isSelf);
     const isXR = useXR((state) => state.mode != null);
+    // tour in first / third person: the others see this device as a walker (head + minimap, WalkControls.jsx),
+    // its mouse is only for looking around: no pointer arrow (unmounting clears the one already shared)
+    const isWalking = useStore((state) => state.workspace === 'tour' && state.tourView !== 'orbit');
 
     return (
         <group ref={anchorRef}>
-            {!isXR && <LocalPointer anchorRef={anchorRef} />}
+            {!isXR && !isWalking && <LocalPointer anchorRef={anchorRef} />}
             {others.map((user) => <RemotePointer key={user.clientId} user={user} />)}
         </group>
     );

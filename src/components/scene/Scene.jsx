@@ -136,7 +136,8 @@ export default function Scene({xrStore}) {
                     NOT in XR: its update (every frame, before every other useFrame) rewrites the camera's pose with
                     the orbit's, so in XR whoever read the camera got the old desktop view, not the headset (the
                     wrist menu's "facing the eyes" test showed it only with the hand edgewise) */}
-                {!isXR && isWalking && <WalkControls view={walkView} />}
+                {/* dragging the look blocks the scene's hover like orbiting (same callbacks as CameraControls below) */}
+                {!isXR && isWalking && <WalkControls view={walkView} onStart={onOrbitStart} onChange={onOrbitChange} onEnd={onOrbitEnd} />}
                 {!isXR && !isWalking && <CameraControls
                     makeDefault
                     smoothTime={ 0.2 }

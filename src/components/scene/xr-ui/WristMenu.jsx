@@ -7,7 +7,8 @@ import { svg } from '../../../utils/svg-logos';
 import { useFacingViewer } from './useFacingViewer';
 import WristBoard from './WristBoard';
 import { BUTTON_SIZE } from './layout';
-import VRStatsPanel from './VRStatsPanel';
+import VRStatsPanel, { STATS_HEIGHT_M } from './VRStatsPanel';
+import VRMinimap, { MAP_SIZE_M } from './VRMinimap';
 import { PointerFilterContext, acceptsWristPointer } from './pointers';
 import { undo, redo } from '../../../sync/history';
 
@@ -66,6 +67,8 @@ export default function WristMenu() {
     const getThree = useThree((state) => state.get);
 
     const isPerfVisible = useStore((state) => state.perfOpen);
+    const isMapVisible = useStore((state) => state.vrMapOpen);
+    const toggleVrMap = useStore((state) => state.toggleVrMap);
     const togglePanel = useStore((state) => state.togglePanel);
     const togglePerf = useStore((state) => state.togglePerf);
     const isWireframe = useStore((state) => state.wireframe);
@@ -117,10 +120,15 @@ export default function WristMenu() {
         // debug: whole scene in wireframe (scene/perf/Wireframe.jsx)
         { id: 'wire', col: 2, row: 4, label: 'Wire', active: isWireframe, onClick: toggleWireframe },
         // foveation: 1 (fastest) -> 0.75 -> 0.5 (sharper edges); highlighted when not the default
+        // minimap on the palm (VRMinimap.jsx), above the stats when both are open
+        { id: 'map', col: 3, row: 3, svg: svg.map, active: isMapVisible, onClick: toggleVrMap },
         { id: 'fov', col: 3, row: 4, label: `Fov ${xrFoveation}`, active: xrFoveation !== 1, onClick: cycleXrFoveation }
     ].filter((button) => !isTour || !TOUR_HIDDEN.has(button.id));
 
     if (gripSpace == null) return null;
+    // panels over the buttons (stats, map), stacked upwards from just above the last row
+    const PANELS_BOTTOM = BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.076 - STATS_HEIGHT_M / 2;
+    const PANELS_GAP = 0.008;
 
     return (
         <XRSpace space={gripSpace}>
@@ -138,7 +146,8 @@ export default function WristMenu() {
                         <group position={[BUTTONS_X, 0, 0]}>
                             {/* the whole page of buttons = one mesh (WristBoard.jsx) */}
                             <WristBoard buttons={buttons} size={BUTTON_SIZE} step={[STEP_X, BUTTON_STEP]} />
-                            {isPerfVisible && <VRStatsPanel position={[0, BUTTON_STEP * 4 + BUTTON_SIZE[1] / 2 + 0.076, 0]} />}
+                            {isPerfVisible && <VRStatsPanel position={[0, PANELS_BOTTOM + STATS_HEIGHT_M / 2, 0]} />}
+                            {isMapVisible && <VRMinimap position={[0, PANELS_BOTTOM + (isPerfVisible ? STATS_HEIGHT_M + PANELS_GAP : 0) + MAP_SIZE_M / 2, 0]} />}
                         </group>
                     </PointerFilterContext.Provider>
                 </group>

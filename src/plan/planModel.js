@@ -21,6 +21,8 @@
 *   Face ids: '<wall id>:inner' | ':outer' | ':edge' (top and free ends).
 *   openings?: [opening] — doors / windows cut in the wall (see OPENINGS below).
 * level.underlay?: background drawing traced in the builder (see UNDERLAY below).
+* level.playerStart?: { p: [x, z], yaw } where the tour (first / third person) and VR / AR sessions start, facing
+*   yaw (0 = towards -Z, three's rotation about +Y); placed in the Designer (setPlayerStart).
 * ponytail: one level for now.
 */
 export const DEFAULT_WALL_HEIGHT = 2.7;
@@ -2042,4 +2044,16 @@ export function roomAt(walls, point) {
         const prev = clean[(i - 1 + clean.length) % clean.length], next = clean[(i + 1) % clean.length];
         return Math.abs(cross(sub(p, prev), sub(next, p))) > 1e-9;
     });
+}
+
+// PLAYER START: the level with its start at { p, yaw } (null removes it), or null when the values are not numbers
+export function setPlayerStart(level, start) {
+    if (start == null) {
+        const rest = { ...level };
+        delete rest.playerStart;
+        return rest;
+    }
+    const { p, yaw } = start;
+    if (!(Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]) && Number.isFinite(yaw))) return null;
+    return { ...level, playerStart: { p: [p[0], p[1]], yaw } };
 }

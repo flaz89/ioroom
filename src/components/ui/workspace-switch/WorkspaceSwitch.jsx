@@ -48,13 +48,42 @@ export default function WorkspaceSwitch() {
 /*
 * Orbit / third / first person icons of the tour (store tourView). Rendered twice: here in the bottom bar
 * (desktop) and at the top center (phones, App.jsx); ui.css shows one of the two.
+* Next to them: in first / third person the MINIMAP toggle (everyone, store minimapOpen); admin only and in the
+* orbit view, the PLAYER START tool (store placingStart,
+* scene/level/PlayerStart.jsx). It prepares the visit for everyone (saved in the plan), so guests never see it.
 */
 export function TourViewSwitch({ className }) {
     const isTour = useStore((state) => state.workspace === 'tour');
     const tourView = useStore((state) => state.tourView);
     const setTourView = useStore((state) => state.setTourView);
+    const isPlacingStart = useStore((state) => state.placingStart);
+    const setPlacingStart = useStore((state) => state.setPlacingStart);
+    const isMinimapOpen = useStore((state) => state.minimapOpen);
+    const toggleMinimap = useStore((state) => state.toggleMinimap);
     if (!isTour) return null;
-    return <Segmented label="Tour view" options={TOUR_VIEWS} value={tourView} onPick={setTourView} className={className} />;
+    return (
+        <>
+            <Segmented label="Tour view" options={TOUR_VIEWS} value={tourView} onPick={setTourView} className={className} />
+            {isAdmin && tourView === 'orbit' && (
+                <div className={`workspace-switch ${className}`}>
+                    <button className={isPlacingStart ? 'has-icon is-active' : 'has-icon'} aria-pressed={isPlacingStart}
+                        aria-label="Player start" onClick={() => setPlacingStart(!isPlacingStart)}
+                        title={isPlacingStart ? 'Press on the floor where the visit starts, drag towards where it looks (Esc to cancel)' : 'Player start: where the visit starts'}>
+                        {svg.playerStart}
+                    </button>
+                </div>
+            )}
+            {/* first / third person, same place: the minimap on / off (everyone) */}
+            {tourView !== 'orbit' && (
+                <div className={`workspace-switch ${className}`}>
+                    <button className={isMinimapOpen ? 'has-icon is-active' : 'has-icon'} aria-pressed={isMinimapOpen}
+                        aria-label="Map" title={isMinimapOpen ? 'Hide the map' : 'Show the map'} onClick={toggleMinimap}>
+                        {svg.map}
+                    </button>
+                </div>
+            )}
+        </>
+    );
 }
 
 // Glass pill of mutually exclusive buttons (radio group): the current one is orange

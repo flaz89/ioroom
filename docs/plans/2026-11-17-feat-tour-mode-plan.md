@@ -24,7 +24,7 @@ snap di griglia e rotazione (servono solo a spostare), specchiatura.
    camminare, sinistro tenuto per orientare la camera. Mobile: joystick virtuale (camminare) + trascinamento
    (guardare). Occhi a 1,6 m sopra il pavimento (`floorAt` + quota), niente attraversamento dei muri (sagome
    `wallFootprint`, come il teletrasporto `canLand`).
-3. PUNTO DI PARTENZA (player start, stile Unreal): elemento posizionabile nella pianta dal Designer, cono
+3. FATTO (18/11, VR da provare sul visore). PUNTO DI PARTENZA (player start, stile Unreal): elemento posizionabile nella pianta dal Designer, cono
    rovesciato + freccia del forward. Dato condiviso nel livello `{ p, yaw }`. Usato entrando in VR / AR / prima
    persona / terza persona (camera puntata nella sua direzione).
 

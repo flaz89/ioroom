@@ -5,6 +5,7 @@
 * perfOpen: performance stats (DOM PerfPanel, and the stats panel of the VR wrist menu), independent of
 * the other panels (it stays while they open and close), EXCEPT on phones (same breakpoint as the css):
 * there it and the other panels close each other, there is no room for both.
+* vrMapOpen: the minimap on the VR palm (xr-ui/VRMinimap.jsx, wrist "map" button), like the stats panel.
 * wireframe: debug view, the whole scene drawn as wireframe (scene/perf/Wireframe.jsx).
 * xrFoveation: VR foveation (0..1: higher = view edges drawn at lower resolution), per device, changed live from
 * the wrist "Fov" button (applied in WristMenu.jsx). Default 1: on the Quest 2 it saves ~1.4 ms per frame vs 0.5
@@ -31,6 +32,9 @@ export const createPanelSlice = (set) => ({
     }),
 
     toggleWireframe: () => set((state) => ({ wireframe: !state.wireframe })),
+
+    vrMapOpen: false,
+    toggleVrMap: () => set((state) => ({ vrMapOpen: !state.vrMapOpen })),
 
     xrFoveation: FOVEATIONS[0],
     cycleXrFoveation: () => set((state) => ({ xrFoveation: next(FOVEATIONS, state.xrFoveation) })),

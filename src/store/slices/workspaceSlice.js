@@ -48,7 +48,20 @@ export const createWorkspaceSlice = (set, get) => ({
     workspace: 'designer',
     builderView: '2d',
     tourView: 'orbit',
-    setTourView: (tourView) => set({ tourView }),
+    // minimap of the first / third person views (ui/minimap/Minimap.jsx), on by default, per device
+    minimapOpen: true,
+    toggleMinimap: () => set((state) => ({ minimapOpen: !state.minimapOpen })),
+    setTourView: (tourView) => set((state) => ({ tourView, placingStart: tourView === 'orbit' && state.placingStart })),
+
+    // PLAYER START tool of the tour's orbit view, admin (level/PlayerStart.jsx, button in WorkspaceSwitch.jsx): press on the floor = where, drag = which way.
+    // One mode at a time with the post-it placing and the ruler.
+    placingStart: false,
+    setPlacingStart: (placingStart) => set((state) => ({
+        placingStart,
+        notes: placingStart ? { ...state.notes, placing: false } : state.notes,
+        measures: placingStart ? { ...state.measures, active: false, start: null } : state.measures,
+        openPanel: placingStart ? null : state.openPanel
+    })),
 
     setBuilderView: (builderView) => set({ builderView }),
 
@@ -140,7 +153,7 @@ export const createWorkspaceSlice = (set, get) => ({
         }
         if (workspace === 'tour' && EDIT_PANELS.includes(get().openPanel)) get().closePanel();
         if (workspace !== 'builder' && get().openPanel === 'underlay') get().closePanel(); // builder-only panel
-        set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null, partsMenu: null });
+        set({ workspace, selectedWallIds: [], selectedOpening: null, underlayTool: null, partsMenu: null, placingStart: false });
     }
 });
 

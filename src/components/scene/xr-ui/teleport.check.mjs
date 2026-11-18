@@ -1,6 +1,6 @@
 // Self-check for teleport.js. Run: node src/components/scene/xr-ui/teleport.check.mjs
 import assert from 'node:assert/strict';
-import { MAX_DISTANCE, canLand, groundHeight, isTeleportPose, teleportArc, teleportOffset } from './teleport.js';
+import { MAX_DISTANCE, canLand, groundHeight, isTeleportPose, rotateY, startOrigin, teleportArc, teleportOrigin } from './teleport.js';
 import { DEFAULT_PLAN, activeLevel } from '../../../plan/planModel.js';
 
 // a 45° throw from 1.2 m lands ahead, on the floor, past the top of the arc
@@ -36,13 +36,23 @@ assert.equal(teleportArc([0, 1.2, 0], up45).height, 0);
 assert.equal(canLand({ ...level, floors: [] }, [1, 1]), true);
 assert.equal(canLand({ ...level, floors: [] }, [10, 0]), false);
 
-// offset: the head at world (1, 2) with no offset, target (4, -1): offset (-3, 3); world = base - offset
-const offset = teleportOffset([0, 0], [1, 2], [4, -1]);
-assert.deepEqual(offset, [-3, 3]);
-assert.deepEqual([1 - offset[0], 2 - offset[1]], [4, -1], 'head lands on the target');
-// a second teleport adds up: head now at (4, -1) (base still (1, 2)), target (0, 0)
-const again = teleportOffset(offset, [4, -1], [0, 0]);
-assert.deepEqual([1 - again[0], 2 - again[1]], [0, 0]);
+// XR origin: world = rotateY(base, yaw) + p
+const world = (origin, b) => { const [x, z] = rotateY(b, origin.yaw); return [x + origin.p[0], z + origin.p[1]]; };
+const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9;
+// rotateY is three's: +90° turns +X into -Z, a yaw-0 forward (-Z) into -X
+assert.ok(near(rotateY([1, 0], Math.PI / 2), [0, -1]) && near(rotateY([0, -1], Math.PI / 2), [-1, 0]));
+// teleport: the head lands on the target, also with a turned origin, and moves add up
+let origin = { p: [0, 0], yaw: 0 };
+origin = teleportOrigin(origin, world(origin, [1, 2]), [4, -1]);
+assert.ok(near(world(origin, [1, 2]), [4, -1]), 'head lands on the target');
+origin = { p: [3, 1], yaw: 1.1 };
+origin = teleportOrigin(origin, world(origin, [0.5, -0.2]), [0, 0]);
+assert.ok(near(world(origin, [0.5, -0.2]), [0, 0]), 'turned origin');
+// player start: the head (a bit off the base origin, turned 30°) ends on the start, facing its yaw
+const start = { p: [2, -3], yaw: 2 };
+const startAt = startOrigin(start, [0.3, -0.4], Math.PI / 6);
+assert.ok(near(world(startAt, [0.3, -0.4]), start.p), 'head on the start');
+assert.ok(Math.abs(startAt.yaw + Math.PI / 6 - start.yaw) < 1e-12, 'facing the start yaw');
 // pose: raised hand with the back towards the user yes; hanging along the body, palm towards the user,
 // sideways or above the head no; a small drift while aiming keeps it (hysteresis)
 assert.equal(isTeleportPose(0.35, 0.9, false), true);

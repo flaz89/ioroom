@@ -4,7 +4,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { useXRInputSourceState } from '@react-three/xr';
 import { useStore } from '../../../store/appStore';
 import { activeLevel } from '../../../plan/planModel';
-import { canLand, groundHeight, isTeleportPose, teleportArc, teleportOffset } from './teleport';
+import { canLand, groundHeight, isTeleportPose, teleportArc, teleportOrigin } from './teleport';
+import { getXROrigin, setXROrigin } from '../../../xr/xrOrigin';
 import { measureHandPose } from './handPose';
 
 /*
@@ -18,10 +19,8 @@ import { measureHandPose } from './handPose';
 * - In life mode the left hand has no pointers (ray, grab, touch: xrStore.js): it only teleports.
 * - Only with every VR panel closed (isAnyPanelOpen: wrist menu, sun, materials, measure, note + keyboard),
 *   and not while the fist delete gesture is armed.
-* - The move: the XR reference space is replaced by an OFFSET space of the session's base space
-*   (gl.xr.setReferenceSpace), so the camera, hands, pmndrs pointers and every pose this app reads with
-*   gl.xr.getReferenceSpace() (avatars, notes, ruler, gestures) follow, untouched. three.js drops the custom
-*   space on a new session, and so does this (base and offset kept per session).
+* - The move: the XR origin (xr/xrOrigin.js, shared with the player start) is shifted so that the head lands
+*   on the ring; camera, hands, pointers and every pose read with gl.xr.getReferenceSpace() follow.
 */
 const PINCH_START = 0.015; // meters between thumb and index tips: pinch on (tune on the headset)
 const PINCH_END = 0.03;    // ...and off
@@ -57,22 +56,15 @@ export default function TeleportGesture() {
     const dotsRef = useRef();
     const ringRef = useRef();
     const fadeRef = useRef();
-    // aim: { landing: [x, z] | null, height, valid, head: [x, z] } while pinching; move: per session base / offset
+    // aim: { landing: [x, z] | null, height, valid, head: [x, z] } while pinching
     const aimRef = useRef(null);
-    const moveRef = useRef({ session: null, base: null, offset: [0, 0] });
     const fadeStateRef = useRef(null); // { t, target } while fading
 
     useEffect(() => () => { aimRef.current = null; }, []);
 
     // the reference space moved so that the head's ground point is on `target` ([x, z], world), standing on a
     // floor `height` m up (raised floors): the base space's y 0 (the real floor) goes there
-    const teleport = (head, target, height) => {
-        const session = gl.xr.getSession();
-        const move = moveRef.current;
-        if (move.session !== session) Object.assign(move, { session, base: gl.xr.getReferenceSpace(), offset: [0, 0] });
-        move.offset = teleportOffset(move.offset, head, target);
-        gl.xr.setReferenceSpace(move.base.getOffsetReferenceSpace(new XRRigidTransform({ x: move.offset[0], y: -height, z: move.offset[1] })));
-    };
+    const teleport = (head, target, height) => setXROrigin(gl, teleportOrigin(getXROrigin(gl), head, target), height);
 
     useFrame((_state, delta, frame) => {
         const dots = dotsRef.current, ring = ringRef.current, fade = fadeRef.current;

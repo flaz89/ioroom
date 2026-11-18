@@ -32,6 +32,7 @@ export const createMeasuresSlice = (set) => ({
     setMeasuring: (active) => set((state) => ({
         measures: { ...state.measures, active, start: null, selectedId: null },
         notes: active ? { ...state.notes, placing: false } : state.notes,
+        placingStart: active ? false : state.placingStart,
         openPanel: active ? null : state.openPanel
     })),
 

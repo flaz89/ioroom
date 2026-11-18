@@ -117,6 +117,17 @@ export const svg = {
         <path d="M6 8a8 8 0 0 1 8 8" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1.6"/>
     </svg>,
 
+    // map (VR wrist): a folded map with a location pin
+    map: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M2.5 5l5-2 5 2 5-2v12l-5 2-5-2-5 2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <path d="M7.5 3v12M12.5 5v12" stroke="currentColor" strokeWidth="1.4"/>
+    </svg>,
+    // player start (designer tool): an upside-down cone over the floor and its forward arrow
+    playerStart: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 3.5h8l-4 9z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+        <ellipse cx="8" cy="15.5" rx="5" ry="1.8" stroke="currentColor" strokeWidth="1.4"/>
+        <path d="M13.5 8h4m-1.6-1.6L17.5 8l-1.6 1.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>,
     // tour views (WorkspaceSwitch.jsx): orbit = a path around a point; third person = a figure; first person = eye
     orbitView: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
         <ellipse cx="10" cy="10" rx="8" ry="3.6" stroke="currentColor" strokeWidth="1.6"/>

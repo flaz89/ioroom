@@ -1,0 +1,25 @@
+/* Minimap of the tour (Minimap.jsx): no background (only the plan over the scene), white walls, orange
+   walker. Desktop: a quarter of the screen's width, bottom right, left of the right toolbar */
+.minimap {
+    position: fixed;
+    bottom: 1em;
+    right: 90px;
+    width: 25vw;
+    height: 25vw;
+    pointer-events: none;
+}
+
+.minimap-floor { fill: rgba(255, 255, 255, 0.12); }
+.minimap-wall { fill: rgba(255, 255, 255, 0.9); }
+.minimap-player { fill: #ff9a1a; stroke: #fff; stroke-width: .6; stroke-linejoin: round; }
+
+/* phones: the toolbars are hidden in the tour (ui.css), the top center holds the compass and the views */
+@media (max-width: 767px) {
+    .minimap {
+        top: auto;
+        bottom: 66px;
+        right: 20px;
+        width: 120px;
+        height: 120px;
+    }
+}

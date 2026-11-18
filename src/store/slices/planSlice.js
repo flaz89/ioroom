@@ -1,4 +1,4 @@
-import { DEFAULT_PLAN, activeLevel, beamsFaceId, ceilingSidesFaceId, dormerWallsFaceId, flipWall, newWallId, removeFloor, removeWall, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
+import { DEFAULT_PLAN, activeLevel, beamsFaceId, ceilingSidesFaceId, dormerWallsFaceId, flipWall, newWallId, removeFloor, removeWall, setPlayerStart, splitWall, wallFaceIds, withActiveLevel } from '../../plan/planModel';
 
 /*
 * The floor plan of the environment (plan/planModel.js): walls and floors the room is built from.
@@ -26,6 +26,11 @@ export const createPlanSlice = (set, get) => ({
     // FLOORS are independent of the walls: they are drawn by the user (floor tool) and never rebuilt or
     // moved by wall edits (old auto floors, from the closed-perimeter era, are kept as they are).
     setActiveLevel: (level) => get().setPlan({ levels: withActiveLevel(get().plan, level).levels }),
+    // where the tour and XR sessions start (planModel.setPlayerStart; null removes it): synced, undoable
+    setPlayerStart: (start) => {
+        const level = setPlayerStart(activeLevel(get().plan), start);
+        if (level) get().setActiveLevel(level);
+    },
 
     // Thickness to the other side of the wall's line (planModel.flipWall). The inner and outer faces swap
     // roles, so their materials (surfaces slice) swap too: each face keeps its look. Plan and surfaces are

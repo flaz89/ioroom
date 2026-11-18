@@ -9,6 +9,7 @@ import RemotePointers from "../presence/RemotePointers";
 import RemoteAvatars from "../presence/RemoteAvatars";
 import PinchRotateGesture from "../xr-ui/PinchRotateGesture";
 import TeleportGesture from "../xr-ui/TeleportGesture";
+import XRPlayerStart from "../xr-ui/XRPlayerStart";
 import VRSunPanel from "../xr-ui/VRSunPanel";
 import VRNotePanel from "../xr-ui/VRNotePanel";
 import VRMaterialsPanel from "../xr-ui/VRMaterialsPanel";
@@ -23,6 +24,7 @@ import BoardNotes from "../notes/Notes";
 import BoardMeasures from "../measure/Measures";
 import MaterialDropTarget from "./room/MaterialDropTarget";
 import ViewGround from "./ViewGround";
+import PlayerStart from "./PlayerStart";
 import ModelDragGhost from "./ModelDragGhost";
 
 export default function Level() {
@@ -62,6 +64,8 @@ export default function Level() {
                 {!isXR && <MaterialDropTarget />}
                 {/* desktop/mobile: where the "+" menu puts new furniture (center of the view on the floor) */}
                 {!isXR && <ViewGround />}
+                {/* where the tour and XR sessions start: marker + designer tool */}
+                {!isXR && <PlayerStart />}
                 {/* a piece dragged out of the catalog (desktop menu or VR panel): its hologram where it would land */}
                 <ModelDragGhost />
                 {/* shared rooms: other people's pointers (and this device's, published) */}
@@ -90,6 +94,8 @@ export default function Level() {
             {isXR && <PinchRotateGesture />}
             {/* VR life mode only: left hand pinch, aim the arc, release = teleport */}
             {isVR && !isTabletop && <TeleportGesture />}
+            {/* each session starts on the plan's player start (Designer) */}
+            {isXR && !isTabletop && <XRPlayerStart />}
 
         </>
     );

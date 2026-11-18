@@ -26,6 +26,7 @@ export const createNotesSlice = (set) => ({
     setPlacingNote: (placing) => set((state) => ({
         notes: { ...state.notes, placing },
         measures: placing ? { ...state.measures, active: false, start: null } : state.measures, // one mode at a time
+        placingStart: placing ? false : state.placingStart,
         openPanel: placing ? null : state.openPanel
     })),
 

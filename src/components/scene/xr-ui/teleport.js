@@ -12,10 +12,11 @@ import { floorAt, floorElevation, levelBounds, pointInPolygon, wallFootprint } f
 * groundHeight(level, [x, z]): the elevation of the floor there (planModel floorAt), 0 off every floor.
 * canLand(level, [x, z]): a valid place to stand: on a drawn floor and not inside a wall's footprint; a level
 *   with no floors yet: anywhere inside its bounds (walls still excluded).
-* teleportOffset(offset, head, target) -> new offset [x, z] of the XR reference space (its y is -height of the
-*   landing: the user's real floor, y 0 of the base space, goes to the floor stood on) (XRRigidTransform position
-*   relative to the session's base space) that puts the head's ground point on `target`: poses in the offset
-*   space are base poses minus the offset, so new = old + head - target (head: current world [x, z]).
+* XR ORIGIN (xr/xrOrigin.js): where the headset's base space sits in the world: { p: [x, z], yaw }, world =
+*   rotateY(base, yaw) + p (y: the floor stood on, apart). rotateY([x, z], yaw): three's rotation about +Y.
+* teleportOrigin(origin, head, target): the origin moved so that the head ([x, z], world) lands on target.
+* startOrigin(start, headBase, headYawBase): the origin putting the head (base [x, z] and heading) on the
+*   player start { p, yaw } (planModel level.playerStart), facing its yaw. Yaw 0 = looking towards -Z.
 * Calibration knobs (tune on the headset): ARC_SPEED (reach), MAX_DISTANCE.
 * ponytail: the arc does not stop on walls (it lands behind them, on the floor of the next room): a hit test
 *   against the wall boxes if that turns out confusing.
@@ -78,4 +79,13 @@ export function isTeleportPose(drop, backToUser, wasPose) {
         : drop < TELEPORT_DROP_ENTER && backToUser > TELEPORT_BACK_ENTER);
 }
 
-export const teleportOffset =(offset, head, target) => [offset[0] + head[0] - target[0], offset[1] + head[1] - target[1]];
+export function rotateY([x, z], yaw) {
+    const cos = Math.cos(yaw), sin = Math.sin(yaw);
+    return [x * cos + z * sin, -x * sin + z * cos];
+}
+export const teleportOrigin = (origin, head, target) => ({ ...origin, p: [origin.p[0] + target[0] - head[0], origin.p[1] + target[1] - head[1]] });
+export function startOrigin(start, headBase, headYawBase) {
+    const yaw = start.yaw - headYawBase;
+    const [x, z] = rotateY(headBase, yaw);
+    return { p: [start.p[0] - x, start.p[1] - z], yaw };
+}
