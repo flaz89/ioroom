@@ -31,4 +31,4 @@ scripts/.textures
 /test
 
 # Blender sources of the catalog models (heavy, kept out of git; Claude runs Blender headless on them)
-blender/
+/blender/
