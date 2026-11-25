@@ -36,6 +36,7 @@ const BUTTON = [0.09, 0.032];
 const PIXELS_PER_METER = 3000;
 const MAX_LENGTH = 500;         // same limit as the desktop editor
 const MAX_LINES = 7;
+const POLL_MS = 200;            // typed text read this often while the keyboard is open
 const TEXT_BOX = { x: PAD, top: HEADER_H, height: TEXT_H - 0.01 }; // meters, from the panel's top left
 
 export default function VRNotePanel() {
@@ -71,12 +72,27 @@ function NoteEditorPanel({ note }) {
         field.type = 'text';
         field.setAttribute('aria-hidden', 'true');
         Object.assign(field.style, { position: 'fixed', top: '0', left: '0', width: '1px', height: '1px', opacity: '0', pointerEvents: 'none' });
-        field.addEventListener('input', () => setText((baseRef.current + field.value).slice(0, MAX_LENGTH)));
-        field.addEventListener('focus', () => setIsTyping(true));
-        field.addEventListener('blur', () => setIsTyping(false)); // keyboard dismissed (Done, hide, click outside)
+        // The field's value is read on every event that may carry it AND polled while the keyboard is open:
+        // on the Quest (25/11) typing once stopped reaching the panel; a later test with a debug line showed
+        // `input` arriving at every key, so the cause stayed unknown (stale page or a Quest browser hiccup).
+        // ponytail: polling every POLL_MS while typing as insurance; drop it if it never turns out useful
+        // nothing typed yet: the note's own text (without the separating space, or Save would show)
+        const read = () => setText(field.value === '' ? baseRef.current.trimEnd() : (baseRef.current + field.value).slice(0, MAX_LENGTH));
+        let poll = null;
+        for (const type of ['input', 'change', 'keyup', 'compositionend']) field.addEventListener(type, read);
+        field.addEventListener('focus', () => {
+            setIsTyping(true);
+            clearInterval(poll);
+            poll = setInterval(read, POLL_MS);
+        });
+        field.addEventListener('blur', () => { // keyboard dismissed (Done, hide, click outside)
+            clearInterval(poll);
+            read();
+            setIsTyping(false);
+        });
         document.body.appendChild(field);
         fieldRef.current = field;
-        return () => field.remove();
+        return () => { clearInterval(poll); field.remove(); };
     }, []);
 
     // press on the text box: open the keyboard, appending to the current text (a space in between)
