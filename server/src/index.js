@@ -126,6 +126,15 @@ export class Room extends YServer {
         return super.onMessage(connection, message);
     }
 
+    // VOICE CHAT signaling (client: src/sync/voice.js): WebRTC offers / answers / ICE candidates are relayed
+    // to the other clients of the room, each message says who it is for ({ to } = awareness client id).
+    // ponytail: broadcast and filtered by the clients (a few small messages per peer); route per connection
+    // (y-partyserver's awareness ids per connection) if rooms get crowded.
+    onCustomMessage(connection, message) {
+        if (refused.has(connection) || message.length > 20000) return;
+        this.broadcastCustomMessage(message, connection);
+    }
+
     // Save the whole document as a single Yjs update.
     // ponytail: one storage value per room (fine for scenes of primitives, ~2 MB value limit);
     // split into chunks or keep incremental updates if environments grow (e.g. embedded models).

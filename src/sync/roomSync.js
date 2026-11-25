@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import YProvider from 'y-partyserver/provider';
 import { useStore } from '../store/appStore';
 import { AWAY_DISCONNECT_MS, bindAwareness, onAwayChange } from './presence';
+import { bindVoice, leaveVoice } from './voice';
 import { bindSun } from './sunSync';
 import { bindFieldMap } from './fieldMapSync';
 import { LOCAL, SEED, isOwnOrigin, startHistory } from './history';
@@ -164,6 +165,7 @@ export function connectRoom(room) {
     const tabs = provider && typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(`ioroom.room.${room}`) : null;
     if (tabs) {
         tabs.onmessage = () => {
+            leaveVoice(); // the microphone must not stay on in a tab that left
             provider.disconnect();
             setRoomStatus('elsewhere');
         };
@@ -198,6 +200,7 @@ export function connectRoom(room) {
     const unbindMeasures = bindInstances(doc, doc.getMap('measures'),
         (state) => state.measures.items, (list) => useStore.getState().setMeasureItems(list));
     const unbindAwareness = provider ? bindAwareness(provider.awareness) : () => {};
+    const unbindVoice = provider ? bindVoice(provider) : () => {};
     const unbindSun = bindSun(doc, provider);
     const unbindSurfaces = bindFieldMap(doc, provider, {
         name: 'surfaces',
@@ -244,6 +247,7 @@ export function connectRoom(room) {
         unbindLook();
         unbindDoors();
         unbindPlan();
+        unbindVoice();
         unbindAwareness();
         unbindSun();
         unbindSurfaces();

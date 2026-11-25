@@ -62,3 +62,41 @@
 
 /* away device (page hidden, headset off): dimmed until it is back or leaves the room */
 .room-user.is-away { opacity: .45; }
+
+/* VOICE (RoomUsers.jsx, sync/voice.js): speaker + microphone at the end of the row, orange when on */
+.room-voice {
+    display: flex;
+    align-items: center;
+    gap: .5em;
+    margin-left: 1em;
+}
+.room-voice-toggle {
+    display: flex;
+    padding: 0;
+    border: none;
+    background: none;
+    color: rgba(255, 255, 255, 0.45);
+    transition: color .15s;
+}
+button.room-voice-toggle { cursor: pointer; }
+button.room-voice-toggle:hover { color: white; }
+.room-voice-toggle.is-on,
+button.room-voice-toggle.is-on:hover { color: #ffa21a; }
+.room-voice-icon {
+    width: 1.3em;
+    height: 1.3em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.room-voice-icon .is-filled { fill: currentColor; stroke: none; }
+.room-voice-error {
+    color: #ff8a80;
+    font-size: .9em;
+}
+/* talking: the dot glows in its own color (color = the user's) */
+.room-user-dot.is-speaking {
+    box-shadow: 0 0 0 2px white, 0 0 10px 3px currentColor;
+}

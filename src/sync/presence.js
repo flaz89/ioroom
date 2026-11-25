@@ -156,7 +156,7 @@ function readRemoteStates() {
             const key = state.user.id ?? `client:${clientId}`;
             const isSelf = clientId === awareness.clientID;
             // one entry per device: this connection for its own device, else the first one seen
-            if (isSelf || !users.has(key)) users.set(key, { clientId, name: state.user.name, color: state.user.color, isSelf, away: state.away === true });
+            if (isSelf || !users.has(key)) users.set(key, { clientId, name: state.user.name, color: state.user.color, isSelf, away: state.away === true, voice: state.voice ?? null });
         }
         if (clientId === awareness.clientID) continue;
         if (state.live != null) remotePoses.set(state.live.id, state.live);
@@ -243,6 +243,7 @@ export function bindAwareness(roomAwareness) {
         awareness.setLocalStateField('holding', null);
         awareness.setLocalStateField('pointer', null);
         awareness.setLocalStateField('avatar', null);
+        awareness.setLocalStateField('voice', null);
         awareness = null;
         remotePoses.clear();
         remoteHolders.clear();
