@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useXR, useXRInputSourceState } from '@react-three/xr';
 import { clearAvatar, publishAvatar, remoteAvatars, useRoomUsers } from '../../../sync/presence';
+import { setVoicePosition } from '../../../sync/voice';
 import NameLabel from './NameLabel';
 
 /*
@@ -11,6 +12,7 @@ import NameLabel from './NameLabel';
 *   with avatar scale = 1 / board scale (in tabletop the user is a "giant" leaning over the model);
 * - every other headset user: a low-poly avatar in their color (head + visor, two hands, name tag),
 *   easing towards each received pose. ~50 triangles per avatar.
+* - VOICE: while this device is in XR, each avatar's voice comes from its head (spatial audio, sync/voice.js).
 * Calibration knobs in meters at avatar scale 1.
 */
 const HEAD_RADIUS = 0.1;
@@ -26,6 +28,8 @@ const _matrix = new THREE.Matrix4();
 const _position = new THREE.Vector3();
 const _quaternion = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
+const _viewerInverse = new THREE.Matrix4();
+const _voice = new THREE.Vector3();
 
 export default function RemoteAvatars() {
     const anchorRef = useRef(); // child of the board: its parent is the board root
@@ -98,16 +102,19 @@ function followPart(part, pose, s, follow) {
 
 // Another headset user: head with visor, two hands, name tag above the head
 function RemoteAvatar({ user }) {
+    const gl = useThree((state) => state.gl);
     const rootRef = useRef();
     const headRef = useRef();
     const leftRef = useRef();
     const rightRef = useRef();
     const labelRef = useRef();
 
-    useFrame((_state, delta) => {
+    useEffect(() => () => setVoicePosition(user.clientId, null), [user.clientId]);
+
+    useFrame((_state, delta, frame) => {
         const avatar = remoteAvatars.get(user.clientId);
         rootRef.current.visible = avatar != null;
-        if (avatar == null) return;
+        if (avatar == null) { setVoicePosition(user.clientId, null); return; }
         const follow = 1 - Math.exp(-delta * FOLLOW_RATE);
         followPart(headRef.current, avatar.h, avatar.s, follow);
         followPart(leftRef.current, avatar.l, avatar.s, follow);
@@ -117,6 +124,13 @@ function RemoteAvatar({ user }) {
         label.position.copy(headRef.current.position);
         label.position.y += LABEL_OFFSET * avatar.s;
         label.scale.setScalar(avatar.s);
+        // their voice comes from this head while THIS device is in a headset too (sync/voice.js): head
+        // position relative to the viewer pose, in the reference space three uses as world space
+        const viewer = frame?.getViewerPose(gl.xr.getReferenceSpace());
+        if (viewer == null || !headRef.current.visible) { setVoicePosition(user.clientId, null); return; }
+        headRef.current.updateWorldMatrix(true, false);
+        _viewerInverse.fromArray(viewer.transform.matrix).invert();
+        setVoicePosition(user.clientId, headRef.current.getWorldPosition(_voice).applyMatrix4(_viewerInverse));
     });
 
     const material = <meshStandardMaterial color={user.color} flatShading roughness={0.8} />;

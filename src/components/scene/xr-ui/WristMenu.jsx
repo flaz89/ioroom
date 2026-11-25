@@ -11,6 +11,8 @@ import VRStatsPanel, { STATS_HEIGHT_M } from './VRStatsPanel';
 import VRMinimap, { MAP_SIZE_M } from './VRMinimap';
 import { PointerFilterContext, acceptsWristPointer } from './pointers';
 import { undo, redo } from '../../../sync/history';
+import { useRoomUsers } from '../../../sync/presence';
+import { joinVoice, leaveVoice, setMic, useVoice } from '../../../sync/voice';
 
 /*
 * Menu attached to the LEFT controller (or left hand when hand tracking is active), pressed with
@@ -97,6 +99,9 @@ export default function WristMenu() {
     const setRotationSnapStep = useStore((state) => state.setRotationSnapStep);
     // tour (workspaceSlice.js): no catalog, materials nor snaps (they edit the environment)
     const isTour = useStore((state) => state.workspace === 'tour');
+    // voice chat (sync/voice.js), only in a shared room: same toggles as this device's row in the users list
+    const isInRoom = useRoomUsers().length > 0;
+    const voice = useVoice();
     // Main page: [col, row] cells, rows stacked along the menu's local +Y (the palm becomes the control board)
     const buttons = [
         { id: 'perf', col: 0, row: 0, svg: svg.performance, active: isPerfVisible, onClick: togglePerf },
@@ -121,6 +126,10 @@ export default function WristMenu() {
         { id: 'wire', col: 2, row: 4, label: 'Wire', active: isWireframe, onClick: toggleWireframe },
         // foveation: 1 (fastest) -> 0.75 -> 0.5 (sharper edges); highlighted when not the default
         // minimap on the palm (VRMinimap.jsx), above the stats when both are open
+        ...(isInRoom ? [
+            { id: 'voice', col: 3, row: 0, svg: svg.speaker, active: voice.joined, onClick: voice.joined ? leaveVoice : joinVoice },
+            { id: 'mic', col: 3, row: 1, svg: svg.mic, active: voice.mic, onClick: () => setMic(!voice.mic) }
+        ] : []),
         { id: 'map', col: 3, row: 3, svg: svg.map, active: isMapVisible, onClick: toggleVrMap },
         { id: 'fov', col: 3, row: 4, label: `Fov ${xrFoveation}`, active: xrFoveation !== 1, onClick: cycleXrFoveation }
     ].filter((button) => !isTour || !TOUR_HIDDEN.has(button.id));

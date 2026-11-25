@@ -83,7 +83,7 @@ function analyserFor(stream) {
 
 function createPeer(id) {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    const peer = { pc, queue: Promise.resolve(), audio: null, source: null, analyser: null };
+    const peer = { pc, queue: Promise.resolve(), audio: null, source: null, analyser: null, position: null, panner: null, spatial: null };
     peers.set(id, peer);
     pc.onicecandidate = ({ candidate }) => { if (candidate) send(id, { candidate: candidate.toJSON() }); };
     pc.ontrack = ({ track, streams }) => {
@@ -96,13 +96,12 @@ function createPeer(id) {
         peer.audio.muted = true;
         peer.audio.srcObject = stream;
         peer.audio.play().catch(() => {});
-        // the sound goes out through WebAudio (the AudioContext was started by the "join" click), which is
-        // also where spatial audio in VR will plug in
+        // the sound goes out through WebAudio (the AudioContext was started by the "join" click): straight
+        // out, or through a panner in VR (setVoicePosition)
         peer.source = audioContext.createMediaStreamSource(stream);
         peer.analyser = audioContext.createAnalyser();
         peer.analyser.fftSize = 512;
-        peer.source.connect(peer.analyser);
-        peer.source.connect(audioContext.destination);
+        routePeer(peer);
     };
     // ponytail: a failed connection is dropped and made again at the next presence change; ICE restart if
     // connections drop often on real networks
@@ -112,11 +111,52 @@ function createPeer(id) {
     return peer;
 }
 
+/*
+* SPATIAL AUDIO (VR): the voice of a headset user comes from their avatar's head. RemoteAvatars.jsx calls
+* this every frame with that head's position RELATIVE TO THIS DEVICE'S HEAD (meters: x right, y up, -z ahead,
+* the Web Audio listener's default pose, so the listener is never moved), or null = plain audio (this device
+* is not in a headset, or the speaker has no avatar: desktop / phone).
+*/
+export function setVoicePosition(id, position) {
+    const peer = peers.get(id);
+    if (peer == null) return;
+    peer.position = position;
+    routePeer(peer);
+}
+
+// Distance falloff: full volume within REF_DISTANCE, then ~1/distance (calibration knobs)
+const REF_DISTANCE = 1;
+const ROLLOFF = 1;
+
+// Connects a peer's sound straight out or through its panner, as its position says
+function routePeer(peer) {
+    if (peer.source == null) return;
+    const spatial = peer.position != null;
+    if (spatial !== peer.spatial) {
+        peer.source.disconnect();
+        peer.source.connect(peer.analyser);
+        if (spatial) {
+            peer.panner ??= new PannerNode(audioContext, { panningModel: 'HRTF', distanceModel: 'inverse', refDistance: REF_DISTANCE, rolloffFactor: ROLLOFF });
+            peer.panner.connect(audioContext.destination);
+            peer.source.connect(peer.panner);
+        } else {
+            peer.source.connect(audioContext.destination);
+        }
+        peer.spatial = spatial;
+    }
+    if (spatial) {
+        peer.panner.positionX.value = peer.position.x;
+        peer.panner.positionY.value = peer.position.y;
+        peer.panner.positionZ.value = peer.position.z;
+    }
+}
+
 function closePeer(id) {
     const peer = peers.get(id);
     if (!peer) return;
     peer.pc.close();
     peer.source?.disconnect();
+    peer.panner?.disconnect();
     if (peer.audio) { peer.audio.pause(); peer.audio.srcObject = null; }
     peers.delete(id);
     loudAt.delete(id);

@@ -82,16 +82,10 @@ button.room-voice-toggle { cursor: pointer; }
 button.room-voice-toggle:hover { color: white; }
 .room-voice-toggle.is-on,
 button.room-voice-toggle.is-on:hover { color: #ffa21a; }
-.room-voice-icon {
+.room-voice-toggle svg {
     width: 1.3em;
     height: 1.3em;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
 }
-.room-voice-icon .is-filled { fill: currentColor; stroke: none; }
 .room-voice-error {
     color: #ff8a80;
     font-size: .9em;
