@@ -284,11 +284,37 @@ async function handleApi(request, env) {
     return error('Method not allowed', 405);
 }
 
+/*
+* GET /api/turn?room=<id> -> { iceServers } for the voice chat (src/sync/voice.js): short-lived Cloudflare TURN
+* credentials, only for rooms that exist (strangers cannot spend the TURN traffic). The TURN key stays here
+* (Worker secrets TURN_KEY_ID, TURN_KEY_API_TOKEN). Without the secrets, or if Cloudflare fails: 503, the
+* client goes on with STUN only.
+*/
+const TURN_TTL_S = 86400; // credentials valid one day (the client asks again on every join after half of it)
+async function handleTurn(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname !== '/api/turn') return null;
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (request.method !== 'GET') return error('Method not allowed', 405);
+    const id = url.searchParams.get('room');
+    if (!id || !(await registry(env).get(id))) return error('Room not found', 404);
+    if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return error('TURN not configured', 503);
+    const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl: TURN_TTL_S })
+    });
+    if (!response.ok) return error(`TURN credentials failed (${response.status})`, 503);
+    const { iceServers } = await response.json();
+    return json({ iceServers, ttl: TURN_TTL_S });
+}
+
 export default {
-    // /api/rooms -> owner API; /api/materials, /files/materials -> material library (materials.js);
-    // /parties/:party/:room -> the matching room; anything else is not served
+    // /api/rooms -> owner API; /api/turn -> voice chat relay credentials; /api/materials, /files/materials ->
+    // material library (materials.js); /parties/:party/:room -> the matching room; anything else is not served
     async fetch(request, env) {
         return (await handleApi(request, env))
+            ?? (await handleTurn(request, env))
             ?? (await handleMaterials(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
             ?? (await handleModels(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env) }))
             ?? (await handleUnderlays(request, env, { cors: CORS, isOwner: (r) => isOwner(r, env), usedKeys: () => usedUnderlayKeys(env) }))

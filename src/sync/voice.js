@@ -19,16 +19,23 @@ import { useSyncExternalStore } from 'react';
 * SPEAKING: an analyser per stream (the remote ones and this device's microphone) measured ~10 times a second;
 * useVoice().speaking = client ids talking right now (computed here, never sent).
 *
-* NAT: STUN only for now (direct connections: most home / office networks). Corporate networks and some
-* mobile networks block them: TURN (Cloudflare, credentials from the Worker) is the next step.
+* NAT: STUN finds direct connections (most home / office networks); where those are blocked (corporate
+* networks, some mobile ones) the audio goes through Cloudflare's TURN relay. Its short-lived credentials come
+* from the Worker (GET /api/turn, server/src/index.js) on join, reused for half their lifetime; this device
+* publishes `on` (and so starts connecting) only once they arrived or failed (then STUN only, as before).
 */
-const ICE_SERVERS = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+const STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+const TURN_TIMEOUT_MS = 4000;   // a slow Worker never holds the voice back longer than this
+let iceServers = STUN;
+let iceUntil = 0;               // ms: the TURN credentials are reused until then
+let iceRequest = null;          // pending credentials request (no connections meanwhile)
 const MIC_CONSTRAINTS = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
 const LEVEL_MS = 100;           // speaking check cadence
 const SPEAKING_LEVEL = 0.02;    // RMS of the waveform (0..1) above which someone is talking
 const SPEAKING_HOLD_MS = 400;   // still "speaking" this long after the last loud sample (no flicker between words)
 
 let provider = null;
+let apiOrigin = null;            // the Worker's origin (TURN credentials)
 let awareness = null;
 let joined = false;
 let micStream = null;           // MediaStream of this device's microphone while it is on
@@ -65,8 +72,23 @@ export function voicePeerIds(states, selfId, selfJoined) {
     return [...states].filter(([id, state]) => id !== selfId && state?.voice?.on === true).map(([id]) => id);
 }
 
+// While the credentials are on their way this device is not `on` yet: nobody connects to it with STUN only
 function publish() {
-    awareness?.setLocalStateField('voice', joined ? { on: true, mic: micStream != null } : null);
+    awareness?.setLocalStateField('voice', joined && iceRequest == null ? { on: true, mic: micStream != null } : null);
+}
+
+// TURN credentials for the room from the Worker; on any failure STUN only (this join), asked again next join
+function loadIceServers() {
+    if (Date.now() < iceUntil || provider == null || apiOrigin == null) return Promise.resolve();
+    iceRequest ??= fetch(`${apiOrigin}/api/turn?room=${encodeURIComponent(provider.roomname)}`, { signal: AbortSignal.timeout(TURN_TIMEOUT_MS) })
+        .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
+        .then(({ iceServers: relay, ttl }) => {
+            iceServers = [...STUN, ...[].concat(relay)];
+            iceUntil = Date.now() + ttl * 500; // half the lifetime, in ms
+        })
+        .catch((error) => console.warn('voice: no TURN relay, direct connections only', error))
+        .finally(() => { iceRequest = null; });
+    return iceRequest;
 }
 
 function send(to, payload) {
@@ -82,7 +104,7 @@ function analyserFor(stream) {
 }
 
 function createPeer(id) {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers });
     const peer = { pc, queue: Promise.resolve(), audio: null, source: null, analyser: null, position: null, panner: null, spatial: null };
     peers.set(id, peer);
     pc.onicecandidate = ({ candidate }) => { if (candidate) send(id, { candidate: candidate.toJSON() }); };
@@ -164,7 +186,7 @@ function closePeer(id) {
 
 // Opens / closes the connections to match who is in the voice
 function syncPeers() {
-    if (awareness == null) return;
+    if (awareness == null || iceRequest != null) return; // connects once the credentials arrived (joinVoice)
     const wanted = new Set(voicePeerIds(awareness.getStates(), awareness.clientID, joined));
     for (const id of peers.keys()) if (!wanted.has(id)) closePeer(id);
     for (const id of wanted) {
@@ -233,9 +255,12 @@ export function joinVoice() {
     audioContext ??= new AudioContext();
     audioContext.resume();
     levelTimer = setInterval(measureLevels, LEVEL_MS);
-    publish();
-    syncPeers();
     notify();
+    loadIceServers().then(() => {
+        if (!joined) return; // left meanwhile
+        publish();
+        syncPeers();
+    });
 }
 
 // Leaves the voice: microphone off, every connection closed
@@ -285,16 +310,26 @@ export async function setMic(on) {
     notify();
 }
 
-// Called by connectRoom with the room's provider; returns the unbind function
-export function bindVoice(roomProvider) {
+// Called by connectRoom with the room's provider and the Worker's origin; returns the unbind function
+export function bindVoice(roomProvider, origin) {
     provider = roomProvider;
+    apiOrigin = origin;
     awareness = roomProvider.awareness;
     provider.on('custom-message', onCustomMessage);
     awareness.on('change', syncPeers);
     // reconnected (e.g. back after being away): presence and connections again
     const onStatus = ({ status }) => { if (status === 'connected') { publish(); syncPeers(); } };
     provider.on('status', onStatus);
+    // PRIVACY (Flavio 27/11): on a phone / tablet (touch screen) the microphone turns OFF when the app goes to
+    // the background (another app, screen locked); back in the app it stays off until tapped again (the voice
+    // itself goes on: the others are still heard). Desktop tabs keep it, as in any video call.
+    // ponytail: touch devices only, no setting; add a "keep the mic on in the background" option if asked
+    const onVisibility = () => {
+        if (document.visibilityState === 'hidden' && micStream && matchMedia('(pointer: coarse)').matches) setMic(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+        document.removeEventListener('visibilitychange', onVisibility);
         leaveVoice();
         provider.off('custom-message', onCustomMessage);
         provider.off('status', onStatus);

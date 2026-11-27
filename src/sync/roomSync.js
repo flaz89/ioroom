@@ -200,7 +200,7 @@ export function connectRoom(room) {
     const unbindMeasures = bindInstances(doc, doc.getMap('measures'),
         (state) => state.measures.items, (list) => useStore.getState().setMeasureItems(list));
     const unbindAwareness = provider ? bindAwareness(provider.awareness) : () => {};
-    const unbindVoice = provider ? bindVoice(provider) : () => {};
+    const unbindVoice = provider ? bindVoice(provider, API_ORIGIN) : () => {};
     const unbindSun = bindSun(doc, provider);
     const unbindSurfaces = bindFieldMap(doc, provider, {
         name: 'surfaces',
