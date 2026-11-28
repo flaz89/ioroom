@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '../../../store/appStore';
 import { setWakeHandler } from './renderWake';
 
@@ -19,7 +19,12 @@ const REPORT_ONLY_KEYS = new Set(['perf']); // perfSlice.js: { stats }
 * else that animates over several frames (useFrame: door easing, damping tails, TRAA accumulation, remote
 * avatars) needs frames to keep coming: this driver keeps invalidating every animation frame while AWAKE, i.e.
 * for AWAKE_MS after the last
-*   - pointer / wheel / keyboard event or window resize,
+*   - pointer press / drag (a move with a button held), wheel, keyboard event or window resize,
+*   - frame asked for by something else (a React render, the camera controls): a hover that changes the
+*     scene (tint, note growing, ruler preview) goes through React, so a plain pointer MOVE does not wake the
+*     rendering on its own. On the Quest the hand ray trembles over the browser panel and its endless moves
+*     kept the GPU busy with SSGI / TRAA for an unchanged image: the panel glitched (pixel columns jumping,
+*     magenta / yellow) and the passthrough stuttered,
 *   - change of the app store (settings, plan, materials, sun, room content from the other devices...;
 *     not the REPORT_ONLY_KEYS),
 *   - wakeRender() call (renderWake.js: presence updates).
@@ -29,13 +34,22 @@ const REPORT_ONLY_KEYS = new Set(['perf']); // perfSlice.js: { stats }
 */
 export default function FrameDriver() {
     const invalidate = useThree((state) => state.invalidate);
+    const driver = useRef({ ownFrame: false, wake: null });
+
+    // a frame this driver did not ask for: something changed on screen, keep the frames coming
+    useFrame(() => {
+        if (!driver.current.ownFrame) driver.current.wake?.();
+        driver.current.ownFrame = false;
+    });
 
     useEffect(() => {
+        const self = driver.current;
         let awakeUntil = 0;
         let raf = 0;
         const tick = () => {
             raf = 0;
             if (performance.now() > awakeUntil) return; // asleep: no more frames until the next wake
+            self.ownFrame = true;
             invalidate();
             raf = requestAnimationFrame(tick);
         };
@@ -43,8 +57,11 @@ export default function FrameDriver() {
             awakeUntil = performance.now() + AWAKE_MS;
             if (raf === 0) raf = requestAnimationFrame(tick);
         };
-        const events = ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'keyup', 'resize'];
+        self.wake = wake;
+        const drag = (event) => { if (event.buttons !== 0) wake(); };
+        const events = ['pointerdown', 'pointerup', 'wheel', 'keydown', 'keyup', 'resize'];
         events.forEach((type) => window.addEventListener(type, wake, { passive: true }));
+        window.addEventListener('pointermove', drag, { passive: true });
         // a store change wakes the rendering unless it touched only REPORT_ONLY_KEYS
         const unsubscribe = useStore.subscribe((state, previous) => {
             for (const key in state) {
@@ -56,6 +73,8 @@ export default function FrameDriver() {
         return () => {
             cancelAnimationFrame(raf);
             events.forEach((type) => window.removeEventListener(type, wake));
+            window.removeEventListener('pointermove', drag);
+            self.wake = null;
             unsubscribe();
             setWakeHandler(null);
         };

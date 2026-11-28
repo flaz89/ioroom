@@ -53,42 +53,43 @@ export default function RemotePointers() {
 function LocalPointer({ anchorRef }) {
     const gl = useThree((state) => state.gl);
     const camera = useThree((state) => state.camera);
-    const pointerRef = useRef({ moved: false, inside: false });
-
+    // Published from the pointer events (at most once per animation frame), not from useFrame: a plain
+    // pointer move does not make the scene render (perf/FrameDriver.jsx); the matrices are the last frame's.
     useEffect(() => {
         const element = gl.domElement;
+        let inside = false;
+        let raf = 0;
+        const publish = () => {
+            raf = 0;
+            const board = anchorRef.current?.parent;
+            if (!inside || board == null) return;
+            _raycaster.setFromCamera(_ndc, camera);
+            const hit = _raycaster.intersectObject(board, true).find((h) => h.face != null && h.object.isMesh && !h.object.isLineSegments2);
+            if (hit == null) return clearPointer();
+            board.worldToLocal(_point.copy(hit.point));
+            board.getWorldQuaternion(_boardQuaternion).invert();
+            _normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).applyQuaternion(_boardQuaternion);
+            publishPointer(_point, _normal);
+        };
         const move = (event) => {
             const rect = element.getBoundingClientRect();
             _ndc.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
-            pointerRef.current.moved = true;
-            pointerRef.current.inside = true;
+            inside = true;
+            if (raf === 0) raf = requestAnimationFrame(publish);
         };
         const leave = () => {
-            pointerRef.current.inside = false;
+            inside = false;
             clearPointer();
         };
         element.addEventListener('pointermove', move);
         element.addEventListener('pointerleave', leave);
         return () => {
+            cancelAnimationFrame(raf);
             element.removeEventListener('pointermove', move);
             element.removeEventListener('pointerleave', leave);
             clearPointer();
         };
-    }, [gl]);
-
-    useFrame(() => {
-        const pointer = pointerRef.current;
-        const board = anchorRef.current?.parent;
-        if (!pointer.moved || !pointer.inside || board == null) return;
-        pointer.moved = false;
-        _raycaster.setFromCamera(_ndc, camera);
-        const hit = _raycaster.intersectObject(board, true).find((h) => h.face != null && h.object.isMesh && !h.object.isLineSegments2);
-        if (hit == null) return clearPointer();
-        board.worldToLocal(_point.copy(hit.point));
-        board.getWorldQuaternion(_boardQuaternion).invert();
-        _normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).applyQuaternion(_boardQuaternion);
-        publishPointer(_point, _normal);
-    });
+    }, [gl, camera, anchorRef]);
 
     return null;
 }

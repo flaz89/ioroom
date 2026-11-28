@@ -136,8 +136,11 @@ let lastVisible = '';
 // Wakes the on-demand renderer (renderWake.js) only when something VISIBLE changed in the presence (pointers,
 // avatars, live poses, holders, users joining / leaving / going away): the heartbeat renews 'seen' every
 // HEARTBEAT_MS on every device, and waking on it redrew the still scene for nothing (fans on).
+// This device's own pointer is not drawn here either: publishing it (the Quest hand ray trembling over the 3D)
+// kept the GPU busy and the headset compositor stuttered.
 function wakeOnVisibleChange() {
-    const visible = JSON.stringify([...awareness.getStates()].map(([clientId, { seen: _seen, ...state }]) => [clientId, state]));
+    const visible = JSON.stringify([...awareness.getStates()].map(([clientId, { seen: _seen, ...state }]) =>
+        [clientId, clientId === awareness.clientID ? { ...state, pointer: undefined } : state]));
     if (visible === lastVisible) return;
     lastVisible = visible;
     wakeRender();
